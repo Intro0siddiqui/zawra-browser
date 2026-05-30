@@ -2,7 +2,18 @@
 
 This document details the remaining tasks and specific source files required to achieve 100% data exclusivity for **BrowserDB** within the Zawra Browser. Currently, the browser utilizes BrowserDB for high-throughput items (Cookies, LocalStorage) but falls back to SQLite for complex structures.
 
-## 1. High Priority: IndexedDB Replacement
+## 1. High Priority: Zero-Latency Native API ("God-Mode")
+Expose BrowserDB directly to the JavaScript environment to allow developers to bypass standard Web APIs for maximum performance.
+
+- **Objective**: Create a `navigator.zawra.db` global object in the JS context.
+- **Key Files**:
+    - `Source/WebCore/bindings/js/JSDOMGlobalObject.cpp`: To inject the new global.
+    - `Source/WebCore/platform/network/zawra/ZawraStorageBridge.cpp`: To provide the underlying data access.
+- **Tasks**:
+    - Implement a Zero-Copy `ArrayBuffer` bridge so JS can read BrowserDB memory directly.
+    - Expose `get()`, `put()`, and `query()` methods directly to the engine.
+
+## 2. High Priority: IndexedDB Replacement
 IndexedDB is the most complex storage API in WebKit. It currently uses a SQLite backing store.
 
 - **Objective**: Implement `BrowserDBIDBBackingStore` to route all object stores, cursors, and transactions to Rust.

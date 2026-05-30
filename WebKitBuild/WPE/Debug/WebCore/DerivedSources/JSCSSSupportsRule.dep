@@ -1,0 +1,4 @@
+JSCSSSupportsRule.h : CSSConditionRule.idl CSSGroupingRule.idl CSSRule.idl
+CSSConditionRule.idl :
+CSSGroupingRule.idl :
+CSSRule.idl :

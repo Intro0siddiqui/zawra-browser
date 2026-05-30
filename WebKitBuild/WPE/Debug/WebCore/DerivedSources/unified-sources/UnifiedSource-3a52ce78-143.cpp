@@ -1,0 +1,8 @@
+#include "JSServiceWorkerGlobalScope.cpp"
+#include "JSServiceWorkerRegistration.cpp"
+#include "JSServiceWorkerUpdateViaCache.cpp"
+#include "JSServiceWorkerWindowClient.cpp"
+#include "JSShadowRealmGlobalScope.cpp"
+#include "JSShadowRoot.cpp"
+#include "JSShadowRootInit.cpp"
+#include "JSShadowRootMode.cpp"

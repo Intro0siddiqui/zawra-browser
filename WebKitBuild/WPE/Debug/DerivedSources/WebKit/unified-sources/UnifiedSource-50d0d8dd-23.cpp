@@ -1,0 +1,8 @@
+#include "Shared/XR/XRDeviceInfo.cpp"
+#include "Shared/XR/XRDeviceProxy.cpp"
+#include "Shared/cairo/ShareableBitmapCairo.cpp"
+#include "Shared/freetype/WebCoreArgumentCodersFreeType.cpp"
+#include "Shared/glib/ArgumentCodersGLib.cpp"
+#include "Shared/glib/InputMethodState.cpp"
+#include "Shared/glib/ProcessExecutablePathGLib.cpp"
+#include "Shared/glib/UserMessage.cpp"

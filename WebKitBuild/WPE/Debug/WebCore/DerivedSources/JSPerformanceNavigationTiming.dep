@@ -1,0 +1,3 @@
+JSPerformanceNavigationTiming.h : PerformanceResourceTiming.idl PerformanceEntry.idl
+PerformanceResourceTiming.idl :
+PerformanceEntry.idl :

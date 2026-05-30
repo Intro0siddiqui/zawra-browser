@@ -1,0 +1,8 @@
+#include "Modules/websockets/ThreadableWebSocketChannel.cpp"
+#include "Modules/websockets/ThreadableWebSocketChannelClientWrapper.cpp"
+#include "Modules/websockets/WebSocket.cpp"
+#include "Modules/websockets/WebSocketChannelInspector.cpp"
+#include "Modules/websockets/WebSocketDeflateFramer.cpp"
+#include "Modules/websockets/WebSocketDeflater.cpp"
+#include "Modules/websockets/WebSocketExtensionDispatcher.cpp"
+#include "Modules/websockets/WebSocketExtensionParser.cpp"

@@ -1,0 +1,7 @@
+#include "storage/Storage.cpp"
+#include "storage/StorageEvent.cpp"
+#include "storage/StorageEventDispatcher.cpp"
+#include "storage/StorageMap.cpp"
+#include "storage/StorageNamespaceProvider.cpp"
+#include "storage/StorageQuotaManager.cpp"
+#include "storage/StorageUtilities.cpp"

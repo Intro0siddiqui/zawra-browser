@@ -1,0 +1,8 @@
+#include "WebProcess/WebCoreSupport/WebPopupMenu.cpp"
+#include "WebProcess/WebCoreSupport/WebProgressTrackerClient.cpp"
+#include "WebProcess/WebCoreSupport/WebRemoteFrameClient.cpp"
+#include "WebProcess/WebCoreSupport/WebResourceLoadObserver.cpp"
+#include "WebProcess/WebCoreSupport/WebScreenOrientationManager.cpp"
+#include "WebProcess/WebCoreSupport/WebSearchPopupMenu.cpp"
+#include "WebProcess/WebCoreSupport/WebSpeechRecognitionConnection.cpp"
+#include "WebProcess/WebCoreSupport/WebSpeechSynthesisClient.cpp"

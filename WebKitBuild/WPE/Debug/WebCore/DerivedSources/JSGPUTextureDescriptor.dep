@@ -1,0 +1,2 @@
+GPUTextureDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

@@ -1,0 +1,8 @@
+#include "platform/encryptedmedia/CDMLogging.cpp"
+#include "platform/encryptedmedia/CDMPrivate.cpp"
+#include "platform/encryptedmedia/CDMProxy.cpp"
+#include "platform/encryptedmedia/CDMUtilities.cpp"
+#include "platform/encryptedmedia/clearkey/CDMClearKey.cpp"
+#include "platform/gamepad/EmptyGamepadProvider.cpp"
+#include "platform/gamepad/GamepadConstants.cpp"
+#include "platform/gamepad/GamepadProvider.cpp"

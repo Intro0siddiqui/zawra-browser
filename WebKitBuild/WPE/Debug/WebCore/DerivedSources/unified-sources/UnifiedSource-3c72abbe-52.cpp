@@ -1,0 +1,8 @@
+#include "platform/graphics/transforms/TranslateTransformOperation.cpp"
+#include "platform/graphics/wpe/SystemFontDatabaseWPE.cpp"
+#include "platform/libwpe/PasteboardLibWPE.cpp"
+#include "platform/libwpe/PlatformKeyboardEventLibWPE.cpp"
+#include "platform/libwpe/PlatformPasteboardLibWPE.cpp"
+#include "platform/mediacapabilities/MediaCapabilitiesLogging.cpp"
+#include "platform/mediacapabilities/MediaEngineConfigurationFactory.cpp"
+#include "platform/mediarecorder/MediaRecorderPrivate.cpp"

@@ -1,0 +1,8 @@
+#include "JSSVGFECompositeElement.cpp"
+#include "JSSVGFEConvolveMatrixElement.cpp"
+#include "JSSVGFEDiffuseLightingElement.cpp"
+#include "JSSVGFEDisplacementMapElement.cpp"
+#include "JSSVGFEDistantLightElement.cpp"
+#include "JSSVGFEDropShadowElement.cpp"
+#include "JSSVGFEFloodElement.cpp"
+#include "JSSVGFEFuncAElement.cpp"

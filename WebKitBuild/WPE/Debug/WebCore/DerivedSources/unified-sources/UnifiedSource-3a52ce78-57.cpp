@@ -1,0 +1,8 @@
+#include "JSGPUExtent3DDict.cpp"
+#include "JSGPUExternalTexture.cpp"
+#include "JSGPUExternalTextureBindingLayout.cpp"
+#include "JSGPUExternalTextureDescriptor.cpp"
+#include "JSGPUFeatureName.cpp"
+#include "JSGPUFilterMode.cpp"
+#include "JSGPUFragmentState.cpp"
+#include "JSGPUFrontFace.cpp"

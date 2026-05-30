@@ -1,0 +1,8 @@
+#include "html/canvas/EXTFragDepth.cpp"
+#include "html/canvas/EXTPolygonOffsetClamp.cpp"
+#include "html/canvas/EXTRenderSnorm.cpp"
+#include "html/canvas/EXTShaderTextureLOD.cpp"
+#include "html/canvas/EXTTextureCompressionBPTC.cpp"
+#include "html/canvas/EXTTextureCompressionRGTC.cpp"
+#include "html/canvas/EXTTextureFilterAnisotropic.cpp"
+#include "html/canvas/EXTTextureMirrorClampToEdge.cpp"

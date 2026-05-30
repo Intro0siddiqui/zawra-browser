@@ -1,0 +1,8 @@
+#include "platform/audio/DynamicsCompressor.cpp"
+#include "platform/audio/DynamicsCompressorKernel.cpp"
+#include "platform/audio/EqualPowerPanner.cpp"
+#include "platform/audio/FFTConvolver.cpp"
+#include "platform/audio/FFTFrame.cpp"
+#include "platform/audio/HRTFDatabase.cpp"
+#include "platform/audio/HRTFDatabaseLoader.cpp"
+#include "platform/audio/HRTFElevation.cpp"

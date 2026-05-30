@@ -1,0 +1,8 @@
+#include "Modules/mediastream/UserMediaController.cpp"
+#include "Modules/mediastream/UserMediaRequest.cpp"
+#include "Modules/model-element/HTMLModelElement.cpp"
+#include "Modules/model-element/ModelPlayer.cpp"
+#include "Modules/model-element/ModelPlayerClient.cpp"
+#include "Modules/model-element/ModelPlayerProvider.cpp"
+#include "Modules/model-element/dummy/DummyModelPlayer.cpp"
+#include "Modules/model-element/dummy/DummyModelPlayerProvider.cpp"

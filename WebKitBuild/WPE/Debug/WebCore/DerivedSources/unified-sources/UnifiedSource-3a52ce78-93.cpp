@@ -1,0 +1,8 @@
+#include "JSMediaSessionActionHandler.cpp"
+#include "JSMediaSessionCoordinator.cpp"
+#include "JSMediaSessionCoordinatorState.cpp"
+#include "JSMediaSessionPlaybackState.cpp"
+#include "JSMediaSessionReadyState.cpp"
+#include "JSMediaSource.cpp"
+#include "JSMediaStream.cpp"
+#include "JSMediaStreamAudioDestinationNode.cpp"

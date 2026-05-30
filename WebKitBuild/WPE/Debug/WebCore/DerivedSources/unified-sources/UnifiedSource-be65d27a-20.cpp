@@ -1,0 +1,8 @@
+#include "dom/StyledElement.cpp"
+#include "dom/TagCollection.cpp"
+#include "dom/TemplateContentDocumentFragment.cpp"
+#include "dom/Text.cpp"
+#include "dom/TextDecoder.cpp"
+#include "dom/TextDecoderStreamDecoder.cpp"
+#include "dom/TextEncoder.cpp"
+#include "dom/TextEncoderStreamEncoder.cpp"

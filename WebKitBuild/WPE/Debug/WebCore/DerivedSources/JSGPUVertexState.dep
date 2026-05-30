@@ -1,0 +1,2 @@
+GPUVertexState.h : GPUProgrammableStage.idl
+GPUProgrammableStage.idl :

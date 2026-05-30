@@ -1,0 +1,8 @@
+#include "JSSVGPatternElement.cpp"
+#include "JSSVGPoint.cpp"
+#include "JSSVGPointList.cpp"
+#include "JSSVGPolygonElement.cpp"
+#include "JSSVGPolylineElement.cpp"
+#include "JSSVGPreserveAspectRatio.cpp"
+#include "JSSVGRadialGradientElement.cpp"
+#include "JSSVGRect.cpp"

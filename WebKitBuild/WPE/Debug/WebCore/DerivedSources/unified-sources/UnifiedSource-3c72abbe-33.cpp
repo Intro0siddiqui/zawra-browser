@@ -1,0 +1,8 @@
+#include "platform/graphics/MediaSourcePrivate.cpp"
+#include "platform/graphics/Model.cpp"
+#include "platform/graphics/NamedImageGeneratedImage.cpp"
+#include "platform/graphics/NativeImage.cpp"
+#include "platform/graphics/Path.cpp"
+#include "platform/graphics/PathImpl.cpp"
+#include "platform/graphics/PathSegment.cpp"
+#include "platform/graphics/PathSegmentData.cpp"

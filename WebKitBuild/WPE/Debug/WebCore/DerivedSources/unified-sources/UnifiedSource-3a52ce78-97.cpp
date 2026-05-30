@@ -1,0 +1,8 @@
+#include "JSNode.cpp"
+#include "JSNodeFilter.cpp"
+#include "JSNodeIterator.cpp"
+#include "JSNodeList.cpp"
+#include "JSNonDocumentTypeChildNode.cpp"
+#include "JSNonElementParentNode.cpp"
+#include "JSNotification.cpp"
+#include "JSNotificationDirection.cpp"

@@ -1,0 +1,8 @@
+#include "bytecode/InstructionStream.cpp"
+#include "bytecode/IntrinsicGetterAccessCase.cpp"
+#include "bytecode/JumpTable.cpp"
+#include "bytecode/LLIntPrototypeLoadAdaptiveStructureWatchpoint.cpp"
+#include "bytecode/LazyOperandValueProfile.cpp"
+#include "bytecode/LinkTimeConstant.cpp"
+#include "bytecode/MetadataTable.cpp"
+#include "bytecode/MethodOfGettingAValueProfile.cpp"

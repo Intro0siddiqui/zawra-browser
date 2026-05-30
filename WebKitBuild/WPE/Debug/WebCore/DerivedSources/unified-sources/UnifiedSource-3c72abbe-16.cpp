@@ -1,0 +1,8 @@
+#include "platform/audio/HRTFKernel.cpp"
+#include "platform/audio/HRTFPanner.cpp"
+#include "platform/audio/IIRFilter.cpp"
+#include "platform/audio/MultiChannelResampler.cpp"
+#include "platform/audio/Panner.cpp"
+#include "platform/audio/PlatformMediaSession.cpp"
+#include "platform/audio/PlatformMediaSessionManager.cpp"
+#include "platform/audio/PushPullFIFO.cpp"

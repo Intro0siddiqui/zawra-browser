@@ -1,0 +1,8 @@
+#include "JSRTCPeerConnectionIceErrorEvent.cpp"
+#include "JSRTCPeerConnectionIceEvent.cpp"
+#include "JSRTCPeerConnectionState.cpp"
+#include "JSRTCPriorityType.cpp"
+#include "JSRTCRtcpParameters.cpp"
+#include "JSRTCRtpCapabilities.cpp"
+#include "JSRTCRtpCodecCapability.cpp"
+#include "JSRTCRtpCodecParameters.cpp"

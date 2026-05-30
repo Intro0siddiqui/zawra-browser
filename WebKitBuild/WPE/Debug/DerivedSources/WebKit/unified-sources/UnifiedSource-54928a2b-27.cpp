@@ -1,0 +1,8 @@
+#include "WebProcess/WebPage/WebCookieJar.cpp"
+#include "WebProcess/WebPage/WebDocumentLoader.cpp"
+#include "WebProcess/WebPage/WebFoundTextRangeController.cpp"
+#include "WebProcess/WebPage/WebFrame.cpp"
+#include "WebProcess/WebPage/WebOpenPanelResultListener.cpp"
+#include "WebProcess/WebPage/WebPageGroupProxy.cpp"
+#include "WebProcess/WebPage/WebPageOverlay.cpp"
+#include "WebProcess/WebPage/WebURLSchemeHandlerProxy.cpp"

@@ -1,0 +1,8 @@
+#include "JSGPUTextureAspect.cpp"
+#include "JSGPUTextureBindingLayout.cpp"
+#include "JSGPUTextureDescriptor.cpp"
+#include "JSGPUTextureDimension.cpp"
+#include "JSGPUTextureFormat.cpp"
+#include "JSGPUTextureSampleType.cpp"
+#include "JSGPUTextureUsage.cpp"
+#include "JSGPUTextureView.cpp"

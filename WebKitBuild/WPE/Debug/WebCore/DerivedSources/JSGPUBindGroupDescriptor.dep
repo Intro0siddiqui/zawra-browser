@@ -1,0 +1,2 @@
+GPUBindGroupDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

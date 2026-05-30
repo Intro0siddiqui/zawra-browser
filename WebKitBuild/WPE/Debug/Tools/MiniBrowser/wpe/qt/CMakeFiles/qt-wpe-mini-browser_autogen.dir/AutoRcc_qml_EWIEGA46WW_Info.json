@@ -1,0 +1,25 @@
+{
+	"BUILD_DIR" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/MiniBrowser/wpe/qt/qt-wpe-mini-browser_autogen",
+	"CMAKE_BINARY_DIR" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug",
+	"CMAKE_CURRENT_BINARY_DIR" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/MiniBrowser/wpe/qt",
+	"CMAKE_CURRENT_SOURCE_DIR" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Tools/MiniBrowser/wpe/qt",
+	"CMAKE_SOURCE_DIR" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/MiniBrowser/wpe/qt/qt-wpe-mini-browser_autogen/include",
+	"INPUTS" : 
+	[
+		"/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Tools/MiniBrowser/wpe/qt/main.qml"
+	],
+	"LOCK_FILE" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/MiniBrowser/wpe/qt/CMakeFiles/qt-wpe-mini-browser_autogen.dir/AutoRcc_qml_EWIEGA46WW_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "-name", "qml" ],
+	"OUTPUT_CHECKSUM" : "EWIEGA46WW",
+	"OUTPUT_NAME" : "qrc_qml.cpp",
+	"RCC_EXECUTABLE" : "/usr/bin/rcc",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/MiniBrowser/wpe/qt/CMakeFiles/qt-wpe-mini-browser_autogen.dir/AutoRcc_qml_EWIEGA46WW_Used.txt",
+	"SOURCE" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Tools/MiniBrowser/wpe/qt/qml.qrc",
+	"USE_BETTER_GRAPH" : false,
+	"VERBOSITY" : 0
+}

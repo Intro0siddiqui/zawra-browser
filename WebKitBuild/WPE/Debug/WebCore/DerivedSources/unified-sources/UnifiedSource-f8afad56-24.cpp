@@ -1,0 +1,8 @@
+#include "Modules/mediarecorder/MediaRecorderErrorEvent.cpp"
+#include "Modules/mediarecorder/MediaRecorderProvider.cpp"
+#include "Modules/mediasession/MediaMetadata.cpp"
+#include "Modules/mediasession/MediaSession.cpp"
+#include "Modules/mediasession/MediaSessionCoordinator.cpp"
+#include "Modules/mediasession/MediaSessionCoordinatorPrivate.cpp"
+#include "Modules/mediasession/NavigatorMediaSession.cpp"
+#include "Modules/mediasource/BufferedChangeEvent.cpp"

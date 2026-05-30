@@ -1,0 +1,2 @@
+GPUComputePassDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

@@ -1,0 +1,8 @@
+#include "platform/wpe/PlatformScreenWPE.cpp"
+#include "platform/xdg/MIMETypeRegistryXdg.cpp"
+#include "platform/xr/openxr/OpenXRExtensions.cpp"
+#include "platform/xr/openxr/OpenXRInput.cpp"
+#include "platform/xr/openxr/OpenXRInputSource.cpp"
+#include "platform/xr/openxr/OpenXRInstance.cpp"
+#include "platform/xr/openxr/OpenXRLayer.cpp"
+#include "platform/xr/openxr/OpenXRSwapchain.cpp"

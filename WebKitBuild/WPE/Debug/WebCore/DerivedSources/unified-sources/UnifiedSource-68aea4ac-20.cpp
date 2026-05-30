@@ -1,0 +1,8 @@
+#include "bindings/js/ScheduledAction.cpp"
+#include "bindings/js/ScriptCachedFrameData.cpp"
+#include "bindings/js/ScriptController.cpp"
+#include "bindings/js/ScriptModuleLoader.cpp"
+#include "bindings/js/ScriptWrappable.cpp"
+#include "bindings/js/SerializedScriptValue.cpp"
+#include "bindings/js/StructuredClone.cpp"
+#include "bindings/js/WebCoreJITOperations.cpp"

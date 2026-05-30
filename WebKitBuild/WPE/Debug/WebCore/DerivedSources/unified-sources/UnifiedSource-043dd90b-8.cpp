@@ -1,0 +1,8 @@
+#include "rendering/RenderDeprecatedFlexibleBox.cpp"
+#include "rendering/RenderDetailsMarker.cpp"
+#include "rendering/RenderElement.cpp"
+#include "rendering/RenderEmbeddedObject.cpp"
+#include "rendering/RenderFileUploadControl.cpp"
+#include "rendering/RenderFlexibleBox.cpp"
+#include "rendering/RenderFragmentContainer.cpp"
+#include "rendering/RenderFragmentContainerSet.cpp"

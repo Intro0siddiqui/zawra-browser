@@ -1,0 +1,13 @@
+# Target labels
+ cog
+# Source files and their labels
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/CMakeFiles/cog
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/CMakeFiles/cog.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/CMakeFiles/cog-complete.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-build.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-configure.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-download.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-install.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-mkdir.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-patch.rule
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-update.rule

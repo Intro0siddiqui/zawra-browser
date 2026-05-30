@@ -1,0 +1,8 @@
+#include "rendering/LayoutDisallowedScope.cpp"
+#include "rendering/LayoutRepainter.cpp"
+#include "rendering/LegacyEllipsisBox.cpp"
+#include "rendering/LegacyInlineBox.cpp"
+#include "rendering/LegacyInlineElementBox.cpp"
+#include "rendering/LegacyInlineFlowBox.cpp"
+#include "rendering/LegacyInlineIterator.cpp"
+#include "rendering/LegacyInlineTextBox.cpp"

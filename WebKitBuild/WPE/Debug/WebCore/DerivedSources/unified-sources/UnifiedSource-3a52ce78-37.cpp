@@ -1,0 +1,8 @@
+#include "JSDatabase.cpp"
+#include "JSDatabaseCallback.cpp"
+#include "JSDecompressionStream.cpp"
+#include "JSDecompressionStreamDecoder.cpp"
+#include "JSDedicatedWorkerGlobalScope.cpp"
+#include "JSDelayNode.cpp"
+#include "JSDelayOptions.cpp"
+#include "JSDeprecatedCSSOMCounter.cpp"

@@ -1,0 +1,8 @@
+#include "Modules/audiosession/NavigatorAudioSession.cpp"
+#include "Modules/beacon/NavigatorBeacon.cpp"
+#include "Modules/cache/CacheStorageConnection.cpp"
+#include "Modules/cache/DOMCache.cpp"
+#include "Modules/cache/DOMCacheEngine.cpp"
+#include "Modules/cache/DOMCacheStorage.cpp"
+#include "Modules/cache/WindowOrWorkerGlobalScopeCaches.cpp"
+#include "Modules/cache/WorkerCacheStorageConnection.cpp"

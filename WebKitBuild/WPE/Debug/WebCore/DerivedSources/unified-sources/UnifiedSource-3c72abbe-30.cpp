@@ -1,0 +1,8 @@
+#include "platform/graphics/GraphicsLayerTransform.cpp"
+#include "platform/graphics/GraphicsStyle.cpp"
+#include "platform/graphics/GraphicsTypes.cpp"
+#include "platform/graphics/HEVCUtilities.cpp"
+#include "platform/graphics/Icon.cpp"
+#include "platform/graphics/Image.cpp"
+#include "platform/graphics/ImageBuffer.cpp"
+#include "platform/graphics/ImageBufferAllocator.cpp"

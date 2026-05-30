@@ -1,0 +1,8 @@
+#include "html/canvas/EXTClipControl.cpp"
+#include "html/canvas/EXTColorBufferFloat.cpp"
+#include "html/canvas/EXTColorBufferHalfFloat.cpp"
+#include "html/canvas/EXTConservativeDepth.cpp"
+#include "html/canvas/EXTDepthClamp.cpp"
+#include "html/canvas/EXTDisjointTimerQuery.cpp"
+#include "html/canvas/EXTDisjointTimerQueryWebGL2.cpp"
+#include "html/canvas/EXTFloatBlend.cpp"

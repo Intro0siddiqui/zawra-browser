@@ -1,0 +1,8 @@
+#include "html/canvas/OESElementIndexUint.cpp"
+#include "html/canvas/OESFBORenderMipmap.cpp"
+#include "html/canvas/OESSampleVariables.cpp"
+#include "html/canvas/OESShaderMultisampleInterpolation.cpp"
+#include "html/canvas/OESStandardDerivatives.cpp"
+#include "html/canvas/OESTextureFloat.cpp"
+#include "html/canvas/OESTextureFloatLinear.cpp"
+#include "html/canvas/OESTextureHalfFloat.cpp"

@@ -1,0 +1,8 @@
+#include "JSPopStateEvent.cpp"
+#include "JSPositionCallback.cpp"
+#include "JSPositionErrorCallback.cpp"
+#include "JSPositionOptions.cpp"
+#include "JSPredefinedColorSpace.cpp"
+#include "JSProcessingInstruction.cpp"
+#include "JSProgressEvent.cpp"
+#include "JSPromiseRejectionEvent.cpp"

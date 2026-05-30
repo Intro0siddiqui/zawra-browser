@@ -1,0 +1,8 @@
+#include "layout/formattingContexts/inline/invalidation/InlineInvalidation.cpp"
+#include "layout/formattingContexts/inline/text/TextUtil.cpp"
+#include "layout/formattingContexts/table/TableFormattingContext.cpp"
+#include "layout/formattingContexts/table/TableFormattingGeometry.cpp"
+#include "layout/formattingContexts/table/TableFormattingQuirks.cpp"
+#include "layout/formattingContexts/table/TableFormattingState.cpp"
+#include "layout/formattingContexts/table/TableGrid.cpp"
+#include "layout/formattingContexts/table/TableLayout.cpp"

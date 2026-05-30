@@ -1,0 +1,8 @@
+#include "css/parser/CSSParserFastPaths.cpp"
+#include "css/parser/CSSParserIdioms.cpp"
+#include "css/parser/CSSParserImpl.cpp"
+#include "css/parser/CSSParserObserverWrapper.cpp"
+#include "css/parser/CSSParserSelector.cpp"
+#include "css/parser/CSSParserToken.cpp"
+#include "css/parser/CSSParserTokenRange.cpp"
+#include "css/parser/CSSPropertyParser.cpp"

@@ -1,0 +1,8 @@
+#include "rendering/svg/LegacyRenderSVGImage.cpp"
+#include "rendering/svg/LegacyRenderSVGModelObject.cpp"
+#include "rendering/svg/LegacyRenderSVGPath.cpp"
+#include "rendering/svg/LegacyRenderSVGRect.cpp"
+#include "rendering/svg/LegacyRenderSVGRoot.cpp"
+#include "rendering/svg/LegacyRenderSVGShape.cpp"
+#include "rendering/svg/LegacyRenderSVGTransformableContainer.cpp"
+#include "rendering/svg/LegacyRenderSVGViewportContainer.cpp"

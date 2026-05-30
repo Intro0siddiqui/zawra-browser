@@ -1,0 +1,8 @@
+#include "runtime/JSGlobalProxy.cpp"
+#include "runtime/JSImmutableButterfly.cpp"
+#include "runtime/JSInternalPromise.cpp"
+#include "runtime/JSInternalPromiseConstructor.cpp"
+#include "runtime/JSInternalPromisePrototype.cpp"
+#include "runtime/JSLexicalEnvironment.cpp"
+#include "runtime/JSLock.cpp"
+#include "runtime/JSMap.cpp"

@@ -1,0 +1,2 @@
+GPUQuerySetDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

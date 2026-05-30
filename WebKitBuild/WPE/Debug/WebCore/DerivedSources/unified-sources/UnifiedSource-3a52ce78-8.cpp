@@ -1,0 +1,8 @@
+#include "JSAudioWorkletProcessor.cpp"
+#include "JSAudioWorkletProcessorConstructor.cpp"
+#include "JSAuthenticationExtensionsClientInputs.cpp"
+#include "JSAuthenticationExtensionsClientOutputs.cpp"
+#include "JSAuthenticatorAssertionResponse.cpp"
+#include "JSAuthenticatorAttachment.cpp"
+#include "JSAuthenticatorAttestationResponse.cpp"
+#include "JSAuthenticatorResponse.cpp"

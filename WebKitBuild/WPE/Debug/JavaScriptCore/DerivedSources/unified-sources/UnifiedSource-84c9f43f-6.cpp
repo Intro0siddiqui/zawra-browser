@@ -1,0 +1,8 @@
+#include "inspector/agents/JSGlobalObjectRuntimeAgent.cpp"
+#include "inspector/remote/RemoteAutomationTarget.cpp"
+#include "inspector/remote/RemoteConnectionToTarget.cpp"
+#include "inspector/remote/RemoteControllableTarget.cpp"
+#include "inspector/remote/RemoteInspectionTarget.cpp"
+#include "inspector/remote/RemoteInspector.cpp"
+#include "inspector/remote/glib/RemoteInspectorGlib.cpp"
+#include "inspector/remote/glib/RemoteInspectorServer.cpp"

@@ -1,0 +1,4 @@
+JSOscillatorNode.h : AudioScheduledSourceNode.idl AudioNode.idl EventTarget.idl
+AudioScheduledSourceNode.idl :
+AudioNode.idl :
+EventTarget.idl :

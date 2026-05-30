@@ -1,0 +1,8 @@
+#include "svg/SVGTransformable.cpp"
+#include "svg/SVGURIReference.cpp"
+#include "svg/SVGUnknownElement.cpp"
+#include "svg/SVGUseElement.cpp"
+#include "svg/SVGVKernElement.cpp"
+#include "svg/SVGViewElement.cpp"
+#include "svg/SVGViewSpec.cpp"
+#include "svg/SVGZoomAndPan.cpp"

@@ -1,0 +1,8 @@
+#include "UIProcess/API/C/glib/WKContextConfigurationGlib.cpp"
+#include "UIProcess/API/C/glib/WKTextCheckerGLib.cpp"
+#include "UIProcess/API/C/wpe/WKPagePrivateWPE.cpp"
+#include "UIProcess/API/C/wpe/WKView.cpp"
+#include "UIProcess/API/soup/HTTPCookieStoreSoup.cpp"
+#include "UIProcess/Authentication/AuthenticationChallengeProxy.cpp"
+#include "UIProcess/Authentication/AuthenticationDecisionListener.cpp"
+#include "UIProcess/Authentication/WebCredential.cpp"

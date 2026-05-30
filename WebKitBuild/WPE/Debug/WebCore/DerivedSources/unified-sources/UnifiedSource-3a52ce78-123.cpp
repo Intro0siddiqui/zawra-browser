@@ -1,0 +1,8 @@
+#include "JSResizeObserverCallback.cpp"
+#include "JSResizeObserverEntry.cpp"
+#include "JSResizeObserverOptions.cpp"
+#include "JSResizeObserverSize.cpp"
+#include "JSRsaHashedImportParams.cpp"
+#include "JSRsaHashedKeyGenParams.cpp"
+#include "JSRsaKeyGenParams.cpp"
+#include "JSRsaOaepParams.cpp"

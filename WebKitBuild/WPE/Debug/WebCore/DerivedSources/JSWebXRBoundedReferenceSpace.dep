@@ -1,0 +1,4 @@
+JSWebXRBoundedReferenceSpace.h : WebXRReferenceSpace.idl WebXRSpace.idl EventTarget.idl
+WebXRReferenceSpace.idl :
+WebXRSpace.idl :
+EventTarget.idl :

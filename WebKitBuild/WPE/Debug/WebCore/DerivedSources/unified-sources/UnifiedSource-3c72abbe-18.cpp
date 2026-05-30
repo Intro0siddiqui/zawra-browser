@@ -1,0 +1,8 @@
+#include "platform/audio/VectorMath.cpp"
+#include "platform/audio/ZeroPole.cpp"
+#include "platform/audio/glib/AudioBusGLib.cpp"
+#include "platform/audio/glib/MediaSessionGLib.cpp"
+#include "platform/audio/glib/MediaSessionManagerGLib.cpp"
+#include "platform/calc/CalcExpressionBlendLength.cpp"
+#include "platform/calc/CalcExpressionInversion.cpp"
+#include "platform/calc/CalcExpressionLength.cpp"

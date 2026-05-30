@@ -1,0 +1,2 @@
+AnalyserOptions.h : AudioNodeOptions.idl
+AudioNodeOptions.idl :

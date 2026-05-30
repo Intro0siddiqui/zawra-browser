@@ -1,0 +1,8 @@
+#include "JSImageBitmapRenderingContextSettings.cpp"
+#include "JSImageData.cpp"
+#include "JSImageDataSettings.cpp"
+#include "JSImageResource.cpp"
+#include "JSImageSmoothingQuality.cpp"
+#include "JSInputDeviceInfo.cpp"
+#include "JSInputEvent.cpp"
+#include "JSInspectorAuditAccessibilityObject.cpp"

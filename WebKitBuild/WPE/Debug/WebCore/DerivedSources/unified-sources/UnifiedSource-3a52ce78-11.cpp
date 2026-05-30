@@ -1,0 +1,8 @@
+#include "JSBarcodeFormat.cpp"
+#include "JSBaseAudioContext.cpp"
+#include "JSBasicCredential.cpp"
+#include "JSBeforeUnloadEvent.cpp"
+#include "JSBiquadFilterNode.cpp"
+#include "JSBiquadFilterOptions.cpp"
+#include "JSBiquadFilterType.cpp"
+#include "JSBitrateMode.cpp"

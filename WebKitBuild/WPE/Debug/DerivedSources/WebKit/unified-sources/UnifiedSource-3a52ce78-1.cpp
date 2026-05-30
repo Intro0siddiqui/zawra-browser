@@ -1,0 +1,8 @@
+#include "IPCConnectionTesterMessageReceiver.cpp"
+#include "IPCStreamTesterMessageReceiver.cpp"
+#include "IPCStreamTesterProxyMessageReceiver.cpp"
+#include "IPCTesterMessageReceiver.cpp"
+#include "IPCTesterReceiverMessageReceiver.cpp"
+#include "NetworkBroadcastChannelRegistryMessageReceiver.cpp"
+#include "PlatformXRSystemMessageReceiver.cpp"
+#include "PlatformXRSystemProxyMessageReceiver.cpp"

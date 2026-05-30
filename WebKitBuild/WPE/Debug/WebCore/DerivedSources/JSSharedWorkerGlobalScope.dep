@@ -1,0 +1,3 @@
+JSSharedWorkerGlobalScope.h : WorkerGlobalScope.idl EventTarget.idl
+WorkerGlobalScope.idl :
+EventTarget.idl :

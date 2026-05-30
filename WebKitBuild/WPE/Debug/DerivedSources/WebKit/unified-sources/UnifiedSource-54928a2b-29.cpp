@@ -1,0 +1,7 @@
+#include "WebProcess/WebStorage/StorageAreaImpl.cpp"
+#include "WebProcess/WebStorage/StorageAreaMap.cpp"
+#include "WebProcess/WebStorage/StorageNamespaceImpl.cpp"
+#include "WebProcess/WebStorage/WebStorageNamespaceProvider.cpp"
+#include "WebProcess/XR/PlatformXRSystemProxy.cpp"
+#include "WebProcess/glib/WebProcessGLib.cpp"
+#include "WebProcess/wpe/WebProcessMainWPE.cpp"

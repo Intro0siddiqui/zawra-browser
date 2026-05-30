@@ -1,0 +1,8 @@
+#include "platform/graphics/controls/ApplePayButtonPart.cpp"
+#include "platform/graphics/controls/ControlFactory.cpp"
+#include "platform/graphics/controls/ControlPart.cpp"
+#include "platform/graphics/controls/ControlStyle.cpp"
+#include "platform/graphics/controls/MeterPart.cpp"
+#include "platform/graphics/controls/ProgressBarPart.cpp"
+#include "platform/graphics/controls/SliderTrackPart.cpp"
+#include "platform/graphics/cpu/arm/filters/FEBlendNeonApplier.cpp"

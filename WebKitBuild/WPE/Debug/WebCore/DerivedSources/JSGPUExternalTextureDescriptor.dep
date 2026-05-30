@@ -1,0 +1,2 @@
+GPUExternalTextureDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

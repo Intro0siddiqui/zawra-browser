@@ -1,0 +1,8 @@
+#include "html/HTMLMetaElement.cpp"
+#include "html/HTMLMeterElement.cpp"
+#include "html/HTMLModElement.cpp"
+#include "html/HTMLNameCollection.cpp"
+#include "html/HTMLOListElement.cpp"
+#include "html/HTMLObjectElement.cpp"
+#include "html/HTMLOptGroupElement.cpp"
+#include "html/HTMLOptionElement.cpp"

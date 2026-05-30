@@ -1,0 +1,8 @@
+#include "html/canvas/WebGLDrawInstancedBaseVertexBaseInstance.cpp"
+#include "html/canvas/WebGLExtension.cpp"
+#include "html/canvas/WebGLFramebuffer.cpp"
+#include "html/canvas/WebGLLoseContext.cpp"
+#include "html/canvas/WebGLMultiDraw.cpp"
+#include "html/canvas/WebGLMultiDrawInstancedBaseVertexBaseInstance.cpp"
+#include "html/canvas/WebGLObject.cpp"
+#include "html/canvas/WebGLPolygonMode.cpp"

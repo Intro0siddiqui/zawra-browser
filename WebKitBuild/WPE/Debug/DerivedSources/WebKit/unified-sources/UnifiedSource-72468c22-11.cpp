@@ -1,0 +1,8 @@
+#include "NetworkProcess/soup/NetworkDataTaskSoup.cpp"
+#include "NetworkProcess/soup/NetworkProcessMainSoup.cpp"
+#include "NetworkProcess/soup/NetworkProcessSoup.cpp"
+#include "NetworkProcess/soup/NetworkSessionSoup.cpp"
+#include "NetworkProcess/soup/WebKitDirectoryInputStream.cpp"
+#include "NetworkProcess/soup/WebSocketTaskSoup.cpp"
+#include "NetworkProcess/storage/BackgroundFetchStoreImpl.cpp"
+#include "NetworkProcess/storage/BackgroundFetchStoreManager.cpp"

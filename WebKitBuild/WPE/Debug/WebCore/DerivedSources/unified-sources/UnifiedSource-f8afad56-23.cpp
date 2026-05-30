@@ -1,0 +1,8 @@
+#include "Modules/indexeddb/shared/IDBTransactionInfo.cpp"
+#include "Modules/indexeddb/shared/IndexKey.cpp"
+#include "Modules/mediacapabilities/MediaCapabilities.cpp"
+#include "Modules/mediacapabilities/NavigatorMediaCapabilities.cpp"
+#include "Modules/mediacapabilities/WorkerNavigatorMediaCapabilities.cpp"
+#include "Modules/mediacontrols/MediaControlsHost.cpp"
+#include "Modules/mediarecorder/BlobEvent.cpp"
+#include "Modules/mediarecorder/MediaRecorder.cpp"

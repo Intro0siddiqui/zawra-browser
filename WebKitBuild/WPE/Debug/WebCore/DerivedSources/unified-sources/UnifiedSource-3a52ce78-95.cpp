@@ -1,0 +1,8 @@
+#include "JSMessageChannel.cpp"
+#include "JSMessageEvent.cpp"
+#include "JSMessagePort.cpp"
+#include "JSMouseEvent.cpp"
+#include "JSMouseEventInit.cpp"
+#include "JSMultiCacheQueryOptions.cpp"
+#include "JSMutationCallback.cpp"
+#include "JSMutationEvent.cpp"

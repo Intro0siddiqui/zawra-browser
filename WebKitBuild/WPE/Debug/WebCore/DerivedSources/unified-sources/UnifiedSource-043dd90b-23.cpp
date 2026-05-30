@@ -1,0 +1,8 @@
+#include "rendering/style/OffsetRotation.cpp"
+#include "rendering/style/QuotesData.cpp"
+#include "rendering/style/RenderStyle.cpp"
+#include "rendering/style/RenderStyleConstants.cpp"
+#include "rendering/style/SVGRenderStyle.cpp"
+#include "rendering/style/SVGRenderStyleDefs.cpp"
+#include "rendering/style/ScrollbarColor.cpp"
+#include "rendering/style/ScrollbarGutter.cpp"

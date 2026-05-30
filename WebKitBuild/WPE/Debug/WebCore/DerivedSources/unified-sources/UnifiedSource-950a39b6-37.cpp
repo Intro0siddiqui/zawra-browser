@@ -1,0 +1,8 @@
+#include "html/parser/HTMLTreeBuilder.cpp"
+#include "html/parser/TextDocumentParser.cpp"
+#include "html/shadow/AutoFillButtonElement.cpp"
+#include "html/shadow/DataListButtonElement.cpp"
+#include "html/shadow/DateTimeEditElement.cpp"
+#include "html/shadow/DateTimeFieldElement.cpp"
+#include "html/shadow/DateTimeFieldElements.cpp"
+#include "html/shadow/DateTimeNumericFieldElement.cpp"

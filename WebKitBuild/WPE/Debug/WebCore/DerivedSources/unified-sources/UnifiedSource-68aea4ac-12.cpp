@@ -1,0 +1,8 @@
+#include "bindings/js/JSLocalDOMWindowCustom.cpp"
+#include "bindings/js/JSLocationCustom.cpp"
+#include "bindings/js/JSMediaSessionCustom.cpp"
+#include "bindings/js/JSMediaSourceCustom.cpp"
+#include "bindings/js/JSMediaStreamTrackCustom.cpp"
+#include "bindings/js/JSMessageChannelCustom.cpp"
+#include "bindings/js/JSMessageEventCustom.cpp"
+#include "bindings/js/JSMessagePortCustom.cpp"

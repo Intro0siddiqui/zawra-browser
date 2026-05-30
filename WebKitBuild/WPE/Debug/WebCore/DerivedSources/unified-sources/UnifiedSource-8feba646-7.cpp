@@ -1,0 +1,8 @@
+#include "svg/SVGFilterElement.cpp"
+#include "svg/SVGFilterPrimitiveStandardAttributes.cpp"
+#include "svg/SVGFitToViewBox.cpp"
+#include "svg/SVGFontElement.cpp"
+#include "svg/SVGFontFaceElement.cpp"
+#include "svg/SVGFontFaceFormatElement.cpp"
+#include "svg/SVGFontFaceNameElement.cpp"
+#include "svg/SVGFontFaceSrcElement.cpp"

@@ -1,0 +1,8 @@
+#include "bytecode/CodeOrigin.cpp"
+#include "bytecode/CodeType.cpp"
+#include "bytecode/ComplexGetStatus.cpp"
+#include "bytecode/DFGExitProfile.cpp"
+#include "bytecode/DataFormat.cpp"
+#include "bytecode/DeferredCompilationCallback.cpp"
+#include "bytecode/DeferredSourceDump.cpp"
+#include "bytecode/DeleteByStatus.cpp"

@@ -1,0 +1,8 @@
+#include "bindings/js/JSStaticRangeCustom.cpp"
+#include "bindings/js/JSStyleSheetCustom.cpp"
+#include "bindings/js/JSTextCustom.cpp"
+#include "bindings/js/JSTextTrackCueCustom.cpp"
+#include "bindings/js/JSTrackCustom.cpp"
+#include "bindings/js/JSTreeWalkerCustom.cpp"
+#include "bindings/js/JSUndoItemCustom.cpp"
+#include "bindings/js/JSWebAnimationCustom.cpp"

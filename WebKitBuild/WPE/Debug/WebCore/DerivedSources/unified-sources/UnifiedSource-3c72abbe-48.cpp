@@ -1,0 +1,8 @@
+#include "platform/graphics/filters/software/FEMergeSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/FEMorphologySoftwareApplier.cpp"
+#include "platform/graphics/filters/software/FEOffsetSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/FETileSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/FETurbulenceSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/SourceAlphaSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/SourceGraphicSoftwareApplier.cpp"
+#include "platform/graphics/gbm/GBMBufferSwapchain.cpp"

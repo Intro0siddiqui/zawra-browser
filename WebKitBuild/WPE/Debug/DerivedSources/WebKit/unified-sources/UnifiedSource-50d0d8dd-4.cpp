@@ -1,0 +1,8 @@
+#include "Shared/ScrollingAccelerationCurve.cpp"
+#include "Shared/SessionState.cpp"
+#include "Shared/ShareableBitmap.cpp"
+#include "Shared/ShareableBitmapHandle.cpp"
+#include "Shared/ShareableResource.cpp"
+#include "Shared/SharedStringHashStore.cpp"
+#include "Shared/SharedStringHashTable.cpp"
+#include "Shared/SharedStringHashTableReadOnly.cpp"

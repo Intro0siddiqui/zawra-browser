@@ -1,0 +1,8 @@
+#include "JSGPUBlendState.cpp"
+#include "JSGPUBuffer.cpp"
+#include "JSGPUBufferBinding.cpp"
+#include "JSGPUBufferBindingLayout.cpp"
+#include "JSGPUBufferBindingType.cpp"
+#include "JSGPUBufferDescriptor.cpp"
+#include "JSGPUBufferMapState.cpp"
+#include "JSGPUBufferUsage.cpp"

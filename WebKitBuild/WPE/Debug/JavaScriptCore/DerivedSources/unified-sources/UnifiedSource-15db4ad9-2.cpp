@@ -1,0 +1,8 @@
+#include "wasm/WasmCallingConvention.cpp"
+#include "wasm/WasmCallsiteCollection.cpp"
+#include "wasm/WasmCompilationMode.cpp"
+#include "wasm/WasmContext.cpp"
+#include "wasm/WasmEntryPlan.cpp"
+#include "wasm/WasmFaultSignalHandler.cpp"
+#include "wasm/WasmFormat.cpp"
+#include "wasm/WasmFunctionCodeBlockGenerator.cpp"

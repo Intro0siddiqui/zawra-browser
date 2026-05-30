@@ -1,0 +1,19 @@
+// Automatically generated from /home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/JavaScriptCore/runtime/IntlRelativeTimeFormatConstructor.cpp using /home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/JavaScriptCore/create_hash_table. DO NOT EDIT!
+
+#include "Lookup.h"
+
+namespace JSC {
+
+static const struct CompactHashIndex relativeTimeFormatConstructorTableIndex[2] = {
+    { -1, -1 },
+    { 0, -1 },
+};
+
+static const struct HashTableValue relativeTimeFormatConstructorTableValues[1] = {
+   { "supportedLocalesOf"_s, static_cast<unsigned>(PropertyAttribute::DontEnum|PropertyAttribute::Function), NoIntrinsic, { HashTableValue::NativeFunctionType, intlRelativeTimeFormatConstructorFuncSupportedLocalesOf, 1 } },
+};
+
+static const struct HashTable relativeTimeFormatConstructorTable =
+    { 1, 1, false, nullptr, relativeTimeFormatConstructorTableValues, relativeTimeFormatConstructorTableIndex };
+
+} // namespace JSC

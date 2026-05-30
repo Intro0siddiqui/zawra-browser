@@ -1,0 +1,8 @@
+#include "JSUserVerificationRequirement.cpp"
+#include "JSVTTCue.cpp"
+#include "JSVTTRegion.cpp"
+#include "JSVTTRegionList.cpp"
+#include "JSValidityState.cpp"
+#include "JSValidityStateFlags.cpp"
+#include "JSVideoColorPrimaries.cpp"
+#include "JSVideoColorSpace.cpp"

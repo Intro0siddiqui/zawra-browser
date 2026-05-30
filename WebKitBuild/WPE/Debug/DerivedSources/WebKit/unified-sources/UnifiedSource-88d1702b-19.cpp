@@ -1,0 +1,8 @@
+#include "UIProcess/API/C/WKProtectionSpace.cpp"
+#include "UIProcess/API/C/WKQueryPermissionResultCallback.cpp"
+#include "UIProcess/API/C/WKResourceCacheManager.cpp"
+#include "UIProcess/API/C/WKSessionStateRef.cpp"
+#include "UIProcess/API/C/WKSpeechRecognitionPermissionCallback.cpp"
+#include "UIProcess/API/C/WKTextChecker.cpp"
+#include "UIProcess/API/C/WKUserContentControllerRef.cpp"
+#include "UIProcess/API/C/WKUserContentExtensionStoreRef.cpp"

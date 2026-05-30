@@ -1,0 +1,8 @@
+#include "b3/B3EliminateCommonSubexpressions.cpp"
+#include "b3/B3EliminateDeadCode.cpp"
+#include "b3/B3EnsureLoopPreHeaders.cpp"
+#include "b3/B3EstimateStaticExecutionCounts.cpp"
+#include "b3/B3ExtractValue.cpp"
+#include "b3/B3FenceValue.cpp"
+#include "b3/B3FixSSA.cpp"
+#include "b3/B3FoldPathConstants.cpp"

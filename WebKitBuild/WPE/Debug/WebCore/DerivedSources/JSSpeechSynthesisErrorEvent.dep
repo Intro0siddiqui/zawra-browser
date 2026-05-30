@@ -1,0 +1,3 @@
+JSSpeechSynthesisErrorEvent.h : SpeechSynthesisEvent.idl Event.idl
+SpeechSynthesisEvent.idl :
+Event.idl :

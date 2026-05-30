@@ -1,0 +1,8 @@
+#include "rendering/LegacyLineLayout.cpp"
+#include "rendering/LegacyRootInlineBox.cpp"
+#include "rendering/MarkedText.cpp"
+#include "rendering/OrderIterator.cpp"
+#include "rendering/PathOperation.cpp"
+#include "rendering/PointerEventsHitRules.cpp"
+#include "rendering/ReferencedSVGResources.cpp"
+#include "rendering/RegionContext.cpp"

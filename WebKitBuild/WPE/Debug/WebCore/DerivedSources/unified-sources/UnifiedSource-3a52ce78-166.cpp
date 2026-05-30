@@ -1,0 +1,8 @@
+#include "JSWebXRSession.cpp"
+#include "JSWebXRSpace.cpp"
+#include "JSWebXRSystem.cpp"
+#include "JSWebXRView.cpp"
+#include "JSWebXRViewerPose.cpp"
+#include "JSWebXRViewport.cpp"
+#include "JSWebXRWebGLLayer.cpp"
+#include "JSWheelEvent.cpp"

@@ -1,0 +1,8 @@
+#include "UIProcess/ProvisionalPageProxy.cpp"
+#include "UIProcess/RemotePageDrawingAreaProxy.cpp"
+#include "UIProcess/RemotePageProxy.cpp"
+#include "UIProcess/ResponsivenessTimer.cpp"
+#include "UIProcess/SpeechRecognitionPermissionManager.cpp"
+#include "UIProcess/SpeechRecognitionRemoteRealtimeMediaSource.cpp"
+#include "UIProcess/SpeechRecognitionRemoteRealtimeMediaSourceManager.cpp"
+#include "UIProcess/SpeechRecognitionServer.cpp"

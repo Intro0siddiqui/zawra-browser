@@ -1,0 +1,8 @@
+#include "loader/PolicyContainer.cpp"
+#include "loader/PrivateClickMeasurement.cpp"
+#include "loader/ProgressTracker.cpp"
+#include "loader/ResourceCryptographicDigest.cpp"
+#include "loader/ResourceLoadInfo.cpp"
+#include "loader/ResourceLoadNotifier.cpp"
+#include "loader/ResourceLoadObserver.cpp"
+#include "loader/ResourceLoadStatistics.cpp"

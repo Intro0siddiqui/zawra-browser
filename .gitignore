@@ -1,0 +1,16 @@
+/target
+.antigravitycli/
+webkit_source.tar.xz
+dependencies/WebKit/
+*.log
+scratch/
+
+# Zawra Build Artifacts
+webkit/build/
+target/
+.zig-cache/
+**/target/
+**/.zig-cache/
+*.log
+webkit_source.tar.xz
+

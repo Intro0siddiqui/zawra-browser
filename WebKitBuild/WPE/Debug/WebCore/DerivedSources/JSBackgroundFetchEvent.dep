@@ -1,0 +1,3 @@
+JSBackgroundFetchEvent.h : ExtendableEvent.idl Event.idl
+ExtendableEvent.idl :
+Event.idl :

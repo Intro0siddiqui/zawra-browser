@@ -1,0 +1,8 @@
+#include "JSVideoColorSpaceInit.cpp"
+#include "JSVideoConfiguration.cpp"
+#include "JSVideoFrameMetadata.cpp"
+#include "JSVideoFrameRequestCallback.cpp"
+#include "JSVideoMatrixCoefficients.cpp"
+#include "JSVideoPixelFormat.cpp"
+#include "JSVideoPlaybackQuality.cpp"
+#include "JSVideoTrack.cpp"

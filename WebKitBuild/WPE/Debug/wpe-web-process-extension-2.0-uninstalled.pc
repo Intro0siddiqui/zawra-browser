@@ -1,0 +1,12 @@
+prefix=/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/DerivedSources/ForwardingHeaders
+
+Name: WPE WebKit Web process extensions
+Description: Embeddable Web content engine - Web process extensions
+URL: https://wpewebkit.org
+Version: 2.42.5
+Requires: glib-2.0 libsoup-3.0 wpe-1.0
+Libs: -L${libdir} -lWPEWebKit-2.0
+Cflags: -I${includedir}/wpe-extension

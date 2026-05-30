@@ -1,0 +1,8 @@
+#include "platform/network/soup/ResourceRequestSoup.cpp"
+#include "platform/network/soup/ResourceResponseSoup.cpp"
+#include "platform/network/soup/SoupNetworkSession.cpp"
+#include "platform/network/soup/URLSoup.cpp"
+#include "platform/network/zawra/ZawraStorageBridge.cpp"
+#include "platform/soup/PublicSuffixSoup.cpp"
+#include "platform/sql/SQLiteAuthorizer.cpp"
+#include "platform/sql/SQLiteDatabase.cpp"

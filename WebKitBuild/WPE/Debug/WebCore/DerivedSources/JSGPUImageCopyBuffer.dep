@@ -1,0 +1,2 @@
+GPUImageCopyBuffer.h : GPUImageDataLayout.idl
+GPUImageDataLayout.idl :

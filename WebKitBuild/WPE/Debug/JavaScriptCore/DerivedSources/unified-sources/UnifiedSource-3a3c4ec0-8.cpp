@@ -1,0 +1,7 @@
+#include "jit/SIMDInfo.cpp"
+#include "jit/ScratchRegisterAllocator.cpp"
+#include "jit/SetupVarargsFrame.cpp"
+#include "jit/SlowPathCall.cpp"
+#include "jit/TagRegistersMode.cpp"
+#include "jit/ThunkGenerators.cpp"
+#include "jit/Width.cpp"

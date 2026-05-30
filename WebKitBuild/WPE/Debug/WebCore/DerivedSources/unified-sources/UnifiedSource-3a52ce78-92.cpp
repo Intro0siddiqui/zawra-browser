@@ -1,0 +1,8 @@
+#include "JSMediaPositionState.cpp"
+#include "JSMediaQueryList.cpp"
+#include "JSMediaQueryListEvent.cpp"
+#include "JSMediaRecorder.cpp"
+#include "JSMediaRecorderErrorEvent.cpp"
+#include "JSMediaSession.cpp"
+#include "JSMediaSessionAction.cpp"
+#include "JSMediaSessionActionDetails.cpp"

@@ -1,0 +1,8 @@
+#include "JSFileSystemFileHandle.cpp"
+#include "JSFileSystemHandle.cpp"
+#include "JSFileSystemSyncAccessHandle.cpp"
+#include "JSFillMode.cpp"
+#include "JSFocusEvent.cpp"
+#include "JSFocusOptions.cpp"
+#include "JSFontFace.cpp"
+#include "JSFontFaceSet.cpp"

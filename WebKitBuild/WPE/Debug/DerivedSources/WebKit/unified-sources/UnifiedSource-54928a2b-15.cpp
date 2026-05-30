@@ -1,0 +1,8 @@
+#include "WebProcess/InjectedBundle/glib/InjectedBundleGlib.cpp"
+#include "WebProcess/Inspector/RemoteWebInspectorUI.cpp"
+#include "WebProcess/Inspector/WebInspector.cpp"
+#include "WebProcess/Inspector/WebInspectorClient.cpp"
+#include "WebProcess/Inspector/WebInspectorInterruptDispatcher.cpp"
+#include "WebProcess/Inspector/WebInspectorUI.cpp"
+#include "WebProcess/Inspector/WebInspectorUIExtensionController.cpp"
+#include "WebProcess/Inspector/WebPageInspectorTarget.cpp"

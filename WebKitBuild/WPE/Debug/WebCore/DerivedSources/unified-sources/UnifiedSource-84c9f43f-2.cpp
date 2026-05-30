@@ -1,0 +1,8 @@
+#include "inspector/InspectorCanvasCallTracer.cpp"
+#include "inspector/InspectorController.cpp"
+#include "inspector/InspectorDatabaseResource.cpp"
+#include "inspector/InspectorFrontendAPIDispatcher.cpp"
+#include "inspector/InspectorFrontendClientLocal.cpp"
+#include "inspector/InspectorFrontendHost.cpp"
+#include "inspector/InspectorHistory.cpp"
+#include "inspector/InspectorInstrumentation.cpp"

@@ -1,0 +1,13 @@
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/GCObservation.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/InternalSettings.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/Internals.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/InternalsMapLike.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/InternalsSetLike.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/MallocStatistics.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/MemoryInfo.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/MockCDMFactory.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/MockContentFilterSettings.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/MockPageOverlay.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/ServiceWorkerInternals.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/dependencies/WebKit/Source/WebCore/testing/TypeConversions.idl
+/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/WebCore/DerivedSources/InternalSettingsGenerated.idl

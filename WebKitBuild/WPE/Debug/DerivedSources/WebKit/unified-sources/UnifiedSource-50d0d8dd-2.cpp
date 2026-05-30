@@ -1,0 +1,8 @@
+#include "Shared/EditingRange.cpp"
+#include "Shared/EditorState.cpp"
+#include "Shared/FontInfo.cpp"
+#include "Shared/IPCConnectionTester.cpp"
+#include "Shared/IPCStreamTester.cpp"
+#include "Shared/IPCTester.cpp"
+#include "Shared/IPCTesterReceiver.cpp"
+#include "Shared/InspectorExtensionTypes.cpp"

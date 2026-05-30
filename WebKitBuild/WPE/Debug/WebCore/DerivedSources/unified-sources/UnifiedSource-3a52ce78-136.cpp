@@ -1,0 +1,8 @@
+#include "JSSVGPathSegLinetoHorizontalAbs.cpp"
+#include "JSSVGPathSegLinetoHorizontalRel.cpp"
+#include "JSSVGPathSegLinetoRel.cpp"
+#include "JSSVGPathSegLinetoVerticalAbs.cpp"
+#include "JSSVGPathSegLinetoVerticalRel.cpp"
+#include "JSSVGPathSegList.cpp"
+#include "JSSVGPathSegMovetoAbs.cpp"
+#include "JSSVGPathSegMovetoRel.cpp"

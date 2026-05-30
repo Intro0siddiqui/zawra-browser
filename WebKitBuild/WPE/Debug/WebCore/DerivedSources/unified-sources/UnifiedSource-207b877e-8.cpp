@@ -1,0 +1,8 @@
+#include "layout/integration/inline/LayoutIntegrationInlineContent.cpp"
+#include "layout/integration/inline/LayoutIntegrationInlineContentBuilder.cpp"
+#include "layout/integration/inline/LayoutIntegrationInlineContentPainter.cpp"
+#include "layout/integration/inline/LayoutIntegrationLineLayout.cpp"
+#include "layout/integration/inline/LayoutIntegrationPagination.cpp"
+#include "layout/layouttree/LayoutBox.cpp"
+#include "layout/layouttree/LayoutBoxGeometry.cpp"
+#include "layout/layouttree/LayoutElementBox.cpp"

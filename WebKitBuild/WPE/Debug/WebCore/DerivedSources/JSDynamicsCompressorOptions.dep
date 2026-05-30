@@ -1,0 +1,2 @@
+DynamicsCompressorOptions.h : AudioNodeOptions.idl
+AudioNodeOptions.idl :

@@ -1,0 +1,8 @@
+#include "Modules/webauthn/fido/DeviceResponseConverter.cpp"
+#include "Modules/webauthn/fido/FidoConstants.cpp"
+#include "Modules/webauthn/fido/FidoHidMessage.cpp"
+#include "Modules/webauthn/fido/FidoHidPacket.cpp"
+#include "Modules/webauthn/fido/FidoParsingUtils.cpp"
+#include "Modules/webauthn/fido/Pin.cpp"
+#include "Modules/webauthn/fido/U2fCommandConstructor.cpp"
+#include "Modules/webauthn/fido/U2fResponseConverter.cpp"

@@ -1,0 +1,8 @@
+#include "Shared/CoordinatedGraphics/threadedcompositor/CompositingRunLoop.cpp"
+#include "Shared/CoordinatedGraphics/threadedcompositor/ThreadedCompositor.cpp"
+#include "Shared/CoordinatedGraphics/threadedcompositor/ThreadedDisplayRefreshMonitor.cpp"
+#include "Shared/Databases/IndexedDB/IDBUtilities.cpp"
+#include "Shared/Gamepad/GamepadData.cpp"
+#include "Shared/WebGPU/WebGPUBindGroupDescriptor.cpp"
+#include "Shared/WebGPU/WebGPUBindGroupEntry.cpp"
+#include "Shared/WebGPU/WebGPUBindGroupLayoutDescriptor.cpp"

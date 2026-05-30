@@ -1,0 +1,8 @@
+#include "bindings/js/JSPromiseRejectionEventCustom.cpp"
+#include "bindings/js/JSRTCRtpSFrameTransformCustom.cpp"
+#include "bindings/js/JSRangeCustom.cpp"
+#include "bindings/js/JSReadableStreamSourceCustom.cpp"
+#include "bindings/js/JSRemoteDOMWindowBase.cpp"
+#include "bindings/js/JSRemoteDOMWindowCustom.cpp"
+#include "bindings/js/JSReportBodyCustom.cpp"
+#include "bindings/js/JSResizeObserverCustom.cpp"

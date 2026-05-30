@@ -1,0 +1,29 @@
+[package]
+name = "zawra-browser"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85" # Required for Edition 2024
+description = "Zawra — a next-generation browser powered by WPE, z-net, and BrowserDB"
+license = "MPL-2.0"
+
+[dependencies]
+dashmap = "6.0"
+libc    = "0.2"
+dirs    = "5.0"   # home_dir() for profile resolution
+lean-net   = { path = "dependencies/z-net/rust_net" }
+browserdb  = { path = "dependencies/Browser-db/bindings" }
+
+[lib]
+name = "zawra_browser"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "zawra"
+path = "src/bin/zawra.rs"
+
+[dev-dependencies]
+# No extra deps needed — tests use only the library
+
+[build-dependencies]
+# build.rs uses only std

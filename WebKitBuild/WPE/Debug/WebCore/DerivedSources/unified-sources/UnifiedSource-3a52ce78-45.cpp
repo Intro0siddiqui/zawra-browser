@@ -1,0 +1,8 @@
+#include "JSEventModifierInit.cpp"
+#include "JSEventSource.cpp"
+#include "JSEventTarget.cpp"
+#include "JSExtendableEvent.cpp"
+#include "JSExtendableEventInit.cpp"
+#include "JSExtendableMessageEvent.cpp"
+#include "JSFaceDetector.cpp"
+#include "JSFaceDetectorOptions.cpp"

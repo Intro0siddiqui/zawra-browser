@@ -1,0 +1,8 @@
+#include "dfg/DFGValidate.cpp"
+#include "dfg/DFGValidateUnlinked.cpp"
+#include "dfg/DFGValueRepReductionPhase.cpp"
+#include "dfg/DFGValueSource.cpp"
+#include "dfg/DFGValueStrength.cpp"
+#include "dfg/DFGVarargsForwardingPhase.cpp"
+#include "dfg/DFGVariableAccessData.cpp"
+#include "dfg/DFGVariableAccessDataDump.cpp"

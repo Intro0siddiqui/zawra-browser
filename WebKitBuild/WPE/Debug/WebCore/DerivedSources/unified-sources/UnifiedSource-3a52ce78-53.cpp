@@ -1,0 +1,8 @@
+#include "JSGPUCanvasCompositingAlphaMode.cpp"
+#include "JSGPUCanvasConfiguration.cpp"
+#include "JSGPUCanvasContext.cpp"
+#include "JSGPUColorDict.cpp"
+#include "JSGPUColorTargetState.cpp"
+#include "JSGPUColorWrite.cpp"
+#include "JSGPUCommandBuffer.cpp"
+#include "JSGPUCommandBufferDescriptor.cpp"

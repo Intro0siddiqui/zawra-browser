@@ -1,0 +1,8 @@
+#include "dom/ErrorEvent.cpp"
+#include "dom/Event.cpp"
+#include "dom/EventContext.cpp"
+#include "dom/EventDispatcher.cpp"
+#include "dom/EventListenerMap.cpp"
+#include "dom/EventLoop.cpp"
+#include "dom/EventNames.cpp"
+#include "dom/EventPath.cpp"

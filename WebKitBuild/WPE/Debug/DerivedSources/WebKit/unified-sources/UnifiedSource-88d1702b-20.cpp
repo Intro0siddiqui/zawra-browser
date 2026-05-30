@@ -1,0 +1,8 @@
+#include "UIProcess/API/C/WKUserMediaPermissionCheck.cpp"
+#include "UIProcess/API/C/WKUserMediaPermissionRequest.cpp"
+#include "UIProcess/API/C/WKWebsiteDataStoreConfigurationRef.cpp"
+#include "UIProcess/API/C/WKWebsiteDataStoreRef.cpp"
+#include "UIProcess/API/C/WKWebsitePolicies.cpp"
+#include "UIProcess/API/C/WKWindowFeaturesRef.cpp"
+#include "UIProcess/API/C/WKGrammarDetail.cpp"
+#include "UIProcess/API/C/WKViewportAttributes.cpp"

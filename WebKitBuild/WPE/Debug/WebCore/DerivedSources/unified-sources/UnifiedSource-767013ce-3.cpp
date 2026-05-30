@@ -1,0 +1,8 @@
+#include "page/DeprecatedGlobalSettings.cpp"
+#include "page/DeviceController.cpp"
+#include "page/DiagnosticLoggingKeys.cpp"
+#include "page/DisabledAdaptations.cpp"
+#include "page/DragController.cpp"
+#include "page/EventHandler.cpp"
+#include "page/EventSource.cpp"
+#include "page/FocusController.cpp"

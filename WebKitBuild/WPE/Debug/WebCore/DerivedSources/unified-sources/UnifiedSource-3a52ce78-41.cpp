@@ -1,0 +1,8 @@
+#include "JSEXTBlendMinMax.cpp"
+#include "JSEXTClipControl.cpp"
+#include "JSEXTColorBufferFloat.cpp"
+#include "JSEXTColorBufferHalfFloat.cpp"
+#include "JSEXTConservativeDepth.cpp"
+#include "JSEXTDepthClamp.cpp"
+#include "JSEXTDisjointTimerQuery.cpp"
+#include "JSEXTDisjointTimerQueryWebGL2.cpp"

@@ -1,0 +1,8 @@
+#include "rendering/style/StyleMultiImage.cpp"
+#include "rendering/style/StyleNamedImage.cpp"
+#include "rendering/style/StyleNonInheritedData.cpp"
+#include "rendering/style/StylePaintImage.cpp"
+#include "rendering/style/StyleRareInheritedData.cpp"
+#include "rendering/style/StyleRareNonInheritedData.cpp"
+#include "rendering/style/StyleSelfAlignmentData.cpp"
+#include "rendering/style/StyleSurroundData.cpp"

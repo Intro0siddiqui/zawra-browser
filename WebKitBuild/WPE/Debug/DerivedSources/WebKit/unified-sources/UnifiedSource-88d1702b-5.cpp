@@ -1,0 +1,8 @@
+#include "UIProcess/UserMediaProcessManager.cpp"
+#include "UIProcess/VisitedLinkStore.cpp"
+#include "UIProcess/WebBackForwardCache.cpp"
+#include "UIProcess/WebBackForwardCacheEntry.cpp"
+#include "UIProcess/WebBackForwardList.cpp"
+#include "UIProcess/WebColorPicker.cpp"
+#include "UIProcess/WebConnectionToWebProcess.cpp"
+#include "UIProcess/WebContextClient.cpp"

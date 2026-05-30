@@ -1,0 +1,8 @@
+#include "animation/AcceleratedTimeline.cpp"
+#include "animation/AnimationEffect.cpp"
+#include "animation/AnimationEventBase.cpp"
+#include "animation/AnimationPlaybackEvent.cpp"
+#include "animation/AnimationTimeline.cpp"
+#include "animation/CSSAnimation.cpp"
+#include "animation/CSSAnimationEvent.cpp"
+#include "animation/CSSPropertyAnimation.cpp"

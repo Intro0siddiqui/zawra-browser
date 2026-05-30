@@ -1,0 +1,8 @@
+#include "html/canvas/WebGLBuffer.cpp"
+#include "html/canvas/WebGLClipCullDistance.cpp"
+#include "html/canvas/WebGLColorBufferFloat.cpp"
+#include "html/canvas/WebGLCompressedTextureASTC.cpp"
+#include "html/canvas/WebGLCompressedTextureETC.cpp"
+#include "html/canvas/WebGLCompressedTextureETC1.cpp"
+#include "html/canvas/WebGLCompressedTexturePVRTC.cpp"
+#include "html/canvas/WebGLCompressedTextureS3TC.cpp"

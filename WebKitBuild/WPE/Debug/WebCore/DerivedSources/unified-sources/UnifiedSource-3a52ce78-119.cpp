@@ -1,0 +1,8 @@
+#include "JSRTCSctpTransport.cpp"
+#include "JSRTCSctpTransportState.cpp"
+#include "JSRTCSdpType.cpp"
+#include "JSRTCSessionDescription.cpp"
+#include "JSRTCSessionDescriptionInit.cpp"
+#include "JSRTCSignalingState.cpp"
+#include "JSRTCStatsReport.cpp"
+#include "JSRTCTrackEvent.cpp"

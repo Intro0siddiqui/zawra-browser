@@ -1,0 +1,3 @@
+GPURenderBundleEncoderDescriptor.h : GPURenderPassLayout.idl GPUObjectDescriptorBase.idl
+GPURenderPassLayout.idl :
+GPUObjectDescriptorBase.idl :

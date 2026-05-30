@@ -1,0 +1,8 @@
+#include "platform/graphics/cairo/BackingStoreBackendCairoImpl.cpp"
+#include "platform/graphics/cairo/CairoOperations.cpp"
+#include "platform/graphics/cairo/FloatRectCairo.cpp"
+#include "platform/graphics/cairo/FontCairo.cpp"
+#include "platform/graphics/cairo/GradientCairo.cpp"
+#include "platform/graphics/cairo/GraphicsContextCairo.cpp"
+#include "platform/graphics/cairo/GraphicsContextGLCairo.cpp"
+#include "platform/graphics/cairo/ImageBufferCairoBackend.cpp"

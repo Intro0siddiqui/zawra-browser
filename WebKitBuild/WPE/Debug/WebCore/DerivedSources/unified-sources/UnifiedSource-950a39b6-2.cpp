@@ -1,0 +1,8 @@
+#include "html/CanvasBase.cpp"
+#include "html/CanvasNoiseInjection.cpp"
+#include "html/CheckboxInputType.cpp"
+#include "html/ColorInputType.cpp"
+#include "html/CustomPaintCanvas.cpp"
+#include "html/CustomPaintImage.cpp"
+#include "html/DOMFormData.cpp"
+#include "html/DOMTokenList.cpp"

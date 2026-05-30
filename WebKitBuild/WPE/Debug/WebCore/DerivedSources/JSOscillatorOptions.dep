@@ -1,0 +1,2 @@
+OscillatorOptions.h : AudioNodeOptions.idl
+AudioNodeOptions.idl :

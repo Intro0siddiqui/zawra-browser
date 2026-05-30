@@ -1,0 +1,6 @@
+#include "Platform/IPC/unix/ConnectionUnix.cpp"
+#include "Platform/IPC/unix/IPCSemaphoreUnix.cpp"
+#include "Platform/classifier/ResourceLoadStatisticsClassifier.cpp"
+#include "Platform/glib/ModuleGlib.cpp"
+#include "Platform/unix/LoggingUnix.cpp"
+#include "Platform/unix/SharedMemoryUnix.cpp"

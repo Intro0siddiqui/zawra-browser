@@ -1,0 +1,8 @@
+#include "Shared/API/c/WKURLRequest.cpp"
+#include "Shared/API/c/WKURLResponse.cpp"
+#include "Shared/API/c/WKUserContentURLPattern.cpp"
+#include "Shared/API/c/cairo/WKImageCairo.cpp"
+#include "Shared/API/c/wpe/WKEventWPE.cpp"
+#include "Shared/Authentication/AuthenticationManager.cpp"
+#include "Shared/CoordinatedGraphics/CoordinatedGraphicsScene.cpp"
+#include "Shared/CoordinatedGraphics/SimpleViewportController.cpp"

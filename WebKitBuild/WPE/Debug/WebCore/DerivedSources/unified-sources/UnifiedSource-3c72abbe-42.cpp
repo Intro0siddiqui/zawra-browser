@@ -1,0 +1,8 @@
+#include "platform/graphics/displaylists/DisplayListReplayer.cpp"
+#include "platform/graphics/displaylists/InMemoryDisplayList.cpp"
+#include "platform/graphics/egl/GLContext.cpp"
+#include "platform/graphics/egl/GLContextLibWPE.cpp"
+#include "platform/graphics/filters/DistantLightSource.cpp"
+#include "platform/graphics/filters/FEBlend.cpp"
+#include "platform/graphics/filters/FEColorMatrix.cpp"
+#include "platform/graphics/filters/FEComponentTransfer.cpp"

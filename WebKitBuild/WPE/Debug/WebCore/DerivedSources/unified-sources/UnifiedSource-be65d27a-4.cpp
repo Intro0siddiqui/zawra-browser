@@ -1,0 +1,8 @@
+#include "dom/ContentVisibilityDocumentState.cpp"
+#include "dom/ContextDestructionObserver.cpp"
+#include "dom/CustomElementDefaultARIA.cpp"
+#include "dom/CustomElementReactionQueue.cpp"
+#include "dom/CustomElementRegistry.cpp"
+#include "dom/CustomEvent.cpp"
+#include "dom/DOMException.cpp"
+#include "dom/DOMImplementation.cpp"

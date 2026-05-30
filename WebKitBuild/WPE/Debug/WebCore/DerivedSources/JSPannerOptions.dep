@@ -1,0 +1,2 @@
+PannerOptions.h : AudioNodeOptions.idl
+AudioNodeOptions.idl :

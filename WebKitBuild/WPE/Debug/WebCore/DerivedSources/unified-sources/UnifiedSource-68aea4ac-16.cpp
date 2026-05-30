@@ -1,0 +1,8 @@
+#include "bindings/js/JSResizeObserverEntryCustom.cpp"
+#include "bindings/js/JSSVGPathSegCustom.cpp"
+#include "bindings/js/JSSVGViewSpecCustom.cpp"
+#include "bindings/js/JSServiceWorkerClientCustom.cpp"
+#include "bindings/js/JSServiceWorkerGlobalScopeCustom.cpp"
+#include "bindings/js/JSShadowRealmGlobalScopeBase.cpp"
+#include "bindings/js/JSShadowRootCustom.cpp"
+#include "bindings/js/JSSourceBufferCustom.cpp"

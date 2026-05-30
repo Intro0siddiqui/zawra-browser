@@ -1,0 +1,2 @@
+GPUPipelineDescriptorBase.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

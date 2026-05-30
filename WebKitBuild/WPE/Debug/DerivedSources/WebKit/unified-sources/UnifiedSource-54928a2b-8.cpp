@@ -1,0 +1,8 @@
+#include "WebProcess/GPU/media/RemoteAudioHardwareListener.cpp"
+#include "WebProcess/GPU/media/RemoteAudioSession.cpp"
+#include "WebProcess/GPU/media/RemoteCDM.cpp"
+#include "WebProcess/GPU/media/RemoteCDMFactory.cpp"
+#include "WebProcess/GPU/media/RemoteCDMInstance.cpp"
+#include "WebProcess/GPU/media/RemoteCDMInstanceSession.cpp"
+#include "WebProcess/GPU/media/RemoteLegacyCDM.cpp"
+#include "WebProcess/GPU/media/RemoteLegacyCDMFactory.cpp"

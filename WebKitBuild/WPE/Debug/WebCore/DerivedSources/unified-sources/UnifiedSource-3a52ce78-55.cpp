@@ -1,0 +1,8 @@
+#include "JSGPUComputePassEncoder.cpp"
+#include "JSGPUComputePassTimestampLocation.cpp"
+#include "JSGPUComputePassTimestampWrite.cpp"
+#include "JSGPUComputePipeline.cpp"
+#include "JSGPUComputePipelineDescriptor.cpp"
+#include "JSGPUCullMode.cpp"
+#include "JSGPUDebugCommandsMixin.cpp"
+#include "JSGPUDepthStencilState.cpp"

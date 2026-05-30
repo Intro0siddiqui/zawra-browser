@@ -1,0 +1,8 @@
+#include "Modules/entriesapi/HTMLInputElementEntriesAPI.cpp"
+#include "Modules/fetch/FetchBody.cpp"
+#include "Modules/fetch/FetchBodyConsumer.cpp"
+#include "Modules/fetch/FetchBodyOwner.cpp"
+#include "Modules/fetch/FetchBodySource.cpp"
+#include "Modules/fetch/FetchHeaders.cpp"
+#include "Modules/fetch/FetchLoader.cpp"
+#include "Modules/fetch/FetchRequest.cpp"

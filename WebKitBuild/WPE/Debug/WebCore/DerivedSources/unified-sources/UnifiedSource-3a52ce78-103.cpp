@@ -1,0 +1,8 @@
+#include "JSPaymentComplete.cpp"
+#include "JSPaymentCompleteDetails.cpp"
+#include "JSPaymentCurrencyAmount.cpp"
+#include "JSPaymentDetailsBase.cpp"
+#include "JSPaymentDetailsInit.cpp"
+#include "JSPaymentDetailsModifier.cpp"
+#include "JSPaymentDetailsUpdate.cpp"
+#include "JSPaymentItem.cpp"

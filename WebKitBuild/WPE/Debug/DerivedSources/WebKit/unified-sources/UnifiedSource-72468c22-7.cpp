@@ -1,0 +1,8 @@
+#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementPersistentStore.cpp"
+#include "NetworkProcess/ServiceWorker/ServiceWorkerDownloadTask.cpp"
+#include "NetworkProcess/ServiceWorker/ServiceWorkerFetchTask.cpp"
+#include "NetworkProcess/ServiceWorker/ServiceWorkerNavigationPreloader.cpp"
+#include "NetworkProcess/ServiceWorker/ServiceWorkerSoftUpdateLoader.cpp"
+#include "NetworkProcess/ServiceWorker/WebSWRegistrationStore.cpp"
+#include "NetworkProcess/SharedWorker/WebSharedWorker.cpp"
+#include "NetworkProcess/SharedWorker/WebSharedWorkerServer.cpp"

@@ -1,0 +1,8 @@
+#include "rendering/svg/RenderSVGBlock.cpp"
+#include "rendering/svg/RenderSVGContainer.cpp"
+#include "rendering/svg/RenderSVGEllipse.cpp"
+#include "rendering/svg/RenderSVGForeignObject.cpp"
+#include "rendering/svg/RenderSVGGradientStop.cpp"
+#include "rendering/svg/RenderSVGHiddenContainer.cpp"
+#include "rendering/svg/RenderSVGImage.cpp"
+#include "rendering/svg/RenderSVGInline.cpp"

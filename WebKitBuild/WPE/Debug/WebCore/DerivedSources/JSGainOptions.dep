@@ -1,0 +1,2 @@
+GainOptions.h : AudioNodeOptions.idl
+AudioNodeOptions.idl :

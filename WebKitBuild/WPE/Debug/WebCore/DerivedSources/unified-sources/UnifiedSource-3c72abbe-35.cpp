@@ -1,0 +1,8 @@
+#include "platform/graphics/PlatformTimeRanges.cpp"
+#include "platform/graphics/PositionedGlyphs.cpp"
+#include "platform/graphics/Region.cpp"
+#include "platform/graphics/RenderingMode.cpp"
+#include "platform/graphics/RotationDirection.cpp"
+#include "platform/graphics/RoundedRect.cpp"
+#include "platform/graphics/ShadowBlur.cpp"
+#include "platform/graphics/SourceBrush.cpp"

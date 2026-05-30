@@ -1,0 +1,8 @@
+#include "JSWebKitMediaKeyNeededEvent.cpp"
+#include "JSWebKitMediaKeySession.cpp"
+#include "JSWebKitMediaKeys.cpp"
+#include "JSWebKitNamespace.cpp"
+#include "JSWebKitPlaybackTargetAvailabilityEvent.cpp"
+#include "JSWebKitPoint.cpp"
+#include "JSWebLock.cpp"
+#include "JSWebLockGrantedCallback.cpp"

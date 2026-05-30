@@ -1,0 +1,8 @@
+#include "Modules/webdatabase/DatabaseContext.cpp"
+#include "Modules/webdatabase/DatabaseManager.cpp"
+#include "Modules/webdatabase/DatabaseTask.cpp"
+#include "Modules/webdatabase/DatabaseThread.cpp"
+#include "Modules/webdatabase/DatabaseTracker.cpp"
+#include "Modules/webdatabase/LocalDOMWindowWebDatabase.cpp"
+#include "Modules/webdatabase/OriginLock.cpp"
+#include "Modules/webdatabase/SQLResultSet.cpp"

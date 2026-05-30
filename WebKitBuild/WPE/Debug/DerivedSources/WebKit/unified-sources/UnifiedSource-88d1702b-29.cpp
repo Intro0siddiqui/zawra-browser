@@ -1,0 +1,8 @@
+#include "UIProcess/WebsiteData/glib/WebsiteDataStoreGLib.cpp"
+#include "UIProcess/WebsiteData/soup/WebsiteDataStoreSoup.cpp"
+#include "UIProcess/XR/PlatformXRSystem.cpp"
+#include "UIProcess/geoclue/GeoclueGeolocationProvider.cpp"
+#include "UIProcess/glib/WebPageProxyGLib.cpp"
+#include "UIProcess/glib/WebProcessPoolGLib.cpp"
+#include "UIProcess/glib/WebProcessProxyGLib.cpp"
+#include "UIProcess/gstreamer/WebPageProxyGStreamer.cpp"

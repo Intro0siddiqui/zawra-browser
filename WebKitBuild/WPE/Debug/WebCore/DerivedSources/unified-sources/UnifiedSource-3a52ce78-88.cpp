@@ -1,0 +1,8 @@
+#include "JSMediaCapabilities.cpp"
+#include "JSMediaCapabilitiesDecodingInfo.cpp"
+#include "JSMediaCapabilitiesEncodingInfo.cpp"
+#include "JSMediaCapabilitiesInfo.cpp"
+#include "JSMediaController.cpp"
+#include "JSMediaControlsHost.cpp"
+#include "JSMediaDecodingConfiguration.cpp"
+#include "JSMediaDecodingType.cpp"

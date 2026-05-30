@@ -1,0 +1,8 @@
+#include "bindings/js/JSEventTargetCustom.cpp"
+#include "bindings/js/JSExecState.cpp"
+#include "bindings/js/JSExtendableMessageEventCustom.cpp"
+#include "bindings/js/JSFetchEventCustom.cpp"
+#include "bindings/js/JSFileSystemEntryCustom.cpp"
+#include "bindings/js/JSFileSystemHandleCustom.cpp"
+#include "bindings/js/JSHTMLAllCollectionCustom.cpp"
+#include "bindings/js/JSHTMLCanvasElementCustom.cpp"

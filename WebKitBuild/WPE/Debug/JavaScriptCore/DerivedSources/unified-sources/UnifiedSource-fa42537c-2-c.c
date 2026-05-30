@@ -1,0 +1,8 @@
+#include "disassembler/zydis/Zydis/ZydisDecoder.c"
+#include "disassembler/zydis/Zydis/ZydisDecoderData.c"
+#include "disassembler/zydis/Zydis/ZydisFormatter.c"
+#include "disassembler/zydis/Zydis/ZydisFormatterBuffer.c"
+#include "disassembler/zydis/Zydis/ZydisMetaInfo.c"
+#include "disassembler/zydis/Zydis/ZydisMnemonic.c"
+#include "disassembler/zydis/Zydis/ZydisRegister.c"
+#include "disassembler/zydis/Zydis/ZydisSharedData.c"

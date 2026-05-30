@@ -1,0 +1,8 @@
+#include "JSGPUPredefinedColorSpace.cpp"
+#include "JSGPUPrimitiveState.cpp"
+#include "JSGPUPrimitiveTopology.cpp"
+#include "JSGPUProgrammablePassEncoder.cpp"
+#include "JSGPUProgrammableStage.cpp"
+#include "JSGPUQuerySet.cpp"
+#include "JSGPUQuerySetDescriptor.cpp"
+#include "JSGPUQueryType.cpp"

@@ -1,0 +1,2 @@
+GPURenderPassLayout.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

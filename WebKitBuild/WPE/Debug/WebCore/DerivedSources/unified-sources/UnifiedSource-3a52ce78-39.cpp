@@ -1,0 +1,8 @@
+#include "JSDetectedText.cpp"
+#include "JSDeviceMotionEvent.cpp"
+#include "JSDeviceOrientationEvent.cpp"
+#include "JSDeviceOrientationOrMotionPermissionState.cpp"
+#include "JSDistanceModelType.cpp"
+#include "JSDocument.cpp"
+#include "JSDocumentAndElementEventHandlers.cpp"
+#include "JSDocumentFragment.cpp"

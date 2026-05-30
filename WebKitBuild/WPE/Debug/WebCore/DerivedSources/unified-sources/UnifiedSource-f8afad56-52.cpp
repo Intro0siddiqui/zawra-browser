@@ -1,0 +1,8 @@
+#include "Modules/webcodecs/WebCodecsEncodedVideoChunk.cpp"
+#include "Modules/webcodecs/WebCodecsVideoDecoder.cpp"
+#include "Modules/webcodecs/WebCodecsVideoEncoder.cpp"
+#include "Modules/webcodecs/WebCodecsVideoFrame.cpp"
+#include "Modules/webcodecs/WebCodecsVideoFrameAlgorithms.cpp"
+#include "Modules/webdatabase/ChangeVersionWrapper.cpp"
+#include "Modules/webdatabase/Database.cpp"
+#include "Modules/webdatabase/DatabaseAuthorizer.cpp"

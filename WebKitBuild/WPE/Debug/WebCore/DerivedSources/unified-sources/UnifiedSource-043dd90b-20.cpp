@@ -1,0 +1,8 @@
+#include "rendering/mathml/RenderMathMLRoot.cpp"
+#include "rendering/mathml/RenderMathMLRow.cpp"
+#include "rendering/mathml/RenderMathMLScripts.cpp"
+#include "rendering/mathml/RenderMathMLSpace.cpp"
+#include "rendering/mathml/RenderMathMLToken.cpp"
+#include "rendering/mathml/RenderMathMLUnderOver.cpp"
+#include "rendering/shapes/BoxShape.cpp"
+#include "rendering/shapes/PolygonShape.cpp"

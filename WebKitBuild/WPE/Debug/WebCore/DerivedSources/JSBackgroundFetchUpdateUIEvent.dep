@@ -1,0 +1,4 @@
+JSBackgroundFetchUpdateUIEvent.h : BackgroundFetchEvent.idl ExtendableEvent.idl Event.idl
+BackgroundFetchEvent.idl :
+ExtendableEvent.idl :
+Event.idl :

@@ -1,0 +1,8 @@
+#include "WebProcess/WebPage/WebURLSchemeTaskProxy.cpp"
+#include "WebProcess/WebPage/WebUndoStep.cpp"
+#include "WebProcess/WebPage/AcceleratedSurface.cpp"
+#include "WebProcess/WebPage/CoordinatedGraphics/CompositingCoordinator.cpp"
+#include "WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp"
+#include "WebProcess/WebPage/CoordinatedGraphics/LayerTreeHost.cpp"
+#include "WebProcess/WebPage/glib/WebPageGLib.cpp"
+#include "WebProcess/WebPage/wpe/WebPageWPE.cpp"

@@ -1,0 +1,10 @@
+[submodule "dependencies/Browser-db"]
+	path = dependencies/Browser-db
+	url = https://github.com/Intro0siddiqui/Browser-db.git
+
+[submodule "dependencies/z-net"]
+	path = dependencies/z-net
+	url = https://github.com/Intro0siddiqui/z-net.git
+[submodule "dependencies/hajr"]
+	path = dependencies/hajr
+	url = https://github.com/Intro0siddiqui/hajr.git

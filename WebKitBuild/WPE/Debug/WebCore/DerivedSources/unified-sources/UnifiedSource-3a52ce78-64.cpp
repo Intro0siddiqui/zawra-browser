@@ -1,0 +1,8 @@
+#include "JSGPUSampler.cpp"
+#include "JSGPUSamplerBindingLayout.cpp"
+#include "JSGPUSamplerBindingType.cpp"
+#include "JSGPUSamplerDescriptor.cpp"
+#include "JSGPUShaderModule.cpp"
+#include "JSGPUShaderModuleCompilationHint.cpp"
+#include "JSGPUShaderModuleDescriptor.cpp"
+#include "JSGPUShaderStage.cpp"

@@ -1,0 +1,8 @@
+#include "platform/graphics/filters/FilterTargetSwitcher.cpp"
+#include "platform/graphics/filters/PointLightSource.cpp"
+#include "platform/graphics/filters/SourceAlpha.cpp"
+#include "platform/graphics/filters/SourceGraphic.cpp"
+#include "platform/graphics/filters/SpotLightSource.cpp"
+#include "platform/graphics/filters/software/FEBlendSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/FEColorMatrixSoftwareApplier.cpp"
+#include "platform/graphics/filters/software/FEComponentTransferSoftwareApplier.cpp"

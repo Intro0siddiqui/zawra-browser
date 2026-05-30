@@ -1,0 +1,8 @@
+#include "rendering/RenderTextControlSingleLine.cpp"
+#include "rendering/RenderTextFragment.cpp"
+#include "rendering/RenderTextLineBoxes.cpp"
+#include "rendering/RenderTheme.cpp"
+#include "rendering/RenderTreeAsText.cpp"
+#include "rendering/RenderTreeMutationDisallowedScope.cpp"
+#include "rendering/RenderVTTCue.cpp"
+#include "rendering/RenderVideo.cpp"

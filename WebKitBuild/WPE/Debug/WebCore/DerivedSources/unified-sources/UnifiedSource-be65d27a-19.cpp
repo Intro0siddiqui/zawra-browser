@@ -1,0 +1,8 @@
+#include "dom/ShadowRoot.cpp"
+#include "dom/SimpleRange.cpp"
+#include "dom/SimulatedClick.cpp"
+#include "dom/SlotAssignment.cpp"
+#include "dom/SpaceSplitString.cpp"
+#include "dom/StaticNodeList.cpp"
+#include "dom/StaticRange.cpp"
+#include "dom/StringCallback.cpp"

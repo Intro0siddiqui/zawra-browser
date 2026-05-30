@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/CMakeFiles/cog"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/CMakeFiles/cog.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/CMakeFiles/cog-complete.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-build.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-configure.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-download.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-install.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-mkdir.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-patch.rule"
+		},
+		{
+			"file" : "/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug/Tools/cog-prefix/src/cog-stamp/cog-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"cog"
+		],
+		"name" : "cog"
+	}
+}

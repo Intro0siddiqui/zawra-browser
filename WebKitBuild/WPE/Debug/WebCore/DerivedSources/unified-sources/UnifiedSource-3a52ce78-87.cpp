@@ -1,0 +1,8 @@
+#include "JSLocalDOMWindow.cpp"
+#include "JSLocation.cpp"
+#include "JSLongRange.cpp"
+#include "JSManagedMediaSource.cpp"
+#include "JSManagedSourceBuffer.cpp"
+#include "JSMathMLElement.cpp"
+#include "JSMathMLElementWrapperFactory.cpp"
+#include "JSMathMLMathElement.cpp"

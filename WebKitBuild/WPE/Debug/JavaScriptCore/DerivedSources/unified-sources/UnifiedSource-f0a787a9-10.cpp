@@ -1,0 +1,8 @@
+#include "bytecode/ProgramCodeBlock.cpp"
+#include "bytecode/PropertyCondition.cpp"
+#include "bytecode/ProxyObjectAccessCase.cpp"
+#include "bytecode/ProxyableAccessCase.cpp"
+#include "bytecode/PutByIdFlags.cpp"
+#include "bytecode/PutByStatus.cpp"
+#include "bytecode/PutByVariant.cpp"
+#include "bytecode/RecordedStatuses.cpp"

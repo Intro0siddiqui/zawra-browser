@@ -1,0 +1,8 @@
+#include "Modules/ShapeDetection/BarcodeDetector.cpp"
+#include "Modules/ShapeDetection/FaceDetector.cpp"
+#include "Modules/ShapeDetection/TextDetector.cpp"
+#include "Modules/WebGPU/GPU.cpp"
+#include "Modules/WebGPU/GPUAdapter.cpp"
+#include "Modules/WebGPU/GPUBindGroup.cpp"
+#include "Modules/WebGPU/GPUBindGroupLayout.cpp"
+#include "Modules/WebGPU/GPUBuffer.cpp"

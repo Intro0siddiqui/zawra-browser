@@ -1,0 +1,8 @@
+#include "WebProcess/GPU/media/TextTrackPrivateRemote.cpp"
+#include "WebProcess/GPU/media/VideoTrackPrivateRemote.cpp"
+#include "WebProcess/GPU/media/WebMediaStrategy.cpp"
+#include "WebProcess/GPU/media/gstreamer/VideoLayerRemoteGStreamer.cpp"
+#include "WebProcess/GPU/webrtc/LibWebRTCCodecs.cpp"
+#include "WebProcess/GPU/webrtc/MediaRecorderPrivate.cpp"
+#include "WebProcess/GPU/webrtc/MediaRecorderProvider.cpp"
+#include "WebProcess/GPU/webrtc/RemoteVideoFrameObjectHeapProxyProcessor.cpp"

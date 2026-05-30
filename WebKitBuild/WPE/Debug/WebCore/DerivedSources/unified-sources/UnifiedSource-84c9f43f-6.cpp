@@ -1,0 +1,8 @@
+#include "inspector/agents/InspectorDatabaseAgent.cpp"
+#include "inspector/agents/InspectorIndexedDBAgent.cpp"
+#include "inspector/agents/InspectorLayerTreeAgent.cpp"
+#include "inspector/agents/InspectorMemoryAgent.cpp"
+#include "inspector/agents/InspectorNetworkAgent.cpp"
+#include "inspector/agents/InspectorPageAgent.cpp"
+#include "inspector/agents/InspectorTimelineAgent.cpp"
+#include "inspector/agents/InspectorWorkerAgent.cpp"

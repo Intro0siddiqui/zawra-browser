@@ -1,0 +1,8 @@
+#include "platform/graphics/cairo/ImageBufferCairoImageSurfaceBackend.cpp"
+#include "platform/graphics/cairo/ImageBufferCairoSurfaceBackend.cpp"
+#include "platform/graphics/cairo/ImageBufferUtilitiesCairo.cpp"
+#include "platform/graphics/cairo/IntRectCairo.cpp"
+#include "platform/graphics/cairo/NativeImageCairo.cpp"
+#include "platform/graphics/cairo/PathCairo.cpp"
+#include "platform/graphics/cairo/PatternCairo.cpp"
+#include "platform/graphics/cairo/RefPtrCairo.cpp"

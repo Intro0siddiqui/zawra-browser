@@ -1,0 +1,117 @@
+name: Zawra Browser CI
+
+on:
+  push:
+    branches: [ "wpe-integration", "main", "wpe-experimental-efficiency" ]
+  pull_request:
+    branches: [ "wpe-integration", "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Build & Test ─────────────────────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        toolchain: [stable, nightly]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust ${{ matrix.toolchain }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy, rustfmt
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.toolchain }}-
+
+      - name: Build (headless — no WPE)
+        run: cargo build --all 2>&1
+
+      - name: Run tests
+        run: cargo test --all -- --nocapture 2>&1
+
+      - name: Clippy lint check
+        run: cargo clippy --all -- -D warnings 2>&1
+        continue-on-error: true  # non-blocking until we clear all lint warnings
+
+  # ── Rustfmt format check ─────────────────────────────────────────────────────
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  # ── cargo-fuzz (nightly only) ─────────────────────────────────────────────────
+  fuzz:
+    name: Fuzz (nightly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/wpe-integration'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz http_parser (30 seconds)
+        run: cargo fuzz run fuzz_http_parser -- -max_total_time=30
+        continue-on-error: true
+      - name: Fuzz url_normalise (30 seconds)
+        run: cargo fuzz run fuzz_url_normalise -- -max_total_time=30
+        continue-on-error: true
+
+  # ── Dependency audit ─────────────────────────────────────────────────────────
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  # ── Coverage (optional) ──────────────────────────────────────────────────────
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+      - name: Generate coverage
+        run: cargo tarpaulin --out Lcov --output-dir coverage/
+        continue-on-error: true
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/lcov.info
+          fail_ci_if_error: false
+        continue-on-error: true

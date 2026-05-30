@@ -1,0 +1,8 @@
+#include "JSDocumentOrShadowRoot.cpp"
+#include "JSDocumentTimeline.cpp"
+#include "JSDocumentTimelineOptions.cpp"
+#include "JSDocumentType.cpp"
+#include "JSDoubleRange.cpp"
+#include "JSDragEvent.cpp"
+#include "JSDynamicsCompressorNode.cpp"
+#include "JSDynamicsCompressorOptions.cpp"

@@ -1,0 +1,8 @@
+#include "JSFetchBody.cpp"
+#include "JSFetchEvent.cpp"
+#include "JSFetchHeaders.cpp"
+#include "JSFetchReferrerPolicy.cpp"
+#include "JSFetchRequest.cpp"
+#include "JSFetchRequestCache.cpp"
+#include "JSFetchRequestCredentials.cpp"
+#include "JSFetchRequestDestination.cpp"

@@ -1,0 +1,8 @@
+#include "bindings/js/JSWebGL2RenderingContextCustom.cpp"
+#include "bindings/js/JSWebGLRenderingContextCustom.cpp"
+#include "bindings/js/JSWebXRReferenceSpaceCustom.cpp"
+#include "bindings/js/JSWebXRRigidTransformCustom.cpp"
+#include "bindings/js/JSWebXRSessionCustom.cpp"
+#include "bindings/js/JSWebXRSpaceCustom.cpp"
+#include "bindings/js/JSWebXRViewCustom.cpp"
+#include "bindings/js/JSWindowProxy.cpp"

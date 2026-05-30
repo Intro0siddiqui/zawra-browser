@@ -1,0 +1,8 @@
+#include "JSMediaDeviceInfo.cpp"
+#include "JSMediaDevices.cpp"
+#include "JSMediaElementAudioSourceNode.cpp"
+#include "JSMediaElementAudioSourceOptions.cpp"
+#include "JSMediaEncodingConfiguration.cpp"
+#include "JSMediaEncodingType.cpp"
+#include "JSMediaEncryptedEvent.cpp"
+#include "JSMediaError.cpp"

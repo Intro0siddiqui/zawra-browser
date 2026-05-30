@@ -1,0 +1,8 @@
+#include "bytecode/ModuleNamespaceAccessCase.cpp"
+#include "bytecode/ModuleProgramCodeBlock.cpp"
+#include "bytecode/ObjectPropertyCondition.cpp"
+#include "bytecode/ObjectPropertyConditionSet.cpp"
+#include "bytecode/Opcode.cpp"
+#include "bytecode/ParseHash.cpp"
+#include "bytecode/PolyProtoAccessChain.cpp"
+#include "bytecode/PreciseJumpTargets.cpp"

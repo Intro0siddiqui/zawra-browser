@@ -1,0 +1,8 @@
+#include "platform/graphics/ImageBufferBackend.cpp"
+#include "platform/graphics/ImageBufferPipe.cpp"
+#include "platform/graphics/ImageDecoder.cpp"
+#include "platform/graphics/ImageFrame.cpp"
+#include "platform/graphics/ImageResolution.cpp"
+#include "platform/graphics/ImageSource.cpp"
+#include "platform/graphics/InbandGenericCue.cpp"
+#include "platform/graphics/IntPoint.cpp"

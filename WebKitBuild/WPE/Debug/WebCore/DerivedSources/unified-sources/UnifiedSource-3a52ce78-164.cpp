@@ -1,0 +1,8 @@
+#include "JSWebLockManager.cpp"
+#include "JSWebLockManagerSnapshot.cpp"
+#include "JSWebLockMode.cpp"
+#include "JSWebSocket.cpp"
+#include "JSWebXRBoundedReferenceSpace.cpp"
+#include "JSWebXRFrame.cpp"
+#include "JSWebXRHand.cpp"
+#include "JSWebXRInputSource.cpp"

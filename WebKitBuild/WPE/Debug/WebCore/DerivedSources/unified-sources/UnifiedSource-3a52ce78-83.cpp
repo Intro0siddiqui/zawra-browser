@@ -1,0 +1,8 @@
+#include "JSIIRFilterNode.cpp"
+#include "JSIIRFilterOptions.cpp"
+#include "JSIdleDeadline.cpp"
+#include "JSIdleRequestCallback.cpp"
+#include "JSIdleRequestOptions.cpp"
+#include "JSImageBitmap.cpp"
+#include "JSImageBitmapOptions.cpp"
+#include "JSImageBitmapRenderingContext.cpp"

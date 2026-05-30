@@ -1,0 +1,8 @@
+#include "JSWebGLLoseContext.cpp"
+#include "JSWebGLMultiDraw.cpp"
+#include "JSWebGLMultiDrawInstancedBaseVertexBaseInstance.cpp"
+#include "JSWebGLPolygonMode.cpp"
+#include "JSWebGLProgram.cpp"
+#include "JSWebGLProvokingVertex.cpp"
+#include "JSWebGLQuery.cpp"
+#include "JSWebGLRenderSharedExponent.cpp"

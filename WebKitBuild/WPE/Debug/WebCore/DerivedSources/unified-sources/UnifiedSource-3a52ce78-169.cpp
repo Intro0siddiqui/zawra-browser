@@ -1,0 +1,8 @@
+#include "JSWritableStreamSink.cpp"
+#include "JSXMLDocument.cpp"
+#include "JSXMLHttpRequest.cpp"
+#include "JSXMLHttpRequestEventTarget.cpp"
+#include "JSXMLHttpRequestProgressEvent.cpp"
+#include "JSXMLHttpRequestUpload.cpp"
+#include "JSXMLSerializer.cpp"
+#include "JSXPathEvaluator.cpp"

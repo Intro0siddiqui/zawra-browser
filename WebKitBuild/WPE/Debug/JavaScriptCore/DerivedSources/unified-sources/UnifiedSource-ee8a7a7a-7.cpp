@@ -1,0 +1,8 @@
+#include "heap/MutatorScheduler.cpp"
+#include "heap/MutatorState.cpp"
+#include "heap/PreciseAllocation.cpp"
+#include "heap/RootMarkReason.cpp"
+#include "heap/SimpleMarkingConstraint.cpp"
+#include "heap/SlotVisitor.cpp"
+#include "heap/SpaceTimeMutatorScheduler.cpp"
+#include "heap/StochasticSpaceTimeMutatorScheduler.cpp"

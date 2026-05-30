@@ -1,0 +1,8 @@
+#include "layout/formattingContexts/inline/InlineContentBreaker.cpp"
+#include "layout/formattingContexts/inline/InlineFormattingContext.cpp"
+#include "layout/formattingContexts/inline/InlineFormattingGeometry.cpp"
+#include "layout/formattingContexts/inline/InlineFormattingQuirks.cpp"
+#include "layout/formattingContexts/inline/InlineFormattingState.cpp"
+#include "layout/formattingContexts/inline/InlineItem.cpp"
+#include "layout/formattingContexts/inline/InlineItemsBuilder.cpp"
+#include "layout/formattingContexts/inline/InlineLine.cpp"

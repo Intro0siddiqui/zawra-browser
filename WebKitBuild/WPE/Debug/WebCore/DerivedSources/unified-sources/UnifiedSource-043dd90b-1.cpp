@@ -1,0 +1,8 @@
+#include "rendering/AccessibilityRegionContext.cpp"
+#include "rendering/AutoTableLayout.cpp"
+#include "rendering/BackgroundPainter.cpp"
+#include "rendering/BaselineAlignment.cpp"
+#include "rendering/BidiRun.cpp"
+#include "rendering/BorderEdge.cpp"
+#include "rendering/BorderPainter.cpp"
+#include "rendering/BreakLines.cpp"

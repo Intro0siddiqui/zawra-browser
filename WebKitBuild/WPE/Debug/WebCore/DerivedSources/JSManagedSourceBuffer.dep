@@ -1,0 +1,3 @@
+JSManagedSourceBuffer.h : SourceBuffer.idl EventTarget.idl
+SourceBuffer.idl :
+EventTarget.idl :

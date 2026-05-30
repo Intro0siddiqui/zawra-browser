@@ -1,0 +1,2 @@
+GPUSamplerDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

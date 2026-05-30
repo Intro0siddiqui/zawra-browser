@@ -1,0 +1,8 @@
+#include "UIProcess/SuspendedPageProxy.cpp"
+#include "UIProcess/SystemPreviewController.cpp"
+#include "UIProcess/TextChecker.cpp"
+#include "UIProcess/TextCheckerCompletion.cpp"
+#include "UIProcess/UIProcessLogInitialization.cpp"
+#include "UIProcess/UserMediaPermissionCheckProxy.cpp"
+#include "UIProcess/UserMediaPermissionRequestManagerProxy.cpp"
+#include "UIProcess/UserMediaPermissionRequestProxy.cpp"

@@ -1,0 +1,6 @@
+#include "Modules/webxr/WebXRViewport.cpp"
+#include "Modules/webxr/WebXRWebGLLayer.cpp"
+#include "Modules/webxr/XRInputSourceEvent.cpp"
+#include "Modules/webxr/XRInputSourcesChangeEvent.cpp"
+#include "Modules/webxr/XRReferenceSpaceEvent.cpp"
+#include "Modules/webxr/XRSessionEvent.cpp"

@@ -1,0 +1,8 @@
+#include "jit/JITWorklist.cpp"
+#include "jit/JITWorklistThread.cpp"
+#include "jit/PCToCodeOriginMap.cpp"
+#include "jit/PolymorphicCallStubRoutine.cpp"
+#include "jit/Reg.cpp"
+#include "jit/RegisterAtOffset.cpp"
+#include "jit/RegisterAtOffsetList.cpp"
+#include "jit/RegisterSet.cpp"

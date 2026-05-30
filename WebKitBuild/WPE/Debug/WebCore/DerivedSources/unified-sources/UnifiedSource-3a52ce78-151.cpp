@@ -1,0 +1,8 @@
+#include "JSUIEvent.cpp"
+#include "JSUIEventInit.cpp"
+#include "JSURLSearchParams.cpp"
+#include "JSUndoItem.cpp"
+#include "JSUndoManager.cpp"
+#include "JSUserActivation.cpp"
+#include "JSUserMessageHandler.cpp"
+#include "JSUserMessageHandlersNamespace.cpp"

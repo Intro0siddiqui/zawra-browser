@@ -1,0 +1,8 @@
+#include "Modules/reporting/ReportingScope.cpp"
+#include "Modules/reporting/TestReportBody.cpp"
+#include "Modules/screen-wake-lock/NavigatorScreenWakeLock.cpp"
+#include "Modules/screen-wake-lock/WakeLock.cpp"
+#include "Modules/screen-wake-lock/WakeLockManager.cpp"
+#include "Modules/screen-wake-lock/WakeLockSentinel.cpp"
+#include "Modules/speech/LocalDOMWindowSpeechSynthesis.cpp"
+#include "Modules/speech/SpeechRecognition.cpp"

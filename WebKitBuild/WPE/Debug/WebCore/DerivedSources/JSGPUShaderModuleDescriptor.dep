@@ -1,0 +1,2 @@
+GPUShaderModuleDescriptor.h : GPUObjectDescriptorBase.idl
+GPUObjectDescriptorBase.idl :

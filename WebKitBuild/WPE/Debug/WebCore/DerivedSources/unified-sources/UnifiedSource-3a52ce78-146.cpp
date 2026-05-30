@@ -1,0 +1,8 @@
+#include "JSSpeechSynthesisUtterance.cpp"
+#include "JSSpeechSynthesisVoice.cpp"
+#include "JSStaticRange.cpp"
+#include "JSStereoPannerNode.cpp"
+#include "JSStereoPannerOptions.cpp"
+#include "JSStorage.cpp"
+#include "JSStorageEvent.cpp"
+#include "JSStorageManager.cpp"

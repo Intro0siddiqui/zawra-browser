@@ -1,0 +1,8 @@
+#include "crypto/gcrypt/CryptoAlgorithmAES_CBCGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmAES_CFBGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmAES_CTRGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmAES_GCMGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmAES_KWGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmECDHGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmECDSAGCrypt.cpp"
+#include "crypto/gcrypt/CryptoAlgorithmEd25519GCrypt.cpp"

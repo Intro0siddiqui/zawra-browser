@@ -1,0 +1,8 @@
+#include "crypto/gcrypt/CryptoKeyECGCrypt.cpp"
+#include "crypto/gcrypt/CryptoKeyOKPGCrypt.cpp"
+#include "crypto/gcrypt/CryptoKeyRSAGCrypt.cpp"
+#include "crypto/gcrypt/GCryptUtilities.cpp"
+#include "crypto/gcrypt/SerializedCryptoKeyWrapGCrypt.cpp"
+#include "crypto/keys/CryptoKeyAES.cpp"
+#include "crypto/keys/CryptoKeyEC.cpp"
+#include "crypto/keys/CryptoKeyHMAC.cpp"

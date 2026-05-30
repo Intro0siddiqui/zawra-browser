@@ -1,0 +1,8 @@
+#include "platform/graphics/filters/FilterEffect.cpp"
+#include "platform/graphics/filters/FilterFunction.cpp"
+#include "platform/graphics/filters/FilterImage.cpp"
+#include "platform/graphics/filters/FilterImageTargetSwitcher.cpp"
+#include "platform/graphics/filters/FilterOperation.cpp"
+#include "platform/graphics/filters/FilterOperations.cpp"
+#include "platform/graphics/filters/FilterResults.cpp"
+#include "platform/graphics/filters/FilterStyleTargetSwitcher.cpp"

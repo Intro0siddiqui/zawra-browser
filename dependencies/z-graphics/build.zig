@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
     });
     lib_mod.link_libc = true;
     if (target.result.os.tag == .linux) {
-        lib_mod.addIncludePath(.{ .path = "/usr/include" });
+        lib_mod.addIncludePath(b.path("/usr/include"));
     }
 
     const smoke_test = b.addExecutable(.{

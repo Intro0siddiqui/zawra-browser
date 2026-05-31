@@ -32,5 +32,5 @@ pub fn initInstance() ?*anyopaque {
         return null;
     }
 
-    return instance;
+    return @ptrCast(instance);
 }

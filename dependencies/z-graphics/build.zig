@@ -13,6 +13,9 @@ pub fn build(b: *std.Build) void {
         }),
         .linkage = .static,
     });
+    if (target.result.os.tag == .linux) {
+        lib.linkSystemLibrary("vulkan");
+    }
     b.installArtifact(lib);
 
     const smoke_test = b.addExecutable(.{

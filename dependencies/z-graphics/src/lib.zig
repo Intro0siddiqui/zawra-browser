@@ -1,13 +1,27 @@
-// src/lib.zig: Zawra Graphics OS Abstraction Stub
+// src/lib.zig: Zawra Graphics OS Abstraction
+const builtin = @import("builtin");
+
 pub const ZawraGraphicsHandle = *anyopaque;
 
-pub export fn ZawraGraphics_Initialize() bool { return true; }
+pub export fn ZawraGraphics_Initialize() bool {
+    return true;
+}
 
 /// Creates a surface for rendering
 pub export fn ZawraGraphics_CreateSurface(width: u32, height: u32) ?ZawraGraphicsHandle {
     _ = width;
     _ = height;
-    // Stub: returning null as we haven't implemented backend surface creation yet
+    
+    if (builtin.os.tag == .linux) {
+        return createLinuxVulkanSurface();
+    }
+    
+    // Stub for other platforms until implemented
+    return null;
+}
+
+fn createLinuxVulkanSurface() ?ZawraGraphicsHandle {
+    // Vulkan surface creation implementation will go here
     return null;
 }
 

@@ -1,0 +1,68 @@
+name: WebKit Agnostic Bridges CI
+
+on:
+  push:
+    branches: [ main, list-directory-contents ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-wtf:
+    name: Build WTF & IPC Bridges
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libwpe-1.0-dev libepoxy-dev
+
+      - name: Install Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja pkg-config glib
+          
+      - name: Install Dependencies (Windows)
+        if: runner.os == 'Windows'
+        # Basic dependencies. GLib/WPE headers might be missing, 
+        # which is the next challenge for full agnosticism.
+        run: choco install cmake ninja pkgconf
+
+      - name: Setup Zig (for Hajr FFI)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Install Rust (for Zawra Glue)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Hajr Subsystem
+        run: |
+          cd dependencies/hajr
+          zig build -Doptimize=ReleaseSafe
+
+      - name: Configure WebKit (WPE Port)
+        # We allow this to fail on Mac/Windows initially to expose 
+        # the remaining Linux/GLib CMake assumptions.
+        continue-on-error: ${{ runner.os != 'Linux' }}
+        run: |
+          cmake -DPORT=WPE \
+                -DENABLE_HAJR_SANDBOX=ON \
+                -DCMAKE_BUILD_TYPE=Release \
+                -GNinja \
+                -B webkit/build-ci \
+                webkit/source
+
+      - name: Compile WTF (Web Template Framework)
+        continue-on-error: ${{ runner.os != 'Linux' }}
+        run: |
+          ninja -C webkit/build-ci WTF

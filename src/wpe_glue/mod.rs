@@ -70,3 +70,5 @@ pub mod launcher;
 pub mod factory;
 pub mod streaming;
 pub mod zero_copy_bridge;
+pub mod threading;
+pub mod crypto;

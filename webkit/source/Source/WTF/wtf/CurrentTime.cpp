@@ -258,9 +258,15 @@ uint64_t ApproximateTime::toMachApproximateTime() const
 }
 #endif
 
+#if PLATFORM(WPE)
+extern "C" double Zawra_Hajr_GetMonotonicTime(void);
+#endif
+
 MonotonicTime MonotonicTime::now()
 {
-#if USE(GLIB)
+#if PLATFORM(WPE)
+    return fromRawSeconds(Zawra_Hajr_GetMonotonicTime());
+#elif USE(GLIB)
     return fromRawSeconds(static_cast<double>(g_get_monotonic_time() / 1000000.0));
 #elif OS(DARWIN)
     return fromMachAbsoluteTime(mach_absolute_time());

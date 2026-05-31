@@ -1551,6 +1551,7 @@ dependencies = [
  "dirs",
  "lean-net",
  "libc",
+ "ring",
 ]
 
 [[package]]

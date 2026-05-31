@@ -66,6 +66,9 @@
 #include <wtf/glib/GSocketMonitor.h>
 #endif
 
+// Portable socket monitor abstraction for cross-platform support
+#include <wtf/SocketMonitor.h>
+
 #if ENABLE(IPC_TESTING_API)
 #include "MessageObserver.h"
 #endif
@@ -260,12 +263,12 @@ public:
             : Identifier(handle.handle.release())
         {
         }
-        explicit Identifier(int handle)
+        explicit Identifier(uint64_t handle)
             : handle(handle)
         {
         }
-        operator bool() const { return handle != -1; }
-        int handle { -1 };
+        operator bool() const { return handle != static_cast<uint64_t>(-1); }
+        uint64_t handle { static_cast<uint64_t>(-1) };
 #elif OS(WINDOWS)
         explicit Identifier(Handle&& handle)
             : Identifier(handle.handle.leak())
@@ -614,21 +617,22 @@ private:
     Vector<int> m_fileDescriptors;
     int m_socketDescriptor;
     std::unique_ptr<UnixMessage> m_pendingOutputMessage;
-#if USE(GLIB)
-    GRefPtr<GSocket> m_socket;
-    GSocketMonitor m_readSocketMonitor;
-    GSocketMonitor m_writeSocketMonitor;
+    // SocketMonitor handles all socket notification - portable across platforms
+    SocketMonitor m_readSocketMonitor;
+    SocketMonitor m_writeSocketMonitor;
     C_HardenedRingBuffer* m_inboundRing { nullptr };
     C_HardenedRingBuffer* m_outboundRing { nullptr };
+    C_HardenedRingBuffer* m_hajrRings { nullptr };
     void* m_inboundMem { nullptr };
     void* m_outboundMem { nullptr };
     unsigned m_pendingRingMessages { 0 };
     unsigned m_ringBatchSize { 64 };
+    bool m_isHajrEnabled { false };
 #endif
 #if PLATFORM(PLAYSTATION)
-    RefPtr<WTF::Thread> m_socketMonitor;
+    // Removed: now using portable SocketMonitor above
 #endif
-#elif OS(DARWIN)
+#if OS(DARWIN)
     // Called on the connection queue.
     void receiveSourceEventHandler();
     void initializeSendSource();

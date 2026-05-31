@@ -263,12 +263,12 @@ public:
             : Identifier(handle.handle.release())
         {
         }
-        explicit Identifier(int handle)
+        explicit Identifier(uint64_t handle)
             : handle(handle)
         {
         }
-        operator bool() const { return handle != -1; }
-        int handle { -1 };
+        operator bool() const { return handle != static_cast<uint64_t>(-1); }
+        uint64_t handle { static_cast<uint64_t>(-1) };
 #elif OS(WINDOWS)
         explicit Identifier(Handle&& handle)
             : Identifier(handle.handle.leak())

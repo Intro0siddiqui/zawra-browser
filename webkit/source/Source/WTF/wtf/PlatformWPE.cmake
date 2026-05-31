@@ -17,6 +17,7 @@ list(APPEND WTF_PUBLIC_HEADERS
     linux/RealTimeThreads.h
 
     unix/UnixFileDescriptor.h
+    SocketMonitor.h
 )
 
 list(APPEND WTF_SOURCES
@@ -28,7 +29,7 @@ list(APPEND WTF_SOURCES
     glib/FileSystemGlib.cpp
     glib/GRefPtr.cpp
     glib/GSocketMonitor.cpp
-    glib/RunLoopGLib.cpp
+    generic/RunLoopGeneric.cpp
     glib/Sandbox.cpp
     glib/SocketConnection.cpp
     glib/URLGLib.cpp
@@ -47,6 +48,7 @@ list(APPEND WTF_SOURCES
     unix/LoggingUnix.cpp
     unix/MemoryPressureHandlerUnix.cpp
     unix/UniStdExtrasUnix.cpp
+    SocketMonitor.cpp
 )
 
 list(APPEND WTF_LIBRARIES
@@ -55,6 +57,7 @@ list(APPEND WTF_LIBRARIES
     ${GLIB_LIBRARIES}
     Threads::Threads
     ZLIB::ZLIB
+    "${CMAKE_SOURCE_DIR}/../../subsystems/hajr/zig-out/lib/libhajr_ffi.so"
 )
 
 if (Journald_FOUND)

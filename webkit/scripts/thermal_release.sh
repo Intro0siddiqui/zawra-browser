@@ -1,42 +1,26 @@
 #!/bin/bash
 #
-# thermal_build_control.sh
-# Monitors CPU temperature and pauses/resumes the ninja WebKit build
-# to prevent overheating.
+# Zawra Browser — Thermal Build Controller (Release Edition)
+# Optimized for: High-Frequency Bursts and x86_pkg_temp.
 #
 
 set -e
 
 # --- Configuration ---
-BUILD_DIR="webkit/build/WPE/Debug"
+BUILD_DIR="webkit/build/WPE/Release"
 TARGET="MiniBrowser"
-JOBS=2              # i3-6006U has 4 threads; 3 jobs leaves 1 free for OS/thermal
-TEMP_HIGH=63        # User preferred — conservative pause threshold
-TEMP_LOW=50         # User preferred — conservative resume threshold
-POLL_INTERVAL=5     # seconds between temperature checks
-
-# Find the thermal zone
-THERMAL_ZONE=""
-for z in /sys/class/thermal/thermal_zone*/temp; do
-    if [ -f "$z" ]; then
-        # Prefer x86_pkg_temp if available (usually zone 2 or 0)
-        TYPE=$(cat "$(dirname "$z")/type" 2>/dev/null || echo "")
-        if [ "$TYPE" == "x86_pkg_temp" ]; then
-            THERMAL_ZONE="$z"
-            break
-        fi
-        [ -z "$THERMAL_ZONE" ] && THERMAL_ZONE="$z"
-    fi
-done
-
-if [ -z "$THERMAL_ZONE" ]; then
-    echo "ERROR: No thermal zone found. Cannot monitor temperature."
-    exit 1
-fi
+JOBS=2
+TEMP_HIGH=63
+TEMP_LOW=45
+POLL_INTERVAL=3  # Seconds between checks
+THERMAL_ZONE="/sys/class/thermal/thermal_zone2/temp" # x86_pkg_temp
 
 get_temp() {
-    local raw=$(cat "$THERMAL_ZONE")
-    echo "$((raw / 1000))"
+    if [ -f "$THERMAL_ZONE" ]; then
+        echo "$(( $(cat "$THERMAL_ZONE") / 1000 ))"
+    else
+        echo "0"
+    fi
 }
 
 print_stats() {
@@ -45,10 +29,9 @@ print_stats() {
     echo -ne " \r[$(date +%H:%M:%S)] Temp: ${temp}°C | State: ${state}   "
 }
 
-echo "🚀 Starting Zawra Debug Build (Thermal Burst Controller)"
+echo "🚀 Starting Zawra Release Build (Thermal Burst Controller)"
 echo "   Target: $TARGET | Jobs: $JOBS"
 echo "   Limit: Pause >= ${TEMP_HIGH}°C | Resume <= ${TEMP_LOW}°C"
-echo "   Thermal Zone: $THERMAL_ZONE ($(cat "$(dirname "$THERMAL_ZONE")/type"))"
 echo ""
 
 # Enable job control for PGID management
@@ -69,6 +52,7 @@ cleanup() {
     trap - SIGINT SIGTERM
     echo -e "\n\n🛑 Stopping build processes..."
     if [ -n "$NINJA_PGID" ]; then
+        # Kill the entire process group
         kill -TERM -"$NINJA_PGID" 2>/dev/null || true
     fi
     exit 1

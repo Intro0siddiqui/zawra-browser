@@ -626,7 +626,7 @@ private:
 #if PLATFORM(PLAYSTATION)
     RefPtr<WTF::Thread> m_socketMonitor;
 #endif
-#elif OS(DARWIN)
+#if OS(DARWIN)
     // Called on the connection queue.
     void receiveSourceEventHandler();
     void initializeSendSource();

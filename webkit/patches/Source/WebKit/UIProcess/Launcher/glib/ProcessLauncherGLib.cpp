@@ -210,7 +210,7 @@ void ProcessLauncher::launchProcess()
 
     // We've finished launching the process, message back to the main run loop.
     RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket = socketPair.server] {
-        didFinishLaunchingProcess(m_processID, IPC::Connection::Identifier(static_cast<uint64_t>(serverSocket)));
+        didFinishLaunchingProcess(m_processID, IPC::Connection::Identifier { serverSocket });
     });
 }
 

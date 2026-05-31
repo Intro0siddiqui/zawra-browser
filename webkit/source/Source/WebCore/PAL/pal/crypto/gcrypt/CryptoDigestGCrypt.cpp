@@ -26,14 +26,15 @@
 
 #include "config.h"
 #include "CryptoDigest.h"
+#include <wtf/Vector.h>
 
-#include <gcrypt.h>
+extern "C" int Zawra_Crypto_Digest(uint32_t algo, const uint8_t* data, size_t len, uint8_t* out);
 
 namespace PAL {
 
 struct CryptoDigestContext {
-    int algorithm;
-    gcry_md_hd_t md;
+    uint32_t algorithm;
+    Vector<uint8_t> buffer;
 };
 
 CryptoDigest::CryptoDigest()
@@ -45,48 +46,37 @@ CryptoDigest::~CryptoDigest() = default;
 
 std::unique_ptr<CryptoDigest> CryptoDigest::create(CryptoDigest::Algorithm algorithm)
 {
-    int gcryptAlgorithm;
+    uint32_t zawraAlgorithm;
 
     switch (algorithm) {
-    case CryptoDigest::Algorithm::SHA_1:
-        gcryptAlgorithm = GCRY_MD_SHA1;
-        break;
-    case CryptoDigest::Algorithm::SHA_224:
-        gcryptAlgorithm = GCRY_MD_SHA224;
-        break;
     case CryptoDigest::Algorithm::SHA_256:
-        gcryptAlgorithm = GCRY_MD_SHA256;
-        break;
-    case CryptoDigest::Algorithm::SHA_384:
-        gcryptAlgorithm = GCRY_MD_SHA384;
+        zawraAlgorithm = 3;
         break;
     case CryptoDigest::Algorithm::SHA_512:
-        gcryptAlgorithm = GCRY_MD_SHA512;
+        zawraAlgorithm = 4;
         break;
+    default:
+        // Fallback or not supported by Zawra_Crypto_Digest
+        return nullptr;
     }
 
     std::unique_ptr<CryptoDigest> digest(new CryptoDigest);
-    digest->m_context->algorithm = gcryptAlgorithm;
-
-    gcry_md_open(&digest->m_context->md, gcryptAlgorithm, 0);
-    if (!digest->m_context->md)
-        return nullptr;
+    digest->m_context->algorithm = zawraAlgorithm;
 
     return digest;
 }
 
 void CryptoDigest::addBytes(const void* input, size_t length)
 {
-    gcry_md_write(m_context->md, input, length);
+    m_context->buffer.append(static_cast<const uint8_t*>(input), length);
 }
 
 Vector<uint8_t> CryptoDigest::computeHash()
 {
-    size_t digestLen = gcry_md_get_algo_dlen(m_context->algorithm);
+    size_t digestLen = (m_context->algorithm == 3) ? 32 : 64;
+    Vector<uint8_t> result(digestLen);
 
-    gcry_md_final(m_context->md);
-    Vector<uint8_t> result { gcry_md_read(m_context->md, 0), digestLen };
-    gcry_md_close(m_context->md);
+    Zawra_Crypto_Digest(m_context->algorithm, m_context->buffer.data(), m_context->buffer.size(), result.data());
 
     return result;
 }

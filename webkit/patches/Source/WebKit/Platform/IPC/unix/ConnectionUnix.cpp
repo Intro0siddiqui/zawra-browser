@@ -51,7 +51,11 @@ C_HardenedRingBuffer* hajr_ring_map(uint8_t* buffer, size_t buffer_len, size_t s
 void hajr_ring_free(C_HardenedRingBuffer* c_ring);
 int32_t hajr_ring_write(C_HardenedRingBuffer* c_ring, const uint8_t* data, size_t length);
 int32_t hajr_ring_read(C_HardenedRingBuffer* c_ring, uint8_t* buf, size_t length, size_t* bytes_read);
+void hajr_ring_signal(C_HardenedRingBuffer* c_ring);
+int32_t hajr_ring_wait(C_HardenedRingBuffer* c_ring);
 }
+
+extern "C" void* Zawra_Hajr_MapBootstrapRing(uint64_t id);
 
 struct HajrHandshake {
     uint32_t magic;
@@ -407,91 +411,18 @@ void Connection::platformOpen()
     fprintf(stderr, "[ZAWRA] Connection::platformOpen() called. m_isServer=%d, m_socketDescriptor=%d\n", m_isServer, m_socketDescriptor);
     fflush(stderr);
 
-    if (m_isServer) {
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Server initializing Hajr\n");
-        fflush(stderr);
-        int outbound_fd = syscall(SYS_memfd_create, "webkit-hajr-out", MFD_CLOEXEC);
-        int inbound_fd = syscall(SYS_memfd_create, "webkit-hajr-in", MFD_CLOEXEC);
-        ftruncate(outbound_fd, 65728);
-        ftruncate(inbound_fd, 65728);
-
-        m_outboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, outbound_fd, 0);
-        m_inboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, inbound_fd, 0);
-
-        m_outboundRing = hajr_ring_init(reinterpret_cast<uint8_t*>(m_outboundMem), 65728, 65536, 0, 0);
-        m_inboundRing = hajr_ring_init(reinterpret_cast<uint8_t*>(m_inboundMem), 65728, 65536, 0, 0);
-
-        // Send the two memfds to the client via SCM_RIGHTS
-        HajrHandshake handshake = { 0x48414A52, 65536 };
-        int fds[2] = { outbound_fd, inbound_fd };
-        char ctrlBuf[CMSG_SPACE(sizeof(fds))] = {};
-
-        struct iovec iov = { &handshake, sizeof(handshake) };
-        struct msghdr msg = {};
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-        msg.msg_control = ctrlBuf;
-        msg.msg_controllen = sizeof(ctrlBuf);
-
-        struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-        cmsg->cmsg_level = SOL_SOCKET;
-        cmsg->cmsg_type  = SCM_RIGHTS;
-        cmsg->cmsg_len   = CMSG_LEN(sizeof(fds));
-        memcpy(CMSG_DATA(cmsg), fds, sizeof(fds));
-
-        sendmsg(m_socketDescriptor, &msg, MSG_NOSIGNAL);
-        close(outbound_fd);
-        close(inbound_fd);
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Server sent Hajr handshake\n");
-        fflush(stderr);
+    // [ZAWRA] Pure Hajr Connection: Bypass the legacy socket handshake.
+    void* ringPtr = Zawra_Hajr_MapBootstrapRing(m_identifier.handle);
+    if (ringPtr) {
+        // Bind our local Hajr state to the pre-allocated rings.
+        // (Assuming m_hajrRings is the new member in Connection.h)
+        m_hajrRings = static_cast<C_HardenedRingBuffer*>(ringPtr);
+        m_isHajrEnabled = true;
+        fprintf(stderr, "[ZAWRA] Established Pure Hajr Connection using RingID: %" PRIu64 "\n", m_identifier.handle);
     } else {
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Client waiting for Hajr handshake\n");
-        fflush(stderr);
-        HajrHandshake handshake = { 0, 0 };
-        int fds[2] = { -1, -1 };
-        char ctrlBuf[CMSG_SPACE(sizeof(fds))] = {};
-
-        struct iovec iov = { &handshake, sizeof(handshake) };
-        struct msghdr msg = {};
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-        msg.msg_control = ctrlBuf;
-        msg.msg_controllen = sizeof(ctrlBuf);
-
-        // We use a blocking read here because this is a one-time startup handshake.
-        // If the socket is non-blocking, we need to temporarily clear the flag or loop.
-        int flags = fcntl(m_socketDescriptor, F_GETFL, 0);
-        fcntl(m_socketDescriptor, F_SETFL, flags & ~O_NONBLOCK);
-        
-        ssize_t received = recvmsg(m_socketDescriptor, &msg, 0);
-        
-        // Restore non-blocking mode
-        fcntl(m_socketDescriptor, F_SETFL, flags);
-
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Client recvmsg returned %zd, magic=0x%08x\n", received, handshake.magic);
-        fflush(stderr);
-        if (received == sizeof(handshake) && handshake.magic == 0x48414A52) {
-            for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-                if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS
-                    && cmsg->cmsg_len >= CMSG_LEN(sizeof(fds))) {
-                    memcpy(fds, CMSG_DATA(cmsg), sizeof(fds));
-                    break;
-                }
-            }
-        }
-
-        if (fds[0] != -1 && fds[1] != -1) {
-            fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Client mapping Hajr rings\n");
-            fflush(stderr);
-            m_inboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, fds[0], 0);
-            m_outboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, fds[1], 0);
-
-            m_inboundRing = hajr_ring_map(reinterpret_cast<uint8_t*>(m_inboundMem), 65728, 65536, 0, 0);
-            m_outboundRing = hajr_ring_map(reinterpret_cast<uint8_t*>(m_outboundMem), 65728, 65536, 0, 0);
-
-            close(fds[0]);
-            close(fds[1]);
-        }
+        fprintf(stderr, "[ZAWRA] FAILED to map Hajr bootstrap ring with ID: %" PRIu64 "\n", m_identifier.handle);
+        m_isConnected = false;
+        return;
     }
 
 // Use portable SocketMonitor abstraction for socket event monitoring
@@ -559,6 +490,7 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
 
         int32_t res = hajr_ring_write(m_outboundRing, payload.data(), payload.size());
         if (res == 1) { // 1 is Success in Hajr FFI
+            hajr_ring_signal(m_outboundRing);
             m_pendingRingMessages++;
 
             // Kick the reader only when the batch is full.

@@ -51,7 +51,11 @@ C_HardenedRingBuffer* hajr_ring_map(uint8_t* buffer, size_t buffer_len, size_t s
 void hajr_ring_free(C_HardenedRingBuffer* c_ring);
 int32_t hajr_ring_write(C_HardenedRingBuffer* c_ring, const uint8_t* data, size_t length);
 int32_t hajr_ring_read(C_HardenedRingBuffer* c_ring, uint8_t* buf, size_t length, size_t* bytes_read);
+int32_t hajr_ring_signal(C_HardenedRingBuffer* c_ring);
+int32_t hajr_ring_wait(C_HardenedRingBuffer* c_ring);
 }
+
+extern "C" void* Zawra_Hajr_MapBootstrapRing(uint64_t id);
 
 struct HajrHandshake {
     uint32_t magic;
@@ -117,9 +121,6 @@ static_assert(sizeof(MessageInfo) + sizeof(AttachmentInfo) * attachmentMaxAmount
 void Connection::platformInitialize(Identifier identifier)
 {
     m_socketDescriptor = identifier.handle;
-#if USE(GLIB)
-    m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
-#endif
     m_readBuffer.reserveInitialCapacity(messageMaxSize);
     m_fileDescriptors.reserveInitialCapacity(attachmentMaxAmount);
 }
@@ -149,28 +150,11 @@ void Connection::platformInvalidate()
         m_outboundMem = nullptr;
     }
 
-#if USE(GLIB)
-    // In the GLib platform the socket descriptor is owned by GSocket.
-    m_socket = nullptr;
-#else
-    if (m_socketDescriptor != -1)
-        closeWithRetry(m_socketDescriptor);
-#endif
-
     if (!m_isConnected)
         return;
 
-#if USE(GLIB)
     m_readSocketMonitor.stop();
     m_writeSocketMonitor.stop();
-#endif
-
-#if PLATFORM(PLAYSTATION)
-    if (m_socketMonitor) {
-        m_socketMonitor->detach();
-        m_socketMonitor = nullptr;
-    }
-#endif
 
     m_socketDescriptor = -1;
     m_isConnected = false;
@@ -427,130 +411,32 @@ void Connection::platformOpen()
     fprintf(stderr, "[ZAWRA] Connection::platformOpen() called. m_isServer=%d, m_socketDescriptor=%d\n", m_isServer, m_socketDescriptor);
     fflush(stderr);
 
-    if (m_isServer) {
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Server initializing Hajr\n");
-        fflush(stderr);
-        int outbound_fd = syscall(SYS_memfd_create, "webkit-hajr-out", MFD_CLOEXEC);
-        int inbound_fd = syscall(SYS_memfd_create, "webkit-hajr-in", MFD_CLOEXEC);
-        ftruncate(outbound_fd, 65728);
-        ftruncate(inbound_fd, 65728);
-
-        m_outboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, outbound_fd, 0);
-        m_inboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, inbound_fd, 0);
-
-        m_outboundRing = hajr_ring_init(reinterpret_cast<uint8_t*>(m_outboundMem), 65728, 65536, 0, 0);
-        m_inboundRing = hajr_ring_init(reinterpret_cast<uint8_t*>(m_inboundMem), 65728, 65536, 0, 0);
-
-        // Send the two memfds to the client via SCM_RIGHTS
-        HajrHandshake handshake = { 0x48414A52, 65536 };
-        int fds[2] = { outbound_fd, inbound_fd };
-        char ctrlBuf[CMSG_SPACE(sizeof(fds))] = {};
-
-        struct iovec iov = { &handshake, sizeof(handshake) };
-        struct msghdr msg = {};
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-        msg.msg_control = ctrlBuf;
-        msg.msg_controllen = sizeof(ctrlBuf);
-
-        struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-        cmsg->cmsg_level = SOL_SOCKET;
-        cmsg->cmsg_type  = SCM_RIGHTS;
-        cmsg->cmsg_len   = CMSG_LEN(sizeof(fds));
-        memcpy(CMSG_DATA(cmsg), fds, sizeof(fds));
-
-        sendmsg(m_socketDescriptor, &msg, MSG_NOSIGNAL);
-        close(outbound_fd);
-        close(inbound_fd);
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Server sent Hajr handshake\n");
-        fflush(stderr);
+    // [ZAWRA] Pure Hajr Connection: Bypass the legacy socket handshake.
+    void* ringPtr = Zawra_Hajr_MapBootstrapRing(m_socketDescriptor);
+    if (ringPtr) {
+        // Bind our local Hajr state to the pre-allocated rings.
+        // (Assuming m_hajrRings is the new member in Connection.h)
+        m_hajrRings = static_cast<C_HardenedRingBuffer*>(ringPtr);
+        m_isHajrEnabled = true;
+        fprintf(stderr, "[ZAWRA] Established Pure Hajr Connection using RingID: %d\n", m_socketDescriptor);
     } else {
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Client waiting for Hajr handshake\n");
-        fflush(stderr);
-        HajrHandshake handshake = { 0, 0 };
-        int fds[2] = { -1, -1 };
-        char ctrlBuf[CMSG_SPACE(sizeof(fds))] = {};
-
-        struct iovec iov = { &handshake, sizeof(handshake) };
-        struct msghdr msg = {};
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-        msg.msg_control = ctrlBuf;
-        msg.msg_controllen = sizeof(ctrlBuf);
-
-        // We use a blocking read here because this is a one-time startup handshake.
-        // If the socket is non-blocking, we need to temporarily clear the flag or loop.
-        int flags = fcntl(m_socketDescriptor, F_GETFL, 0);
-        fcntl(m_socketDescriptor, F_SETFL, flags & ~O_NONBLOCK);
-        
-        ssize_t received = recvmsg(m_socketDescriptor, &msg, 0);
-        
-        // Restore non-blocking mode
-        fcntl(m_socketDescriptor, F_SETFL, flags);
-
-        fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Client recvmsg returned %zd, magic=0x%08x\n", received, handshake.magic);
-        fflush(stderr);
-        if (received == sizeof(handshake) && handshake.magic == 0x48414A52) {
-            for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-                if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS
-                    && cmsg->cmsg_len >= CMSG_LEN(sizeof(fds))) {
-                    memcpy(fds, CMSG_DATA(cmsg), sizeof(fds));
-                    break;
-                }
-            }
-        }
-
-        if (fds[0] != -1 && fds[1] != -1) {
-            fprintf(stderr, "[ZAWRA] Connection::platformOpen() - Client mapping Hajr rings\n");
-            fflush(stderr);
-            m_inboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, fds[0], 0);
-            m_outboundMem = mmap(nullptr, 65728, PROT_READ | PROT_WRITE, MAP_SHARED, fds[1], 0);
-
-            m_inboundRing = hajr_ring_map(reinterpret_cast<uint8_t*>(m_inboundMem), 65728, 65536, 0, 0);
-            m_outboundRing = hajr_ring_map(reinterpret_cast<uint8_t*>(m_outboundMem), 65728, 65536, 0, 0);
-
-            close(fds[0]);
-            close(fds[1]);
-        }
+        fprintf(stderr, "[ZAWRA] FAILED to map Hajr bootstrap ring with ID: %d\n", m_socketDescriptor);
+        m_isConnected = false;
+        return;
     }
 
-#if USE(GLIB)
-    m_readSocketMonitor.start(m_socket.get(), G_IO_IN, m_connectionQueue->runLoop(), [protectedThis] (GIOCondition condition) -> gboolean {
-        if (condition & G_IO_HUP || condition & G_IO_ERR || condition & G_IO_NVAL) {
+// Use portable SocketMonitor abstraction for socket event monitoring
+    // This works with both GLib event loop and generic poll() fallback
+    m_readSocketMonitor.start(m_socketDescriptor, SocketCondition::Readable | SocketCondition::Error | SocketCondition::Hangup, m_connectionQueue->runLoop(), [protectedThis](SocketCondition condition) {
+        if (condition == SocketCondition::Error || condition == SocketCondition::Hangup) {
             protectedThis->connectionDidClose();
-            return G_SOURCE_REMOVE;
+            return;
         }
 
-        if (condition & G_IO_IN) {
+        if (condition == SocketCondition::Readable) {
             protectedThis->readyReadHandler();
-            return G_SOURCE_CONTINUE;
-        }
-
-        ASSERT_NOT_REACHED();
-        return G_SOURCE_REMOVE;
-    });
-#endif
-
-#if PLATFORM(PLAYSTATION)
-    m_socketMonitor = Thread::create("SocketMonitor", [protectedThis] {
-        {
-            int fd;
-            while ((fd = protectedThis->m_socketDescriptor) != -1) {
-                int maxFd = fd;
-                fd_set fdSet;
-                FD_ZERO(&fdSet);
-                FD_SET(fd, &fdSet);
-
-                if (-1 != select(maxFd + 1, &fdSet, 0, 0, 0)) {
-                    if (FD_ISSET(fd, &fdSet))
-                        protectedThis->readyReadHandler();
-                }
-            }
-
         }
     });
-    return;
-#endif
 
     // Schedule a call to readyReadHandler. Data may have arrived before installation of the signal handler.
     m_connectionQueue->dispatch([protectedThis] {
@@ -604,6 +490,7 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
 
         int32_t res = hajr_ring_write(m_outboundRing, payload.data(), payload.size());
         if (res == 1) { // 1 is Success in Hajr FFI
+            hajr_ring_signal(m_outboundRing);
             m_pendingRingMessages++;
 
             // Kick the reader only when the batch is full.
@@ -703,12 +590,10 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
         if (errno == EINTR)
             continue;
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-#if USE(GLIB)
             m_pendingOutputMessage = makeUnique<UnixMessage>(WTFMove(outputMessage));
-            m_writeSocketMonitor.start(m_socket.get(), G_IO_OUT, m_connectionQueue->runLoop(), [this, protectedThis = Ref { *this }] (GIOCondition condition) -> gboolean {
-                if (condition & G_IO_OUT) {
+            m_writeSocketMonitor.start(m_socketDescriptor, SocketCondition::Writable, m_connectionQueue->runLoop(), [this, protectedThis = Ref { *this }](SocketCondition condition) {
+                if (condition == SocketCondition::Writable) {
                     ASSERT(m_pendingOutputMessage);
-                    // We can't stop the monitor from this lambda, because stop destroys the lambda.
                     m_connectionQueue->dispatch([this, protectedThis = Ref { *this }] {
                         m_writeSocketMonitor.stop();
                         auto message = WTFMove(m_pendingOutputMessage);
@@ -718,18 +603,8 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
                         }
                     });
                 }
-                return G_SOURCE_REMOVE;
             });
             return false;
-#else
-            struct pollfd pollfd;
-
-            pollfd.fd = m_socketDescriptor;
-            pollfd.events = POLLOUT;
-            pollfd.revents = 0;
-            poll(&pollfd, 1, -1);
-            continue;
-#endif
         }
 
 #if OS(LINUX)

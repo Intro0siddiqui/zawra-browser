@@ -87,6 +87,7 @@ platform/libwpe/PlatformKeyboardEventLibWPE.cpp
 platform/libwpe/PlatformPasteboardLibWPE.cpp
 
 platform/network/zawra/ZawraStorageBridge.cpp
+platform/network/zawra/ZawraCryptoBridge.cpp
 
 platform/text/Hyphenation.cpp
 platform/text/LocaleICU.cpp

@@ -74,3 +74,62 @@ pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i
 pub extern "C" fn Zawra_Shutdown_Subsystems() {
     eprintln!("[zawra] Shutdown requested — subsystems will be released at process exit");
 }
+
+/// Signals the generic event loop to wake up using Hajr primitives.
+///
+/// Currently a stub that logs the signal.
+#[unsafe(no_mangle)]
+pub extern "C" fn Zawra_Hajr_SignalEventLoop() {
+    eprintln!("Hajr Wakeup Signal Sent");
+}
+
+unsafe extern "C" {
+    fn __hajr_create_anonymous_ring(size: usize) -> u64;
+    fn __hajr_map_anonymous_ring(id: u64) -> *mut std::ffi::c_void;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_Hajr_CreateBootstrapRing(size: usize) -> u64 {
+    unsafe { __hajr_create_anonymous_ring(size) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_Hajr_MapBootstrapRing(id: u64) -> *mut std::ffi::c_void {
+    unsafe { __hajr_map_anonymous_ring(id) }
+}
+
+/// Redirected Memory Allocation for WTF (WebKit Template Framework).
+///
+/// Allocates `size` bytes using Hajr primitives.
+///
+/// # Safety
+/// This is an unsafe FFI function called by WebKit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void {
+    // For now, we use a simple libc malloc or hajr equivalent if available.
+    // In a real implementation, this would use Hajr's specific memory management.
+    // Given the context of patching WTF, we'll use libc::malloc as a placeholder 
+    // or call into Hajr's internal allocator if it were exposed.
+    // However, the task implies redirection to Hajr. 
+    // If Hajr isn't fully ready, we'll use libc::malloc.
+    libc::malloc(size)
+}
+
+/// Redirected Memory Protection for WTF.
+///
+/// Sets memory protection on `ptr` for `size` bytes.
+///
+/// # Safety
+/// This is an unsafe FFI function called by WebKit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_Hajr_MemProtect(ptr: *mut std::ffi::c_void, size: usize, read: bool, write: bool) -> i32 {
+    let mut prot = libc::PROT_NONE;
+    if read { prot |= libc::PROT_READ; }
+    if write { prot |= libc::PROT_WRITE; }
+    
+    if libc::mprotect(ptr, size, prot) == 0 {
+        0
+    } else {
+        -1
+    }
+}

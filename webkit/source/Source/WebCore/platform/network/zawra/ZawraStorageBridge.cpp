@@ -14,10 +14,6 @@ extern "C" {
     int32_t Zawra_Bookmark_Delete(uint64_t hi, uint64_t lo);
     int32_t Zawra_Bookmark_GetAll(char* out_buf, size_t out_buf_len);
     int32_t Zawra_Cookie_DeleteForDomain(uint64_t hi, uint64_t lo);
-    int32_t Zawra_LocalStorage_Put(uint64_t hi, uint64_t lo, const char* key, const char* value);
-    int32_t Zawra_LocalStorage_Get(uint64_t hi, uint64_t lo, const char* key, char* out_buf, size_t out_buf_len);
-    int32_t Zawra_LocalStorage_Remove(uint64_t hi, uint64_t lo, const char* key);
-    int32_t Zawra_LocalStorage_Clear(uint64_t hi, uint64_t lo);
 }
 
 namespace WebCore {
@@ -92,37 +88,6 @@ void ZawraStorageBridge::deleteCookiesForDomain(const String& domain)
     uint64_t hi, lo;
     hashString(domain, hi, lo);
     Zawra_Cookie_DeleteForDomain(hi, lo);
-}
-
-int32_t ZawraStorageBridge::localStoragePut(const String& origin, const String& key, const String& value)
-{
-    uint64_t hi, lo;
-    hashString(origin, hi, lo);
-    return Zawra_LocalStorage_Put(hi, lo, key.utf8().data(), value.utf8().data());
-}
-
-String ZawraStorageBridge::localStorageGet(const String& origin, const String& key)
-{
-    uint64_t hi, lo;
-    hashString(origin, hi, lo);
-    char buf[16384]; // 16KB max for now
-    if (Zawra_LocalStorage_Get(hi, lo, key.utf8().data(), buf, sizeof(buf)) == 0)
-        return String::fromUTF8(buf);
-    return String();
-}
-
-int32_t ZawraStorageBridge::localStorageRemove(const String& origin, const String& key)
-{
-    uint64_t hi, lo;
-    hashString(origin, hi, lo);
-    return Zawra_LocalStorage_Remove(hi, lo, key.utf8().data());
-}
-
-int32_t ZawraStorageBridge::localStorageClear(const String& origin)
-{
-    uint64_t hi, lo;
-    hashString(origin, hi, lo);
-    return Zawra_LocalStorage_Clear(hi, lo);
 }
 
 }

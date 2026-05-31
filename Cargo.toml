@@ -12,6 +12,7 @@ libc    = "0.2"
 dirs    = "5.0"   # home_dir() for profile resolution
 lean-net   = { path = "dependencies/z-net/rust_net" }
 browserdb  = { path = "dependencies/Browser-db/bindings" }
+ring = "0.17.14"
 
 [lib]
 name = "zawra_browser"

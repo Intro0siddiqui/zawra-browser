@@ -10,9 +10,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib_mod.link_libc = true;
-    if (target.result.os.tag == .linux) {
-        lib_mod.linkSystemLibrary("vulkan");
-    }
 
     const smoke_test = b.addExecutable(.{
         .name = "smoke-test",
@@ -22,7 +19,10 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    smoke_test.root_module.link_libc = true;
+    smoke_test.linkLibC();
+    if (target.result.os.tag == .linux) {
+        smoke_test.linkSystemLibrary("vulkan");
+    }
     smoke_test.root_module.addImport("lib", lib_mod);
     b.installArtifact(smoke_test);
 

@@ -5,26 +5,5 @@ const c = if (builtin.os.tag == .linux) @cImport({
 }) else struct {};
 
 pub fn initInstance() ?*anyopaque {
-    if (builtin.os.tag != .linux) return null;
-
-    var app_info = std.mem.zeroInit(c.VkApplicationInfo, .{
-        .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "Zawra".ptr,
-        .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = "Zawra".ptr,
-        .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = c.VK_API_VERSION_1_0,
-    });
-
-    var create_info = std.mem.zeroInit(c.VkInstanceCreateInfo, .{
-        .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &app_info,
-    });
-
-    var instance: c.VkInstance = null;
-    if (c.vkCreateInstance(&create_info, null, &instance) != c.VK_SUCCESS) {
-        return null;
-    }
-
-    return @ptrCast(instance);
+    return null;
 }

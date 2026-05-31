@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    lib_mod.link_libc = true; // Required for C imports
 
     const smoke_test = b.addExecutable(.{
         .name = "smoke-test",
@@ -18,6 +19,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    smoke_test.linkLibC(); // Required for C imports
     smoke_test.root_module.addImport("lib", lib_mod);
     b.installArtifact(smoke_test);
 

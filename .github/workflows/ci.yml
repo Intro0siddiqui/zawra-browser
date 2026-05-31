@@ -48,7 +48,7 @@ jobs:
         run: cargo build --all 2>&1
 
       - name: Run tests
-        run: cargo test --all -- --nocapture 2>&1
+        run: cargo test --all -- --nocapture --test-threads=1 2>&1
 
       - name: Clippy lint check
         run: cargo clippy --all -- -D warnings 2>&1

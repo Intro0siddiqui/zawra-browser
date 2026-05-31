@@ -1,3 +1,4 @@
+const std = @import("std");
 const builtin = @import("builtin");
 const c = if (builtin.os.tag == .linux) @cImport({
     @cInclude("vulkan/vulkan.h");
@@ -15,8 +16,8 @@ pub fn initInstance() ?*anyopaque {
         .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
         .apiVersion = c.VK_API_VERSION_1_0,
     };
-
-    var create_info = c.VkInstanceCreateInfo{
+    // Initialize to zero to avoid uninitialized fields causing issues
+    var create_info = std.mem.zeroInit(c.VkInstanceCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = null,
         .flags = 0,
@@ -25,7 +26,7 @@ pub fn initInstance() ?*anyopaque {
         .ppEnabledLayerNames = null,
         .enabledExtensionCount = 0,
         .ppEnabledExtensionNames = null,
-    };
+    });
 
     var instance: c.VkInstance = undefined;
     if (c.vkCreateInstance(&create_info, null, &instance) != c.VK_SUCCESS) {

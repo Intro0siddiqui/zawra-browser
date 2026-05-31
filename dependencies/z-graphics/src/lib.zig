@@ -1,6 +1,10 @@
 // src/lib.zig: Zawra Graphics OS Abstraction
 const builtin = @import("builtin");
 
+const c = if (builtin.os.tag == .linux) @cImport({
+    @cInclude("vulkan/vulkan.h");
+}) else struct {};
+
 pub const ZawraGraphicsHandle = *anyopaque;
 
 pub export fn ZawraGraphics_Initialize() bool {
@@ -21,7 +25,8 @@ pub export fn ZawraGraphics_CreateSurface(width: u32, height: u32) ?ZawraGraphic
 }
 
 fn createLinuxVulkanSurface() ?ZawraGraphicsHandle {
-    // Vulkan surface creation implementation will go here
+    // Vulkan surface creation implementation will go here.
+    // For now, return null as a functional stub.
     return null;
 }
 

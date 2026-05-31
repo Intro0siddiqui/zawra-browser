@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libepoxy-dev libcairo2-dev
+          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libepoxy-dev libcairo2-dev libharfbuzz-dev libharfbuzz-icu-dev libicu-dev
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'

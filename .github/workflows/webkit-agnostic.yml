@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libwpe-1.0-dev libepoxy-dev
+          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libwpe-dev libwpebackend-fdo-1.0-dev libepoxy-dev
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -33,9 +33,7 @@ jobs:
           
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
-        # Basic dependencies. GLib/WPE headers might be missing, 
-        # which is the next challenge for full agnosticism.
-        run: choco install cmake ninja pkgconf
+        run: choco install cmake ninja pkgconfiglite
 
       - name: Setup Zig (for Hajr FFI)
         uses: mlugg/setup-zig@v2

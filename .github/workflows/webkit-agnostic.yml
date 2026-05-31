@@ -48,11 +48,10 @@ jobs:
           cd dependencies/hajr
           zig build -Doptimize=ReleaseSafe
 
-      - name: Configure WebKit (WPE Port)
+      - name: Configure WebKit (JSCOnly Port)
         shell: bash
-        continue-on-error: ${{ runner.os != 'Linux' }}
         run: |
-          cmake -DPORT=WPE \
+          cmake -DPORT=JSCOnly \
                 -DENABLE_HAJR_SANDBOX=ON \
                 -DCMAKE_BUILD_TYPE=Release \
                 -GNinja \
@@ -61,6 +60,5 @@ jobs:
 
       - name: Compile WTF (Web Template Framework)
         shell: bash
-        continue-on-error: ${{ runner.os != 'Linux' }}
         run: |
           ninja -C webkit/build-ci WTF

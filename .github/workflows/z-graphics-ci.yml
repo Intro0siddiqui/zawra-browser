@@ -3,9 +3,11 @@ on:
   push:
     paths:
       - 'dependencies/z-graphics/**'
+      - '.github/workflows/z-graphics-ci.yml'
   pull_request:
     paths:
       - 'dependencies/z-graphics/**'
+  workflow_dispatch:
 
 jobs:
   build:

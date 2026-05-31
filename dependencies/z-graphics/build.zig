@@ -11,7 +11,12 @@ pub fn build(b: *std.Build) void {
     });
     lib_mod.link_libc = true;
     if (target.result.os.tag == .linux) {
-        lib_mod.addIncludePath(b.path("/usr/include"));
+        // Use a more robust way to find headers or just add it only if it exists
+        if (std.fs.accessAbsolute("/usr/include/vulkan", .{})) |_| {
+            lib_mod.addIncludePath(b.path("/usr/include"));
+        } else |_| {
+            // Fallback or just ignore, if it's missing it will fail later
+        }
     }
 
     const smoke_test = b.addExecutable(.{

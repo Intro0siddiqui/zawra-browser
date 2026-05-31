@@ -1,9 +1,6 @@
 // src/lib.zig: Zawra Graphics OS Abstraction
 const builtin = @import("builtin");
-
-const c = if (builtin.os.tag == .linux) @cImport({
-    @cInclude("vulkan/vulkan.h");
-}) else struct {};
+const linux_vulkan = if (builtin.os.tag == .linux) @import("linux_vulkan.zig") else struct {};
 
 pub const ZawraGraphicsHandle = *anyopaque;
 
@@ -17,20 +14,14 @@ pub export fn ZawraGraphics_CreateSurface(width: u32, height: u32) ?ZawraGraphic
     _ = height;
     
     if (builtin.os.tag == .linux) {
-        return createLinuxVulkanSurface();
+        // Now calling into the real Vulkan initialization
+        return linux_vulkan.initInstance();
     } else if (builtin.os.tag == .macos) {
         return createMacOSMetalSurface();
     } else if (builtin.os.tag == .windows) {
         return createWindowsD3D12Surface();
     }
     
-    return null;
-}
-
-fn createLinuxVulkanSurface() ?ZawraGraphicsHandle {
-    // Vulkan surface creation implementation skeleton
-    // var instance: c.VkInstance = undefined;
-    // ... logic to call vkCreateInstance
     return null;
 }
 

@@ -36,13 +36,13 @@ jobs:
         run: choco install cmake ninja pkgconfiglite || true
 
       - name: Install sccache
+        shell: bash
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
             choco install sccache
           elif [ "$RUNNER_OS" == "macOS" ]; then
             brew install sccache
           else
-            # Linux manual install
             curl -L https://github.com/mozilla/sccache/releases/download/v0.9.1/sccache-v0.9.1-x86_64-unknown-linux-musl.tar.gz | tar -xz
             sudo mv sccache-v0.9.1-x86_64-unknown-linux-musl/sccache /usr/local/bin/
           fi

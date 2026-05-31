@@ -18,15 +18,29 @@ pub export fn ZawraGraphics_CreateSurface(width: u32, height: u32) ?ZawraGraphic
     
     if (builtin.os.tag == .linux) {
         return createLinuxVulkanSurface();
+    } else if (builtin.os.tag == .macos) {
+        return createMacOSMetalSurface();
+    } else if (builtin.os.tag == .windows) {
+        return createWindowsD3D12Surface();
     }
     
-    // Stub for other platforms until implemented
     return null;
 }
 
 fn createLinuxVulkanSurface() ?ZawraGraphicsHandle {
-    // Vulkan surface creation implementation will go here.
-    // For now, return null as a functional stub.
+    // Vulkan surface creation implementation skeleton
+    // var instance: c.VkInstance = undefined;
+    // ... logic to call vkCreateInstance
+    return null;
+}
+
+fn createMacOSMetalSurface() ?ZawraGraphicsHandle {
+    // Metal surface creation implementation stub
+    return null;
+}
+
+fn createWindowsD3D12Surface() ?ZawraGraphicsHandle {
+    // D3D12 surface creation implementation stub
     return null;
 }
 

@@ -33,7 +33,7 @@ jobs:
           
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
-        run: choco install cmake ninja pkgconfiglite
+        run: choco install cmake ninja pkgconfiglite icu4c
 
       - name: Setup Zig (for Hajr FFI)
         uses: mlugg/setup-zig@v2

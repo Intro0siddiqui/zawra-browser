@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libepoxy-dev libcairo2-dev libharfbuzz-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libgcrypt20-dev
+          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libepoxy-dev libcairo2-dev libharfbuzz-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libgcrypt20-dev unifdef ruby gperf bison flex
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'

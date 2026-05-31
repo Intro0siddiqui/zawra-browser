@@ -35,6 +35,9 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install cmake ninja pkgconfiglite icu4c
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
       - name: Setup Zig (for Hajr FFI)
         uses: mlugg/setup-zig@v2
         with:
@@ -42,6 +45,10 @@ jobs:
 
       - name: Install Rust (for Zawra Glue)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+        env:
+          RUSTC_WRAPPER: sccache
 
       - name: Build Hajr Subsystem
         run: |
@@ -51,6 +58,9 @@ jobs:
       - name: Configure WebKit (JSCOnly Port)
         shell: bash
         continue-on-error: ${{ runner.os != 'Linux' }}
+        env:
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+          CMAKE_C_COMPILER_LAUNCHER: sccache
         run: |
           cmake -DPORT=JSCOnly \
                 -DENABLE_HAJR_SANDBOX=ON \

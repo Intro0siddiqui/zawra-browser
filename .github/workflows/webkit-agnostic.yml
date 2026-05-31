@@ -33,7 +33,7 @@ jobs:
           
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
-        run: choco install cmake ninja pkgconfiglite icu4c
+        run: choco install cmake ninja pkgconfiglite icu-windows
 
       - name: Install sccache
         run: |

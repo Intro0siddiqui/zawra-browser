@@ -19,7 +19,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    smoke_test.linkLibC();
     if (target.result.os.tag == .linux) {
         smoke_test.linkSystemLibrary("vulkan");
     }

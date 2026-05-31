@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libepoxy-dev
+          sudo apt-get install -y cmake ninja-build pkg-config libglib2.0-dev libepoxy-dev libcairo2-dev
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -49,8 +49,7 @@ jobs:
           zig build -Doptimize=ReleaseSafe
 
       - name: Configure WebKit (WPE Port)
-        # We allow this to fail on Mac/Windows initially to expose 
-        # the remaining Linux/GLib CMake assumptions.
+        shell: bash
         continue-on-error: ${{ runner.os != 'Linux' }}
         run: |
           cmake -DPORT=WPE \
@@ -61,6 +60,7 @@ jobs:
                 webkit/source
 
       - name: Compile WTF (Web Template Framework)
+        shell: bash
         continue-on-error: ${{ runner.os != 'Linux' }}
         run: |
           ninja -C webkit/build-ci WTF

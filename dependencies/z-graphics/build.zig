@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    smoke_test.linkLibC(); // Required for C imports
+    smoke_test.root_module.link_libc = true; // Correct way to link libc in 0.16.0
     smoke_test.root_module.addImport("lib", lib_mod);
     b.installArtifact(smoke_test);
 

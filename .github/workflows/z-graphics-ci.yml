@@ -17,11 +17,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install Linux Dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libvulkan-dev vulkan-tools pkg-config
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
+      - name: Install Zig and Dependencies
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y zig libvulkan-dev vulkan-tools pkg-config
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install zig
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            choco install zig
+          fi
       - name: Build Library
         run: cd dependencies/z-graphics && zig build

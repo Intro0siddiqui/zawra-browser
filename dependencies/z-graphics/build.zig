@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
     });
     smoke_test.linkLibC();
     if (target.result.os.tag == .linux) {
-        smoke_test.linkSystemLibrary("vulkan");
+        smoke_test.linkSystemLibrary2("vulkan", .{});
     }
     smoke_test.root_module.addImport("lib", lib_mod);
     b.installArtifact(smoke_test);

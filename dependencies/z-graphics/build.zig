@@ -1,8 +1,14 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    var target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    // Fix for Windows CI: Ensure we use the GNU ABI instead of MSVC
+    // to avoid lld-link issues with compiler_rt.lib on GitHub runners.
+    if (target.result.os.tag == .windows) {
+        target.result.abi = .gnu;
+    }
 
     // Main module for the library
     const lib_mod = b.addModule("z-graphics", .{
@@ -10,7 +16,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    // Ensure the module itself knows it might need libc (for cImport)
     lib_mod.link_libc = true;
 
     // Smoke test executable
@@ -23,13 +28,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Link libc to the executable so @cImport can find system headers
-    // Using root_module.link_libc directly as it's more stable in 0.16.0
     smoke_test.root_module.link_libc = true;
 
     if (target.result.os.tag == .linux) {
-        // Link vulkan system library on Ubuntu
-        // Using root_module.addLibraryPath/linkSystemLibrary if needed
         smoke_test.root_module.linkSystemLibrary("vulkan", .{});
     }
 

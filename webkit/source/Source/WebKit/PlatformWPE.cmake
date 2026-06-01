@@ -403,10 +403,10 @@ list(APPEND WebKit_LIBRARIES
     ${GLIB_LIBRARIES}
     ${GLIB_GMODULE_LIBRARIES}
     ${LIBSOUP_LIBRARIES}
-    "${CMAKE_SOURCE_DIR}/../../subsystems/hajr/zig-out/lib/libhajr_ffi.so"
+    "${CMAKE_SOURCE_DIR}/../../dependencies/hajr/zig-out/lib/libhajr_ffi.so"
     "${CMAKE_SOURCE_DIR}/../../target/release/libzawra_browser.a"
-    "${CMAKE_SOURCE_DIR}/../../subsystems/z-net/rust_net/target/release/liblean_net.so"
-    "${CMAKE_SOURCE_DIR}/../../subsystems/browser-db/bindings/target/release/libbrowserdb.so"
+    "${CMAKE_SOURCE_DIR}/../../dependencies/z-net/rust_net/target/release/liblean_net.so"
+    "${CMAKE_SOURCE_DIR}/../../dependencies/Browser-db/bindings/target/release/libbrowserdb.so"
 )
 
 if (ENABLE_ACCESSIBILITY)
@@ -667,3 +667,4 @@ GI_INTROSPECT(${WPE_WEB_PROCESS_EXTENSION_API_NAME} ${WPE_API_VERSION} wpe/${WPE
     NO_IMPLICIT_SOURCES
 )
 GI_DOCGEN(${WPE_WEB_PROCESS_EXTENSION_API_NAME} wpe/wpe-web-process-extension.toml.in)
+WEBKIT_ADD_TARGET_CXX_FLAGS(WebKit -Wno-undef -Wno-deprecated-literal-operator -Wno-missing-template-arg-list-after-template-kw)

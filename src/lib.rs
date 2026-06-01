@@ -18,7 +18,6 @@ pub use lean_net;
 pub use browserdb;
 
 // JavaScriptCore zero-copy ArrayBuffer bridge (jsc_glue)
-#[path = "../zawra_blueprint/jsc_glue/zero_copy.rs"]
 pub mod zero_copy;
 
 

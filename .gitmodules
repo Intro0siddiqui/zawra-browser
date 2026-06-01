@@ -8,3 +8,6 @@
 [submodule "dependencies/hajr"]
 	path = dependencies/hajr
 	url = https://github.com/Intro0siddiqui/hajr.git
+[submodule "dependencies/z-graphics"]
+	path = dependencies/z-graphics
+	url = https://github.com/Intro0siddiqui/z-graphics.git

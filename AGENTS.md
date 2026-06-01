@@ -3,9 +3,10 @@
 ## Project Context
 **Zawra Browser** is a highly customized, headless WPE WebKit browser. It replaces standard WebKit subsystems (IPC, Network, Storage) with specialized high-performance components.
 
-- **Goal**: Performance-optimized, sandboxed browser for headless environments.
-- **IPC**: Handled by **Hajr** (Zig) using lock-free ring buffers.
-- **Networking**: Handled by **Z-Net** (Rust) supporting HTTP/3.
+- **Goal**: Performance-optimized, sandboxed headful browser (currently testing in headless mode for faster iteration).
+- **Graphics**: Render Hardware Interface (RHI) handled by **z-graphics** (Zig) for cross-platform GPU acceleration (Vulkan, Metal, D3D12).
+- **IPC & Sandbox**: Handled by **Hajr** (Zig), acting as the "Moriarty Sandbox". It provides hardware-enforced memory isolation (MPK/MTE) via lock-free ring buffers, AND OS-level syscall/filesystem isolation (Seccomp-BPF, Landlock, Seatbelt, Windows Mitigations) directly via `hajr_seal_process()`.
+- **Networking**: Handled by **Z-Net** (Zig/Rust) supporting HTTP/3.
 - **Storage**: Handled by **BrowserDB** (Rust) for LocalStorage and persistent data.
 
 ## Tech Stack
@@ -38,43 +39,88 @@ We do **not** use a Git submodule for the main WebKit source to avoid repository
   ```
 - **Step 2: Commit submodule changes** (if any):
   ```bash
-  # BrowserDB, Z-Net, and Hajr are in the subsystems/ directory
-  git -C subsystems/browser-db add -A && git -C subsystems/browser-db commit -m "..."
-  git -C subsystems/z-net add -A && git -C subsystems/z-net commit -m "..."
-  git -C subsystems/hajr add -A && git -C subsystems/hajr commit -m "..."
+  # BrowserDB, Z-Net, and Hajr are in the dependencies/ directory
+  git -C dependencies/Browser-db add -A && git -C dependencies/Browser-db commit -m "..."
+  git -C dependencies/z-net add -A && git -C dependencies/z-net commit -m "..."
+  git -C dependencies/hajr add -A && git -C dependencies/hajr commit -m "..."
   ```
 - **Step 3: Compile Subsystems**:
-  - Hajr: `cd subsystems/hajr && zig build`
-  - Z-Net: `cd subsystems/z-net/rust_net && cargo build --release`
-  - BrowserDB: `cd subsystems/browser-db/bindings && cargo build --release`
+  - Hajr: `cd dependencies/hajr && zig build`
+  - Z-Net: `cd dependencies/z-net/rust_net && cargo build --release`
+  - BrowserDB: `cd dependencies/Browser-db/bindings && cargo build --release`
 - **Step 4: Configure & Build WebKit**:
   ```bash
   # Use the thermal controller for safe burst-mode compilation
   ./thermal_build_control.sh
   ```
 
-## ⚠️ CRITICAL: Build Cache Management ⚠️
+## ⚠️ CRITICAL: Build Cache & Artifact Management ⚠️
 
-### Local Cache Git Storage
-The WebKit build cache (`webkit/build/`) is **ignored** by the main repository to prevent bloating the remote GitHub repository (GitHub blocks files >100MB). 
+The entire `webkit/build/` directory is the **build cache**. It contains compiled objects, generated sources, dependency tracking files, and CMake state. A full WebKit rebuild takes **days** on this machine. Preserving and checkpointing these artifacts is the single most important operational concern.
 
-To preserve compilation progress while maintaining a clean main history, we use a **dual-repository strategy**:
-1.  **Main Repo**: Stores only source code, patches, and configurations. History is kept extremely lean (last 2 commits).
-2.  **Cache Repo**: A separate, **local-only** Git repository initialized inside `webkit/build/`.
-    -   This repo is used purely for **compressed storage** and **checkpoints**.
-    -   **Rule**: Keep only the **last commit** in the cache repo history to save space. Use `git commit --amend` or periodic `git gc`.
-    -   To checkpoint your local progress:
-        ```bash
-        cd webkit/build
-        git add .
-        git commit -m "Checkpoint: Step X completed"
-        ```
+### Dual-Repository Strategy
 
-### Retention Rules
-- **DO NOT DELETE THE BUILD CACHE / `webkit/build` DIRECTORY under any circumstances!**
-- **NEVER** run commands that wipe the build cache (e.g. `rm -rf webkit/build`, `ninja clean`, etc.).
-- Compiling WebKit from scratch takes days on this machine. Deleting the build cache is a massive setback.
-- If a build error claims a file or header is missing or empty, manually fix it or re-run CMake; do not delete the directory.
+To preserve compilation progress without polluting the remote, we maintain **two separate Git repos**:
+
+| Repo | Location | Stores | Remote | Purpose |
+|------|----------|--------|--------|---------|
+| **Main Repo** | `zawra-browser/` | Source, patches, configs only | GitHub (`origin`) | Distributed source history |
+| **Cache Repo** | `webkit/build/` | Build artifacts (`.o`, `.dep`, DerivedSources, CMake state) | **NONE (local-only)** | Fast rebuild checkpointing |
+
+### The Cache Repo (`webkit/build/.git`)
+
+A **local-only** Git repository initialized inside the build directory. It is the **sole mechanism for preserving build artifacts** — there is no other backup.
+
+#### What it MUST store (checkpoint these)
+- **Compiled object files** (`.o`) — the most expensive artifacts to regenerate
+- **Ninja dependency files** (`.ninja_deps`, `.d`, `.dep`) — required for incremental builds
+- **DerivedSources** — generated `.h` and `.cpp` files (bindings, forwarding headers)
+- **CMake state** — `CMakeCache.txt`, `CMakeFiles/`, `rules.ninja`, `build.ninja`
+- **Static libraries** (`.a`) and shared objects (`.so`) — final linked products
+
+Without these artifacts in the cache repo, **ccache is useless** — ccache caches compilation results in `~/.ccache/`, but it only stores the preprocessed compiler output, not the directory structure, dependency files, CMake configuration, or linked binaries the build system needs. The .o files, .dep files, DerivedSources, and CMake state together form a complete snapshot that makes ninja's incremental rebuild work. Checkpointing only source/patch files does nothing — source is already in the main repo or patches directory.
+
+#### What it does NOT store
+- Main WebKit source tree (that lives in `webkit/source/` — already in the tarball)
+- Patches (live in `patches/webkit/` — already in the main repo)
+
+#### Checkpointing Protocol
+
+Always checkpoint **immediately after a successful build** and **before any destructive operation** (CMake reconfiguration, patching source files, etc.):
+
+```bash
+cd webkit/build
+git add -A
+git commit --amend --no-edit   # amend to keep a single rolling commit
+git gc --aggressive --prune=now
+```
+
+> [!IMPORTANT]
+> Use `--amend` to keep exactly **one commit** in the cache repo. Each amend replaces the previous snapshot. This avoids unbounded disk growth. Run `git gc` after each amend to repack and reclaim space.
+
+### Restoration
+
+If the build cache is wiped or corrupted:
+
+```bash
+cd webkit/build
+
+# If the cache repo still exists (only working tree damaged):
+git checkout -f HEAD
+git gc --aggressive --prune=now
+
+# If the cache repo is intact but build directory needs re-clone:
+# (No action needed — cache repo is embedded in webkit/build/)
+```
+
+### Retention Rules (ABSOLUTE — these are not guidelines)
+- **DO NOT DELETE** the `webkit/build/` directory, ever.
+- **DO NOT RUN** `ninja -t clean`, `rm -rf webkit/build`, `ninja clean`, or any equivalent.
+- **DO NOT** remove, prune, or garbage-collect the cache repo's objects.
+- **DO NOT** run commands that invalidate or wipe CMake state unless the cache repo has been checkpointed first.
+- **NEVER** `git push` the cache repo to any remote — its artifact files exceed GitHub's 100 MB file limit.
+- The `.gitignore` in the main repo already blocks `webkit/build/`. **DO NOT override this.**
+- If a build error claims a file or header is missing or empty, fix the root cause or re-run CMake — **do not** wipe and restart.
 
 ## Coding Guidelines
 

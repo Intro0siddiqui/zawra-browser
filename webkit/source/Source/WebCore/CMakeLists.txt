@@ -70,7 +70,6 @@ set(WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/Modules/webauthn/cbor"
     "${WEBCORE_DIR}/Modules/webauthn/fido"
     "${WEBCORE_DIR}/Modules/webcodecs"
-    "${WEBCORE_DIR}/Modules/webdatabase"
     "${WEBCORE_DIR}/Modules/webdriver"
     "${WEBCORE_DIR}/Modules/websockets"
     "${WEBCORE_DIR}/Modules/webxr"
@@ -238,7 +237,6 @@ set(WebCore_IDL_INCLUDES
     Modules/streams
     Modules/web-locks
     Modules/webaudio
-    Modules/webdatabase
     Modules/websockets
 
     bindings/js
@@ -756,18 +754,6 @@ set(WebCore_NON_SVG_IDL_FILES
     Modules/webcodecs/WebCodecsVideoEncoderSupport.idl
     Modules/webcodecs/WebCodecsVideoFrameOutputCallback.idl
     Modules/webcodecs/WebCodecsVideoFrame.idl
-
-    Modules/webdatabase/Database.idl
-    Modules/webdatabase/DatabaseCallback.idl
-    Modules/webdatabase/LocalDOMWindow+WebDatabase.idl
-    Modules/webdatabase/SQLError.idl
-    Modules/webdatabase/SQLResultSet.idl
-    Modules/webdatabase/SQLResultSetRowList.idl
-    Modules/webdatabase/SQLStatementCallback.idl
-    Modules/webdatabase/SQLStatementErrorCallback.idl
-    Modules/webdatabase/SQLTransaction.idl
-    Modules/webdatabase/SQLTransactionCallback.idl
-    Modules/webdatabase/SQLTransactionErrorCallback.idl
 
     Modules/webdriver/Navigator+WebDriver.idl
 

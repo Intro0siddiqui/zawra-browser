@@ -57,7 +57,7 @@ list(APPEND WTF_LIBRARIES
     ${GLIB_LIBRARIES}
     Threads::Threads
     ZLIB::ZLIB
-    "${CMAKE_SOURCE_DIR}/../../subsystems/hajr/zig-out/lib/libhajr_ffi.so"
+    "${CMAKE_SOURCE_DIR}/../../dependencies/hajr/zig-out/lib/libhajr_ffi.so"
 )
 
 if (Journald_FOUND)

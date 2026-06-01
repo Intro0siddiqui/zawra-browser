@@ -13,7 +13,7 @@ CXXFLAGS  = -std=c++17 -O2 -Wall -Wextra -march=native
 LDFLAGS   = -lpthread
 
 # Hajr library path (from zig build)
-HAJR_DIR  = ../../subsystems/hajr
+HAJR_DIR  = ../../dependencies/hajr
 HAJR_LIB  = $(HAJR_DIR)/zig-out/lib
 
 # Link against the Hajr FFI shared library

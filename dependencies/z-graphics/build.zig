@@ -24,11 +24,13 @@ pub fn build(b: *std.Build) void {
     });
 
     // Link libc to the executable so @cImport can find system headers
-    smoke_test.linkLibC();
+    // Using root_module.link_libc directly as it's more stable in 0.16.0
+    smoke_test.root_module.link_libc = true;
 
     if (target.result.os.tag == .linux) {
         // Link vulkan system library on Ubuntu
-        smoke_test.linkSystemLibrary("vulkan");
+        // Using root_module.addLibraryPath/linkSystemLibrary if needed
+        smoke_test.root_module.linkSystemLibrary("vulkan", .{});
     }
 
     smoke_test.root_module.addImport("lib", lib_mod);

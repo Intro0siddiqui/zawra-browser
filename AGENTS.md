@@ -32,7 +32,33 @@ We do **not** use a Git submodule for the main WebKit source to avoid repository
   ./webkit/scripts/thermal_build_control.sh
   ```
 
-### 2. Building the Project
+### 3. Git Workflow (PR-Based)
+To maintain a stable `master` branch and ensure all code passes continuous integration, agents **MUST** use a Pull Request workflow for all changes:
+
+1. **Branching**: Never commit directly to `master`. Create a descriptive feature branch:
+   ```bash
+   git checkout -b feat/my-new-feature
+   ```
+2. **Commit & Push**:
+   ```bash
+   git commit -m "feat: description of changes"
+   git push -u origin HEAD
+   ```
+3. **Open Pull Request**: Use the GitHub CLI to create the PR, providing necessary details.
+   ```bash
+   gh pr create --fill
+   ```
+4. **Verify CI**: You MUST wait for and verify that all GitHub Actions workflows pass before proceeding.
+   ```bash
+   gh pr checks --watch
+   ```
+   *If checks fail, fix the code, commit, push again, and re-verify.*
+5. **Merge**: Once CI is green, merge the PR using squash to keep the history clean.
+   ```bash
+   gh pr merge --squash --delete-branch
+   ```
+
+### 4. Building the Project
 - **Step 1: Setup submodules** (BrowserDB, Hajr, Z-Net):
   ```bash
   git submodule update --init --recursive --depth 1

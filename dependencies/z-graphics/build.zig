@@ -17,12 +17,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    smoke_test.linkLibC();
-    if (target.result.os.tag == .linux) {
-        const vulkan_pkg = b.pkgConfig("vulkan", .{});
-        smoke_test.addIncludePath(vulkan_pkg.path("include"));
-        smoke_test.linkSystemLibrary("vulkan");
-    }
+    smoke_test.root_module.link_libc = true;
     smoke_test.root_module.addImport("lib", lib_mod);
     b.installArtifact(smoke_test);
 

@@ -16,16 +16,18 @@ pub fn build(b: *std.Build) void {
     // Smoke test executable
     const smoke_test = b.addExecutable(.{
         .name = "smoke-test",
-        .root_source_file = b.path("src/smoke_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/smoke_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     // Link libc to the executable so @cImport can find system headers
     smoke_test.linkLibC();
 
     if (target.result.os.tag == .linux) {
-        // Use pkg-config to find vulkan headers and library on Ubuntu
+        // Link vulkan system library on Ubuntu
         smoke_test.linkSystemLibrary("vulkan");
     }
 

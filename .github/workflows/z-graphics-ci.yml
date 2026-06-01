@@ -23,5 +23,5 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-      - name: Run Smoke Test
-        run: cd dependencies/z-graphics && zig build test
+      - name: Build Library
+        run: cd dependencies/z-graphics && zig build

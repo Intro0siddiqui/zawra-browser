@@ -41,6 +41,7 @@
 #include <WebCore/Settings.h>
 #include <WebCore/TextureMapperGL.h>
 #include <WebCore/TextureMapperLayer.h>
+#include <WebCore/ZawraGraphicsBridge.h>
 
 namespace WebKit {
 using namespace WebCore;
@@ -70,6 +71,7 @@ void LayerTreeHost::compositeLayersToContext()
     m_textureMapper->endPainting();
 
     m_context->swapBuffers();
+    ZawraGraphicsBridge::singleton().swap();
 }
 
 bool LayerTreeHost::flushPendingLayerChanges()

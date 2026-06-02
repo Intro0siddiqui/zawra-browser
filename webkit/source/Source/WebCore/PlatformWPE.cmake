@@ -27,7 +27,8 @@ list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/platform/graphics/gbm"
     "${WEBCORE_DIR}/platform/graphics/gstreamer"
     "${WEBCORE_DIR}/platform/graphics/opengl"
-    "${WEBCORE_DIR}/platform/graphics/opentype"
+    "${WEBCORE_DIR}/platform/graphics/wayland"
+    "${WEBCORE_DIR}/platform/graphics/zawra"
     "${WEBCORE_DIR}/platform/graphics/libwpe"
     "${WEBCORE_DIR}/platform/graphics/wayland"
     "${WEBCORE_DIR}/platform/mock/mediasource"
@@ -57,6 +58,7 @@ set(WebCore_USER_AGENT_SCRIPTS_DEPENDENCIES ${WEBCORE_DIR}/platform/wpe/RenderTh
 
 list(APPEND WebCore_LIBRARIES
     WPE::libwpe
+    ZawraGraphics
     ${GLIB_GIO_LIBRARIES}
     ${GLIB_GMODULE_LIBRARIES}
     ${GLIB_GOBJECT_LIBRARIES}
@@ -118,6 +120,7 @@ if (USE_ATSPI)
 
     list(APPEND WebCore_SOURCES
         ${WebCore_DERIVED_SOURCES_DIR}/AccessibilityAtspiInterfaces.c
+        platform/graphics/zawra/ZawraGraphicsBridge.cpp
     )
 endif ()
 

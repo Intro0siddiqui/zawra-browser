@@ -21,7 +21,7 @@ use std::thread;
 use lean_net::{
     NetEngineHandle, ConnectionHandle, BodyRingDescriptor,
     net_engine_create, net_engine_destroy,
-    net_connect, net_close,
+    net_connect, net_http3_connect, net_close,
     net_write, net_read, net_poll,
     net_body_ring_register, net_body_ring_unregister, net_conn_bind_body_ring,
     NetError,
@@ -384,7 +384,13 @@ impl ZNetChannel {
 
         let engine = global_engine();
         let host_c = CString::new(host).ok()?;
-        let conn = unsafe { net_connect(engine, host_c.as_ptr(), port) };
+        
+        let conn = if port == 443 {
+            unsafe { net_http3_connect(engine, host_c.as_ptr(), port) }
+        } else {
+            unsafe { net_connect(engine, host_c.as_ptr(), port) }
+        };
+
         if conn.is_null() {
             return None;
         }

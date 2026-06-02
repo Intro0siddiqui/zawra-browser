@@ -253,12 +253,18 @@ pub unsafe extern "C" fn Zawra_Storage_GetBlob(
 /// `key` must be a valid NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Zawra_Storage_DeleteBlob(
-    _origin_hash_hi: u64,
-    _origin_hash_lo: u64,
-    _key:            *const c_char,
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    key:            *const c_char,
 ) -> i32 {
-    // BrowserDB's LSM tree uses tombstones; compaction physically removes it.
-    NS_OK
+    if key.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
+
+    match db().localstore().remove(origin_hash, &key_str) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

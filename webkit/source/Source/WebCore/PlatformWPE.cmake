@@ -59,6 +59,7 @@ set(WebCore_USER_AGENT_SCRIPTS_DEPENDENCIES ${WEBCORE_DIR}/platform/wpe/RenderTh
 list(APPEND WebCore_LIBRARIES
     WPE::libwpe
     ZawraGraphics
+    Hajr
     ${GLIB_GIO_LIBRARIES}
     ${GLIB_GMODULE_LIBRARIES}
     ${GLIB_GOBJECT_LIBRARIES}

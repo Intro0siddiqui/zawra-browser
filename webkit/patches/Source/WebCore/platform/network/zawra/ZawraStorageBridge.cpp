@@ -14,6 +14,8 @@ extern "C" {
     int32_t Zawra_Bookmark_Delete(uint64_t hi, uint64_t lo);
     int32_t Zawra_Bookmark_GetAll(char* out_buf, size_t out_buf_len);
     int32_t Zawra_Cookie_DeleteForDomain(uint64_t hi, uint64_t lo);
+    int32_t Zawra_Store_TTL(uint64_t hi, uint64_t lo, const char* data, uint64_t ttl);
+    int32_t Zawra_History_Increment(uint64_t hi, uint64_t lo);
 }
 
 namespace WebCore {
@@ -88,6 +90,20 @@ void ZawraStorageBridge::deleteCookiesForDomain(const String& domain)
     uint64_t hi, lo;
     hashString(domain, hi, lo);
     Zawra_Cookie_DeleteForDomain(hi, lo);
+}
+
+void ZawraStorageBridge::storeDataWithTTL(const URL& url, const String& data, uint64_t ttl)
+{
+    uint64_t hi, lo;
+    hashString(url.string(), hi, lo);
+    Zawra_Store_TTL(hi, lo, data.utf8().data(), ttl);
+}
+
+void ZawraStorageBridge::incrementHistoryVisit(const URL& url)
+{
+    uint64_t hi, lo;
+    hashString(url.string(), hi, lo);
+    Zawra_History_Increment(hi, lo);
 }
 
 }

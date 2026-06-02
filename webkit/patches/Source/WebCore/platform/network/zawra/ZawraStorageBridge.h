@@ -15,6 +15,8 @@ public:
     static void removeBookmark(const URL& url);
     static String getBookmarks();
     static void deleteCookiesForDomain(const String& domain);
+    static void storeDataWithTTL(const URL& url, const String& data, uint64_t ttl);
+    static void incrementHistoryVisit(const URL& url);
 };
 
 }

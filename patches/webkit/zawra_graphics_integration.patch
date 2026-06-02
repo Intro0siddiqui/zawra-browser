@@ -1,0 +1,116 @@
+diff --git a/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphics.h b/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphics.h
+new file mode 100644
+index 00000000..7710a8de
+--- /dev/null
++++ b/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphics.h
+@@ -0,0 +1,46 @@
++#pragma once
++
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef void* ZawraGraphicsHandle;
++typedef void* ZawraGraphicsBuffer;
++typedef void* ZawraGraphicsCommandBuffer;
++typedef void* ZawraGraphicsPipeline;
++
++typedef enum {
++    ZawraBufferType_Vertex = 1,
++    ZawraBufferType_Index = 2,
++    ZawraBufferType_Uniform = 3,
++} ZawraBufferType;
++
++typedef struct {
++    const uint8_t* vertex_shader;
++    size_t vertex_shader_len;
++    const uint8_t* pixel_shader;
++    size_t pixel_shader_len;
++} ZawraPipelineDesc;
++
++bool ZawraGraphics_Initialize();
++ZawraGraphicsHandle ZawraGraphics_CreateSurface(uint32_t width, uint32_t height);
++void ZawraGraphics_DestroySurface(ZawraGraphicsHandle handle);
++void ZawraGraphics_SwapBuffers(ZawraGraphicsHandle handle);
++int ZawraGraphics_ExportSurfaceFD(ZawraGraphicsHandle handle);
++
++ZawraGraphicsBuffer ZawraGraphics_CreateBuffer(ZawraGraphicsHandle handle, size_t size, ZawraBufferType buffer_type);
++void ZawraGraphics_DestroyBuffer(ZawraGraphicsHandle handle, ZawraGraphicsBuffer buffer);
++
++ZawraGraphicsCommandBuffer ZawraGraphics_BeginCommandBuffer(ZawraGraphicsHandle handle);
++void ZawraGraphics_CmdClearColor(ZawraGraphicsCommandBuffer cmd, float r, float g, float b, float a);
++void ZawraGraphics_SubmitCommandBuffer(ZawraGraphicsHandle handle, ZawraGraphicsCommandBuffer cmd);
++
++ZawraGraphicsPipeline ZawraGraphics_CreatePipeline(ZawraGraphicsHandle handle, const ZawraPipelineDesc* desc);
++void ZawraGraphics_DestroyPipeline(ZawraGraphicsHandle handle, ZawraGraphicsPipeline pipeline);
++void ZawraGraphics_CmdBindPipeline(ZawraGraphicsCommandBuffer cmd, ZawraGraphicsPipeline pipeline);
++
++#ifdef __cplusplus
++}
++#endif
+diff --git a/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.cpp b/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.cpp
+new file mode 100644
+index 00000000..814b3936
+--- /dev/null
++++ b/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.cpp
+@@ -0,0 +1,27 @@
++#include "config.h"
++#include "ZawraGraphicsBridge.h"
++
++#include <wtf/NeverDestroyed.h>
++
++namespace WebCore {
++
++ZawraGraphicsBridge& ZawraGraphicsBridge::singleton()
++{
++    static NeverDestroyed<ZawraGraphicsBridge> bridge;
++    return bridge;
++}
++
++ZawraGraphicsBridge::ZawraGraphicsBridge()
++{
++    if (ZawraGraphics_Initialize()) {
++        m_surface = ZawraGraphics_CreateSurface(1920, 1080); // Default size, should be dynamic
++    }
++}
++
++ZawraGraphicsBridge::~ZawraGraphicsBridge()
++{
++    if (m_surface)
++        ZawraGraphics_DestroySurface(m_surface);
++}
++
++} // namespace WebCore
+diff --git a/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h b/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h
+new file mode 100644
+index 00000000..c03e332d
+--- /dev/null
++++ b/webkit/source/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h
+@@ -0,0 +1,25 @@
++#pragma once
++
++#include "ZawraGraphics.h"
++#include <wtf/Noncopyable.h>
++#include <wtf/UniqueRef.h>
++
++namespace WebCore {
++
++class ZawraGraphicsBridge {
++    WTF_MAKE_NONCOPYABLE(ZawraGraphicsBridge);
++public:
++    static ZawraGraphicsBridge& singleton();
++
++    ZawraGraphicsBridge();
++    ~ZawraGraphicsBridge();
++
++    ZawraGraphicsHandle surface() const { return m_surface; }
++    int exportFD() const { return ZawraGraphics_ExportSurfaceFD(m_surface); }
++    void swap() { ZawraGraphics_SwapBuffers(m_surface); }
++
++private:
++    ZawraGraphicsHandle m_surface { nullptr };
++};
++
++} // namespace WebCore

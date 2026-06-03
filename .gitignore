@@ -13,4 +13,4 @@ target/
 **/.zig-cache/
 *.log
 webkit_source.tar.xz
-
+webkit/source/

@@ -6,7 +6,20 @@
 # latter in particular handles loading a bunch of shared CMake definitions
 # and loading the cross-compilation settings from CMAKE_TOOLCHAIN_FILE.
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
+
+# --- Zawra Project Overrides ---
+# Silence noisy compiler warnings to save CPU cycles
+add_compile_options("-Wno-#warnings" "-Wno-unnecessary-virtual-specifier")
+# Use BOTH ccache and sccache (chained) for maximum caching efficiency
+set(CMAKE_C_COMPILER_LAUNCHER "ccache;sccache" CACHE STRING "" FORCE)
+set(CMAKE_CXX_COMPILER_LAUNCHER "ccache;sccache" CACHE STRING "" FORCE)
+# Use the ultra-fast mold linker instead of LLD
+add_link_options("-fuse-ld=mold")
+
+# Disable WebKit's default Bubblewrap sandbox to prevent conflicts with Hajr
+set(ENABLE_BUBBLEWRAP_SANDBOX OFF CACHE BOOL "Toggle Bubblewrap sandbox support" FORCE)
+# -------------------------------
 project(WebKit)
 
 # Remove this cmake_policy() after upgrading cmake_minimum_required() to 3.20.

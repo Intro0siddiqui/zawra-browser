@@ -79,15 +79,13 @@ platform/graphics/gbm/GraphicsContextGLGBM.cpp @no-unify
 platform/graphics/gbm/GraphicsContextGLGBMTextureMapper.cpp @no-unify
 
 platform/graphics/libwpe/PlatformDisplayLibWPE.cpp
+platform/graphics/zawra/ZawraGraphicsBridge.cpp
 
 platform/graphics/opentype/OpenTypeVerticalData.cpp
 
 platform/libwpe/PasteboardLibWPE.cpp
 platform/libwpe/PlatformKeyboardEventLibWPE.cpp
 platform/libwpe/PlatformPasteboardLibWPE.cpp
-
-platform/network/zawra/ZawraStorageBridge.cpp
-platform/network/zawra/ZawraCryptoBridge.cpp
 
 platform/text/Hyphenation.cpp
 platform/text/LocaleICU.cpp

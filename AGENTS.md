@@ -6,6 +6,7 @@
 - **Goal**: Performance-optimized, sandboxed headful browser (currently testing in headless mode for faster iteration).
 - **Graphics**: Render Hardware Interface (RHI) handled by **z-graphics** (Zig) for cross-platform GPU acceleration (Vulkan, Metal, D3D12).
 - **IPC & Sandbox**: Handled by **Hajr** (Zig), acting as the "Moriarty Sandbox". It provides hardware-enforced memory isolation (MPK/MTE) via lock-free ring buffers, AND OS-level syscall/filesystem isolation (Seccomp-BPF, Landlock, Seatbelt, Windows Mitigations) directly via `hajr_seal_process()`.
+  **⚠️ CRITICAL SANDBOX RULE:** WebKit natively uses Bubblewrap (`bwrap`) on Linux for its default sandbox. This MUST be explicitly disabled during CMake configuration (`-DENABLE_BUBBLEWRAP_SANDBOX=OFF`) so that it does not conflict with Hajr.
 - **Networking**: Handled by **Z-Net** (Zig/Rust) supporting HTTP/3.
 - **Storage**: Handled by **BrowserDB** (Rust) for LocalStorage and persistent data.
 
@@ -180,7 +181,7 @@ git gc --aggressive --prune=now
 - FFI functions returning `i32` must use the nsresult constants (`NS_OK = 0`, `NS_ERROR_FAILURE = -2147467259`). C++ compares against -2 for failure — returning raw errno values (e.g. -5 for `WouldBlock`) causes a signal mismatch.
 
 ### Build Optimization
-- **Linker**: Always use `LLD` (via `DEVELOPER_MODE=ON`) to avoid OOM crashes.
+- **Linker**: Always use `mold` (`-fuse-ld=mold`) to maximize linking speed and avoid OOM crashes.
 - **Concurrency**: Limit Ninja to `-j 2` or `-j 4` on resource-constrained environments.
 - **Build Tool**: **ALWAYS** use Ninja (by configuring CMake with `-GNinja` and running compilation via `ninja`). Do **not** use `make` or other generators/build tools.
 

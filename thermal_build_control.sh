@@ -7,6 +7,10 @@
 
 set -e
 
+# --- Zawra Project Overrides ---
+export WEBKIT_USE_SCCACHE=1
+# -------------------------------
+
 # --- Configuration ---
 BUILD_DIR="webkit/build/WPE/Debug"
 TARGET="MiniBrowser"

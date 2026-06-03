@@ -1,8 +1,0 @@
-#include "layout/FormattingState.cpp"
-#include "layout/LayoutContext.cpp"
-#include "layout/LayoutPhase.cpp"
-#include "layout/LayoutState.cpp"
-#include "layout/LayoutUnits.cpp"
-#include "layout/Verification.cpp"
-#include "layout/floats/FloatAvoider.cpp"
-#include "layout/floats/FloatingContext.cpp"

@@ -1,8 +1,0 @@
-#include "bindings/js/InternalWritableStream.cpp"
-#include "bindings/js/JSAbortSignalCustom.cpp"
-#include "bindings/js/JSAbstractRangeCustom.cpp"
-#include "bindings/js/JSAnimationEffectCustom.cpp"
-#include "bindings/js/JSAnimationTimelineCustom.cpp"
-#include "bindings/js/JSAttrCustom.cpp"
-#include "bindings/js/JSAudioBufferCustom.cpp"
-#include "bindings/js/JSAudioBufferSourceNodeCustom.cpp"

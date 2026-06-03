@@ -1,8 +1,0 @@
-#include "platform/PlatformSpeechSynthesisVoice.cpp"
-#include "platform/PlatformSpeechSynthesizer.cpp"
-#include "platform/PlatformStrategies.cpp"
-#include "platform/PlatformWheelEvent.cpp"
-#include "platform/PreviewConverter.cpp"
-#include "platform/ProcessCapabilities.cpp"
-#include "platform/ProcessIdentifier.cpp"
-#include "platform/ProcessIdentity.cpp"

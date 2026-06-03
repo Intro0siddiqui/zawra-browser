@@ -1,8 +1,0 @@
-#include "rendering/svg/SVGTextLayoutEngineBaseline.cpp"
-#include "rendering/svg/SVGTextLayoutEngineSpacing.cpp"
-#include "rendering/svg/SVGTextMetrics.cpp"
-#include "rendering/svg/SVGTextMetricsBuilder.cpp"
-#include "rendering/svg/SVGTextQuery.cpp"
-#include "rendering/updating/RenderTreeBuilder.cpp"
-#include "rendering/updating/RenderTreeBuilderBlock.cpp"
-#include "rendering/updating/RenderTreeBuilderBlockFlow.cpp"

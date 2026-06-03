@@ -1,8 +1,0 @@
-#include "page/ScreenOrientation.cpp"
-#include "page/ScrollBehavior.cpp"
-#include "page/SecurityOrigin.cpp"
-#include "page/SecurityOriginData.cpp"
-#include "page/SecurityPolicy.cpp"
-#include "page/SettingsBase.cpp"
-#include "page/ShadowRealmGlobalScope.cpp"
-#include "page/ShareDataReader.cpp"

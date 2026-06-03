@@ -1,3 +1,0 @@
-JSDataCue.h : TextTrackCue.idl EventTarget.idl
-TextTrackCue.idl :
-EventTarget.idl :

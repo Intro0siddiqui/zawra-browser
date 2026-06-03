@@ -1,8 +1,0 @@
-#include "platform/mediastream/RealtimeOutgoingAudioSource.cpp"
-#include "platform/mediastream/RealtimeOutgoingVideoSource.cpp"
-#include "platform/mediastream/RealtimeVideoCaptureSource.cpp"
-#include "platform/mediastream/WebRTCProvider.cpp"
-#include "platform/mock/DeviceOrientationClientMock.cpp"
-#include "platform/mock/GeolocationClientMock.cpp"
-#include "platform/mock/MediaEngineConfigurationFactoryMock.cpp"
-#include "platform/mock/MockRealtimeAudioSource.cpp"

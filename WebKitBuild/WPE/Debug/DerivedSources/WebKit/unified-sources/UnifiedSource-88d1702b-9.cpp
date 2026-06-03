@@ -1,8 +1,0 @@
-#include "UIProcess/WebPreferences.cpp"
-#include "UIProcess/WebProcessCache.cpp"
-#include "UIProcess/WebProcessPool.cpp"
-#include "UIProcess/WebProcessProxy.cpp"
-#include "UIProcess/WebScreenOrientationManagerProxy.cpp"
-#include "UIProcess/WebURLSchemeHandler.cpp"
-#include "UIProcess/WebURLSchemeTask.cpp"
-#include "UIProcess/DefaultUndoController.cpp"

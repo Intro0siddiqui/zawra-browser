@@ -1,8 +1,0 @@
-#include "disassembler/zydis/Zydis/Zycore.c"
-#include "disassembler/zydis/Zydis/ZycoreAllocator.c"
-#include "disassembler/zydis/Zydis/ZycoreBitset.c"
-#include "disassembler/zydis/Zydis/ZycoreFormat.c"
-#include "disassembler/zydis/Zydis/ZycoreList.c"
-#include "disassembler/zydis/Zydis/ZycoreString.c"
-#include "disassembler/zydis/Zydis/ZycoreVector.c"
-#include "disassembler/zydis/Zydis/Zydis.c"

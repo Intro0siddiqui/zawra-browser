@@ -1,8 +1,0 @@
-#include "Modules/geolocation/GeoNotifier.cpp"
-#include "Modules/geolocation/Geolocation.cpp"
-#include "Modules/geolocation/GeolocationController.cpp"
-#include "Modules/geolocation/GeolocationCoordinates.cpp"
-#include "Modules/geolocation/NavigatorGeolocation.cpp"
-#include "Modules/highlight/AppHighlightRangeData.cpp"
-#include "Modules/highlight/AppHighlightStorage.cpp"
-#include "Modules/highlight/Highlight.cpp"

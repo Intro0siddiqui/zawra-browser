@@ -1,8 +1,0 @@
-#include "rendering/RenderObject.cpp"
-#include "rendering/RenderProgress.cpp"
-#include "rendering/RenderQuote.cpp"
-#include "rendering/RenderReplaced.cpp"
-#include "rendering/RenderReplica.cpp"
-#include "rendering/RenderRuby.cpp"
-#include "rendering/RenderRubyBase.cpp"
-#include "rendering/RenderRubyRun.cpp"

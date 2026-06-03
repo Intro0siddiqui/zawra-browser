@@ -1,8 +1,0 @@
-#include "JSGPUBindGroupDescriptor.cpp"
-#include "JSGPUBindGroupEntry.cpp"
-#include "JSGPUBindGroupLayout.cpp"
-#include "JSGPUBindGroupLayoutDescriptor.cpp"
-#include "JSGPUBindGroupLayoutEntry.cpp"
-#include "JSGPUBlendComponent.cpp"
-#include "JSGPUBlendFactor.cpp"
-#include "JSGPUBlendOperation.cpp"

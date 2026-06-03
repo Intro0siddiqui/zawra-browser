@@ -1,8 +1,0 @@
-#include "JSGPUStencilFaceState.cpp"
-#include "JSGPUStencilOperation.cpp"
-#include "JSGPUStorageTextureAccess.cpp"
-#include "JSGPUStorageTextureBindingLayout.cpp"
-#include "JSGPUStoreOp.cpp"
-#include "JSGPUSupportedFeatures.cpp"
-#include "JSGPUSupportedLimits.cpp"
-#include "JSGPUTexture.cpp"

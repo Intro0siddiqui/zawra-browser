@@ -1,8 +1,0 @@
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementDaemonClient.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementDatabase.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementDebugInfo.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementEphemeralStore.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementManager.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementManagerInterface.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementManagerProxy.cpp"
-#include "NetworkProcess/PrivateClickMeasurement/PrivateClickMeasurementNetworkLoader.cpp"

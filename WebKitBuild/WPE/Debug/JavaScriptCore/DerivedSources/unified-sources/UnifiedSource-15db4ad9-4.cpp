@@ -1,8 +1,0 @@
-#include "wasm/WasmLLIntPlan.cpp"
-#include "wasm/WasmLLIntTierUpCounter.cpp"
-#include "wasm/WasmMachineThreads.cpp"
-#include "wasm/WasmMemory.cpp"
-#include "wasm/WasmMemoryInformation.cpp"
-#include "wasm/WasmModule.cpp"
-#include "wasm/WasmModuleInformation.cpp"
-#include "wasm/WasmNameSectionParser.cpp"

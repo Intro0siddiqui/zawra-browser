@@ -1,8 +1,0 @@
-#include "JSChannelSplitterOptions.cpp"
-#include "JSCharacterData.cpp"
-#include "JSChildNode.cpp"
-#include "JSClipboard.cpp"
-#include "JSClipboardEvent.cpp"
-#include "JSClipboardItem.cpp"
-#include "JSCloseEvent.cpp"
-#include "JSColorGamut.cpp"

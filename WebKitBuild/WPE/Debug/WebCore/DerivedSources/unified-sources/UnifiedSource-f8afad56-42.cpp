@@ -1,8 +1,0 @@
-#include "Modules/web-locks/WebLockRegistry.cpp"
-#include "Modules/webaudio/AnalyserNode.cpp"
-#include "Modules/webaudio/AsyncAudioDecoder.cpp"
-#include "Modules/webaudio/AudioBasicInspectorNode.cpp"
-#include "Modules/webaudio/AudioBasicProcessorNode.cpp"
-#include "Modules/webaudio/AudioBuffer.cpp"
-#include "Modules/webaudio/AudioBufferSourceNode.cpp"
-#include "Modules/webaudio/AudioContext.cpp"

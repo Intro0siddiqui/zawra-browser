@@ -1,8 +1,0 @@
-#include "platform/graphics/displaylists/DisplayList.cpp"
-#include "platform/graphics/displaylists/DisplayListDrawingContext.cpp"
-#include "platform/graphics/displaylists/DisplayListItemBuffer.cpp"
-#include "platform/graphics/displaylists/DisplayListItemType.cpp"
-#include "platform/graphics/displaylists/DisplayListItems.cpp"
-#include "platform/graphics/displaylists/DisplayListIterator.cpp"
-#include "platform/graphics/displaylists/DisplayListRecorder.cpp"
-#include "platform/graphics/displaylists/DisplayListRecorderImpl.cpp"

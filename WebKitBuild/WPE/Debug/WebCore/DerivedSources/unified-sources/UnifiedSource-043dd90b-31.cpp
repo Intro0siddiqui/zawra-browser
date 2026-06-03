@@ -1,8 +1,0 @@
-#include "rendering/svg/RenderSVGInlineText.cpp"
-#include "rendering/svg/RenderSVGModelObject.cpp"
-#include "rendering/svg/RenderSVGPath.cpp"
-#include "rendering/svg/RenderSVGRect.cpp"
-#include "rendering/svg/RenderSVGResource.cpp"
-#include "rendering/svg/RenderSVGResourceClipper.cpp"
-#include "rendering/svg/RenderSVGResourceContainer.cpp"
-#include "rendering/svg/RenderSVGResourceFilter.cpp"

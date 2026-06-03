@@ -1,8 +1,0 @@
-#include "runtime/JSObject.cpp"
-#include "runtime/JSPromise.cpp"
-#include "runtime/JSPromiseConstructor.cpp"
-#include "runtime/JSPromisePrototype.cpp"
-#include "runtime/JSPropertyNameEnumerator.cpp"
-#include "runtime/JSRemoteFunction.cpp"
-#include "runtime/JSRunLoopTimer.cpp"
-#include "runtime/JSScope.cpp"

@@ -1,8 +1,0 @@
-#include "JSFormDataEvent.cpp"
-#include "JSFullscreenOptions.cpp"
-#include "JSGPU.cpp"
-#include "JSGPUAdapter.cpp"
-#include "JSGPUAdapterInfo.cpp"
-#include "JSGPUAddressMode.cpp"
-#include "JSGPUAutoLayoutMode.cpp"
-#include "JSGPUBindGroup.cpp"

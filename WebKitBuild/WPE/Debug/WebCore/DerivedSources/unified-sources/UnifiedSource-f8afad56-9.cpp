@@ -1,8 +1,0 @@
-#include "Modules/applicationmanifest/ApplicationManifestParser.cpp"
-#include "Modules/async-clipboard/Clipboard.cpp"
-#include "Modules/async-clipboard/ClipboardImageReader.cpp"
-#include "Modules/async-clipboard/ClipboardItem.cpp"
-#include "Modules/async-clipboard/ClipboardItemBindingsDataSource.cpp"
-#include "Modules/async-clipboard/ClipboardItemPasteboardDataSource.cpp"
-#include "Modules/async-clipboard/NavigatorClipboard.cpp"
-#include "Modules/audiosession/DOMAudioSession.cpp"

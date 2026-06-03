@@ -1,8 +1,0 @@
-#include "Modules/indexeddb/client/IDBConnectionToServer.cpp"
-#include "Modules/indexeddb/client/TransactionOperation.cpp"
-#include "Modules/indexeddb/server/IDBConnectionToClient.cpp"
-#include "Modules/indexeddb/server/IDBSerialization.cpp"
-#include "Modules/indexeddb/server/IDBServer.cpp"
-#include "Modules/indexeddb/server/IndexValueEntry.cpp"
-#include "Modules/indexeddb/server/IndexValueStore.cpp"
-#include "Modules/indexeddb/server/MemoryBackingStoreTransaction.cpp"

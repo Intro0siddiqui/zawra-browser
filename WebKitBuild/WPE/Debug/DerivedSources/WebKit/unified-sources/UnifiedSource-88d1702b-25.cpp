@@ -1,8 +1,0 @@
-#include "UIProcess/Launcher/glib/FlatpakLauncher.cpp"
-#include "UIProcess/Launcher/glib/ProcessLauncherGLib.cpp"
-#include "UIProcess/Launcher/glib/ProcessProviderGLib.cpp"
-#include "UIProcess/Launcher/glib/XDGDBusProxy.cpp"
-#include "UIProcess/Launcher/libwpe/ProcessProviderLibWPE.cpp"
-#include "UIProcess/Media/AudioSessionRoutingArbitratorProxy.cpp"
-#include "UIProcess/Media/MediaUsageManager.cpp"
-#include "UIProcess/Media/RemoteMediaSessionCoordinatorProxy.cpp"

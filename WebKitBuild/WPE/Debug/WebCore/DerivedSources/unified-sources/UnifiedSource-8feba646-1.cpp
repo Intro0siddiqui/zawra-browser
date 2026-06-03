@@ -1,8 +1,0 @@
-#include "svg/DocumentSVG.cpp"
-#include "svg/SVGAElement.cpp"
-#include "svg/SVGAltGlyphDefElement.cpp"
-#include "svg/SVGAltGlyphElement.cpp"
-#include "svg/SVGAltGlyphItemElement.cpp"
-#include "svg/SVGAngleValue.cpp"
-#include "svg/SVGAnimateColorElement.cpp"
-#include "svg/SVGAnimateElement.cpp"

@@ -1,8 +1,0 @@
-#include "JSGPUDevice.cpp"
-#include "JSGPUDeviceDescriptor.cpp"
-#include "JSGPUDeviceError.cpp"
-#include "JSGPUDeviceLost.cpp"
-#include "JSGPUDeviceLostInfo.cpp"
-#include "JSGPUDeviceLostReason.cpp"
-#include "JSGPUDeviceUncapturedError.cpp"
-#include "JSGPUErrorFilter.cpp"

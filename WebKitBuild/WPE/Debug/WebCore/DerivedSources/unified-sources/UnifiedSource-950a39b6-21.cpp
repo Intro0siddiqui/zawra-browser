@@ -1,8 +1,0 @@
-#include "html/TelephoneInputType.cpp"
-#include "html/TextDocument.cpp"
-#include "html/TextFieldInputType.cpp"
-#include "html/TextInputType.cpp"
-#include "html/TimeInputType.cpp"
-#include "html/TimeRanges.cpp"
-#include "html/TypeAhead.cpp"
-#include "html/URLDecomposition.cpp"

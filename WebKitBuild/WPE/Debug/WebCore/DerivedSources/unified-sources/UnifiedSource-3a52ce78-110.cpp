@@ -1,8 +1,0 @@
-#include "JSPublicKeyCredential.cpp"
-#include "JSPublicKeyCredentialCreationOptions.cpp"
-#include "JSPublicKeyCredentialDescriptor.cpp"
-#include "JSPublicKeyCredentialRequestOptions.cpp"
-#include "JSPublicKeyCredentialType.cpp"
-#include "JSPushEncryptionKeyName.cpp"
-#include "JSPushEvent.cpp"
-#include "JSPushEventInit.cpp"

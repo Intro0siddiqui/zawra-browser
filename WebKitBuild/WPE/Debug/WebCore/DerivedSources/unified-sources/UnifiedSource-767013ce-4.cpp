@@ -1,8 +1,0 @@
-#include "page/Frame.cpp"
-#include "page/FrameDestructionObserver.cpp"
-#include "page/FrameSnapshotting.cpp"
-#include "page/FrameTree.cpp"
-#include "page/History.cpp"
-#include "page/ImageAnalysisQueue.cpp"
-#include "page/ImageOverlayController.cpp"
-#include "page/InteractionRegion.cpp"

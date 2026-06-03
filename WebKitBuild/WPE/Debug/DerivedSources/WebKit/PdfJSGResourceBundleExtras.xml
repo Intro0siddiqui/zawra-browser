@@ -1,7 +1,0 @@
-<?xml version=1.0 encoding=UTF-8?>
-<gresources>
-    <gresource prefix="/org/webkit/pdfjs">
-        <file compressed="true" alias="extras/content-script.js">content-script.js</file>
-        <file compressed="true" alias="extras/adwaita/style.css">adwaita/style.css</file>
-    </gresource>
-</gresources>

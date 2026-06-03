@@ -1,8 +1,0 @@
-#include "Shared/WebMemorySampler.cpp"
-#include "Shared/WebMouseEvent.cpp"
-#include "Shared/WebPageGroupData.cpp"
-#include "Shared/WebPageNetworkParameters.cpp"
-#include "Shared/WebPlatformTouchPoint.cpp"
-#include "Shared/WebPopupItem.cpp"
-#include "Shared/WebPreferencesDefaultValues.cpp"
-#include "Shared/WebPreferencesStore.cpp"

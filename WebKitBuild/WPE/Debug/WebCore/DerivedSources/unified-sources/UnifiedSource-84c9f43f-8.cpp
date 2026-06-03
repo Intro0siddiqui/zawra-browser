@@ -1,8 +1,0 @@
-#include "inspector/agents/page/PageNetworkAgent.cpp"
-#include "inspector/agents/page/PageRuntimeAgent.cpp"
-#include "inspector/agents/worker/ServiceWorkerAgent.cpp"
-#include "inspector/agents/worker/WorkerAuditAgent.cpp"
-#include "inspector/agents/worker/WorkerConsoleAgent.cpp"
-#include "inspector/agents/worker/WorkerDOMDebuggerAgent.cpp"
-#include "inspector/agents/worker/WorkerDebuggerAgent.cpp"
-#include "inspector/agents/worker/WorkerNetworkAgent.cpp"

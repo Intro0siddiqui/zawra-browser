@@ -1,4 +1,0 @@
-JSHTMLDocument.h : Document.idl Node.idl EventTarget.idl
-Document.idl :
-Node.idl :
-EventTarget.idl :

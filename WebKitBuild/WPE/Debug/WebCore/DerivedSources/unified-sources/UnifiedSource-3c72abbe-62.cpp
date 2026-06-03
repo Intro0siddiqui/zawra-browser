@@ -1,8 +1,0 @@
-#include "platform/network/glib/NetworkStateNotifierGLib.cpp"
-#include "platform/network/soup/AuthenticationChallengeSoup.cpp"
-#include "platform/network/soup/CertificateInfoSoup.cpp"
-#include "platform/network/soup/CookieSoup.cpp"
-#include "platform/network/soup/CookieStorageSoup.cpp"
-#include "platform/network/soup/CredentialSoup.cpp"
-#include "platform/network/soup/NetworkStorageSessionSoup.cpp"
-#include "platform/network/soup/ResourceErrorSoup.cpp"

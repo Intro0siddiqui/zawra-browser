@@ -14,14 +14,12 @@ extern "C" {
     int32_t Zawra_Bookmark_Delete(uint64_t hi, uint64_t lo);
     int32_t Zawra_Bookmark_GetAll(char* out_buf, size_t out_buf_len);
     int32_t Zawra_Cookie_DeleteForDomain(uint64_t hi, uint64_t lo);
-}
 
 namespace WebCore {
 
 void ZawraStorageBridge::hashString(const String& input, uint64_t& hi, uint64_t& lo)
 {
     Zawra_Hash_String(input.utf8().data(), &hi, &lo);
-}
 
 void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
 {
@@ -38,7 +36,6 @@ void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
     String value = kv[1].trim(isASCIIWhitespace);
 
     Zawra_Cookie_Put(hi, lo, name.utf8().data(), value.utf8().data(), 0, 0);
-}
 
 String ZawraStorageBridge::getCookies(const URL& url)
 {
@@ -50,7 +47,6 @@ String ZawraStorageBridge::getCookies(const URL& url)
         return String::fromUTF8(buf);
     
     return String();
-}
 
 void ZawraStorageBridge::recordHistory(const URL& url, const String& title)
 {
@@ -59,21 +55,18 @@ void ZawraStorageBridge::recordHistory(const URL& url, const String& title)
     
     uint64_t ts = static_cast<uint64_t>(WallTime::now().secondsSinceEpoch().value());
     Zawra_History_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), ts);
-}
 
 void ZawraStorageBridge::addBookmark(const URL& url, const String& title, const String& folder)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
     Zawra_Bookmark_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), folder.utf8().data());
-}
 
 void ZawraStorageBridge::removeBookmark(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
     Zawra_Bookmark_Delete(hi, lo);
-}
 
 String ZawraStorageBridge::getBookmarks()
 {
@@ -81,13 +74,23 @@ String ZawraStorageBridge::getBookmarks()
     if (Zawra_Bookmark_GetAll(buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
-}
 
 void ZawraStorageBridge::deleteCookiesForDomain(const String& domain)
 {
     uint64_t hi, lo;
     hashString(domain, hi, lo);
     Zawra_Cookie_DeleteForDomain(hi, lo);
-}
 
+
+void ZawraStorageBridge::incrementHistoryVisit(const URL& url)
+{
+    uint64_t hi, lo;
+    hashString(url.string(), hi, lo);
+    // Add Rust FFI call if needed
+
+void ZawraStorageBridge::storeDataWithTTL(const String& key, const String& value, uint64_t ttl)
+{
+    uint64_t hi, lo;
+    hashString(key, hi, lo);
+    // Add Rust FFI call if needed
 }

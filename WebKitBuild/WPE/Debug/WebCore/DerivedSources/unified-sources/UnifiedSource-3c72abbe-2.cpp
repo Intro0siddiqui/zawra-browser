@@ -1,8 +1,0 @@
-#include "platform/DragData.cpp"
-#include "platform/DragImage.cpp"
-#include "platform/EventTrackingRegions.cpp"
-#include "platform/FileChooser.cpp"
-#include "platform/FileHandle.cpp"
-#include "platform/FileMonitor.cpp"
-#include "platform/FileStream.cpp"
-#include "platform/FrameRateMonitor.cpp"

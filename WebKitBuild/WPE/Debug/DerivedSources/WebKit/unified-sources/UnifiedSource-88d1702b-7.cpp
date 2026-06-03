@@ -1,8 +1,0 @@
-#include "UIProcess/WebFormSubmissionListenerProxy.cpp"
-#include "UIProcess/WebFramePolicyListenerProxy.cpp"
-#include "UIProcess/WebFrameProxy.cpp"
-#include "UIProcess/WebFullScreenManagerProxy.cpp"
-#include "UIProcess/WebGeolocationManagerProxy.cpp"
-#include "UIProcess/WebGeolocationProvider.cpp"
-#include "UIProcess/WebLockRegistryProxy.cpp"
-#include "UIProcess/WebNavigationState.cpp"

@@ -1,8 +1,0 @@
-#include "platform/ThemeTypes.cpp"
-#include "platform/ThreadGlobalData.cpp"
-#include "platform/ThreadTimers.cpp"
-#include "platform/Timer.cpp"
-#include "platform/UserActivity.cpp"
-#include "platform/VideoDecoder.cpp"
-#include "platform/VideoEncoder.cpp"
-#include "platform/VideoFrame.cpp"

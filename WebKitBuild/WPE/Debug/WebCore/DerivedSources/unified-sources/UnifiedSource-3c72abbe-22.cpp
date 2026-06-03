@@ -1,8 +1,0 @@
-#include "platform/glib/RemoteCommandListenerGLib.cpp"
-#include "platform/glib/SharedBufferGlib.cpp"
-#include "platform/glib/UserAgentGLib.cpp"
-#include "platform/glib/UserAgentQuirks.cpp"
-#include "platform/graphics/AlphaPremultiplication.cpp"
-#include "platform/graphics/AnimationFrameRate.cpp"
-#include "platform/graphics/BifurcatedGraphicsContext.cpp"
-#include "platform/graphics/BitmapImage.cpp"

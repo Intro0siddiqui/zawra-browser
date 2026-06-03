@@ -1,8 +1,0 @@
-#include "html/HTMLAreaElement.cpp"
-#include "html/HTMLArticleElement.cpp"
-#include "html/HTMLAttachmentElement.cpp"
-#include "html/HTMLAudioElement.cpp"
-#include "html/HTMLBDIElement.cpp"
-#include "html/HTMLBRElement.cpp"
-#include "html/HTMLBaseElement.cpp"
-#include "html/HTMLBodyElement.cpp"

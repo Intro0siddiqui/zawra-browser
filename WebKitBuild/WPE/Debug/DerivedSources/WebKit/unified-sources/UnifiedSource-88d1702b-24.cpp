@@ -1,8 +1,0 @@
-#include "UIProcess/Inspector/WebInspectorUIProxy.cpp"
-#include "UIProcess/Inspector/WebInspectorUtilities.cpp"
-#include "UIProcess/Inspector/WebPageDebuggable.cpp"
-#include "UIProcess/Inspector/WebPageInspectorController.cpp"
-#include "UIProcess/Inspector/Agents/InspectorBrowserAgent.cpp"
-#include "UIProcess/Inspector/glib/RemoteInspectorClient.cpp"
-#include "UIProcess/Inspector/glib/RemoteInspectorHTTPServer.cpp"
-#include "UIProcess/Launcher/glib/BubblewrapLauncher.cpp"

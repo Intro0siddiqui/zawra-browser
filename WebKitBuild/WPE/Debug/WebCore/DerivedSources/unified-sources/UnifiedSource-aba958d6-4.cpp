@@ -1,8 +1,0 @@
-#include "accessibility/AccessibilitySVGRoot.cpp"
-#include "accessibility/AccessibilityScrollView.cpp"
-#include "accessibility/AccessibilityScrollbar.cpp"
-#include "accessibility/AccessibilitySlider.cpp"
-#include "accessibility/AccessibilitySpinButton.cpp"
-#include "accessibility/AccessibilityTable.cpp"
-#include "accessibility/AccessibilityTableCell.cpp"
-#include "accessibility/AccessibilityTableColumn.cpp"

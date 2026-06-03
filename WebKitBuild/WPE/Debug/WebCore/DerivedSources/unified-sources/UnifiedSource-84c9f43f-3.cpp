@@ -1,8 +1,0 @@
-#include "inspector/InspectorInstrumentationPublic.cpp"
-#include "inspector/InspectorInstrumentationWebKit.cpp"
-#include "inspector/InspectorNodeFinder.cpp"
-#include "inspector/InspectorOverlay.cpp"
-#include "inspector/InspectorOverlayLabel.cpp"
-#include "inspector/InspectorShaderProgram.cpp"
-#include "inspector/InspectorStyleSheet.cpp"
-#include "inspector/InstrumentingAgents.cpp"

@@ -1,8 +1,0 @@
-#include "html/canvas/WebGLCompressedTextureS3TCsRGB.cpp"
-#include "html/canvas/WebGLContextEvent.cpp"
-#include "html/canvas/WebGLContextGroup.cpp"
-#include "html/canvas/WebGLContextObject.cpp"
-#include "html/canvas/WebGLDebugRendererInfo.cpp"
-#include "html/canvas/WebGLDebugShaders.cpp"
-#include "html/canvas/WebGLDepthTexture.cpp"
-#include "html/canvas/WebGLDrawBuffers.cpp"

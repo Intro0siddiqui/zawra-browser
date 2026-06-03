@@ -1,8 +1,0 @@
-#include "svg/SVGFEMergeNodeElement.cpp"
-#include "svg/SVGFEMorphologyElement.cpp"
-#include "svg/SVGFEOffsetElement.cpp"
-#include "svg/SVGFEPointLightElement.cpp"
-#include "svg/SVGFESpecularLightingElement.cpp"
-#include "svg/SVGFESpotLightElement.cpp"
-#include "svg/SVGFETileElement.cpp"
-#include "svg/SVGFETurbulenceElement.cpp"

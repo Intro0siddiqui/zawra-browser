@@ -1,8 +1,0 @@
-#include "dom/ScriptExecutionContext.cpp"
-#include "dom/ScriptRunner.cpp"
-#include "dom/ScriptableDocumentParser.cpp"
-#include "dom/ScriptedAnimationController.cpp"
-#include "dom/SecurityContext.cpp"
-#include "dom/SecurityOriginPolicy.cpp"
-#include "dom/SecurityPolicyViolationEvent.cpp"
-#include "dom/SelectorQuery.cpp"

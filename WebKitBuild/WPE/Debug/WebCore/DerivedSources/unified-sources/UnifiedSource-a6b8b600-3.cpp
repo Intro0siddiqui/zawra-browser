@@ -1,6 +1,0 @@
-#include "animation/ElementAnimationRareData.cpp"
-#include "animation/FrameRateAligner.cpp"
-#include "animation/KeyframeEffect.cpp"
-#include "animation/KeyframeEffectStack.cpp"
-#include "animation/WebAnimation.cpp"
-#include "animation/WebAnimationUtilities.cpp"

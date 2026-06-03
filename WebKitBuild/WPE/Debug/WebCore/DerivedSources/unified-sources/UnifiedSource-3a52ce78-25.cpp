@@ -1,8 +1,0 @@
-#include "JSCanvasTextDrawingStyles.cpp"
-#include "JSCanvasTransform.cpp"
-#include "JSCanvasUserInterface.cpp"
-#include "JSChannelCountMode.cpp"
-#include "JSChannelInterpretation.cpp"
-#include "JSChannelMergerNode.cpp"
-#include "JSChannelMergerOptions.cpp"
-#include "JSChannelSplitterNode.cpp"

@@ -1,8 +1,0 @@
-#include "rendering/style/ShadowData.cpp"
-#include "rendering/style/ShapeValue.cpp"
-#include "rendering/style/StyleBackgroundData.cpp"
-#include "rendering/style/StyleBoxData.cpp"
-#include "rendering/style/StyleCachedImage.cpp"
-#include "rendering/style/StyleCanvasImage.cpp"
-#include "rendering/style/StyleContentAlignmentData.cpp"
-#include "rendering/style/StyleCrossfadeImage.cpp"

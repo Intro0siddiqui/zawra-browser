@@ -1,8 +1,0 @@
-#include "JSGPUImageCopyBuffer.cpp"
-#include "JSGPUImageCopyExternalImage.cpp"
-#include "JSGPUImageCopyTexture.cpp"
-#include "JSGPUImageCopyTextureTagged.cpp"
-#include "JSGPUImageDataLayout.cpp"
-#include "JSGPUIndexFormat.cpp"
-#include "JSGPUInternalError.cpp"
-#include "JSGPULoadOp.cpp"

@@ -1,8 +1,0 @@
-#include "JSHTMLModelElementCamera.cpp"
-#include "JSHTMLOListElement.cpp"
-#include "JSHTMLObjectElement.cpp"
-#include "JSHTMLOptGroupElement.cpp"
-#include "JSHTMLOptionElement.cpp"
-#include "JSHTMLOptionsCollection.cpp"
-#include "JSHTMLOrForeignElement.cpp"
-#include "JSHTMLOutputElement.cpp"

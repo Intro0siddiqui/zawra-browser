@@ -1,8 +1,0 @@
-#include "rendering/svg/SVGResourcesCache.cpp"
-#include "rendering/svg/SVGResourcesCycleSolver.cpp"
-#include "rendering/svg/SVGRootInlineBox.cpp"
-#include "rendering/svg/SVGTextChunk.cpp"
-#include "rendering/svg/SVGTextChunkBuilder.cpp"
-#include "rendering/svg/SVGTextLayoutAttributes.cpp"
-#include "rendering/svg/SVGTextLayoutAttributesBuilder.cpp"
-#include "rendering/svg/SVGTextLayoutEngine.cpp"

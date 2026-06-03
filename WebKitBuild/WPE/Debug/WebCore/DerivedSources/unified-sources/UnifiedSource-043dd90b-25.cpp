@@ -1,8 +1,0 @@
-#include "rendering/style/StyleCursorImage.cpp"
-#include "rendering/style/StyleCustomPropertyData.cpp"
-#include "rendering/style/StyleDeprecatedFlexibleBoxData.cpp"
-#include "rendering/style/StyleFilterData.cpp"
-#include "rendering/style/StyleFilterImage.cpp"
-#include "rendering/style/StyleFlexibleBoxData.cpp"
-#include "rendering/style/StyleGeneratedImage.cpp"
-#include "rendering/style/StyleGradientImage.cpp"

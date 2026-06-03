@@ -1,5 +1,0 @@
-#include "css/typedom/transform/CSSSkewX.cpp"
-#include "css/typedom/transform/CSSSkewY.cpp"
-#include "css/typedom/transform/CSSTransformComponent.cpp"
-#include "css/typedom/transform/CSSTransformValue.cpp"
-#include "css/typedom/transform/CSSTranslate.cpp"

@@ -1,8 +1,0 @@
-#include "JSGPUVertexState.cpp"
-#include "JSGPUVertexStepMode.cpp"
-#include "JSGainNode.cpp"
-#include "JSGainOptions.cpp"
-#include "JSGamepad.cpp"
-#include "JSGamepadButton.cpp"
-#include "JSGamepadEffectParameters.cpp"
-#include "JSGamepadEvent.cpp"

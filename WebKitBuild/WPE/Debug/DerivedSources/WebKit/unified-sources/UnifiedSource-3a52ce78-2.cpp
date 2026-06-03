@@ -1,8 +1,0 @@
-#include "RTCDataChannelRemoteManagerMessageReceiver.cpp"
-#include "RTCDataChannelRemoteManagerProxyMessageReceiver.cpp"
-#include "RemoteAdapterMessageReceiver.cpp"
-#include "RemoteAudioMediaStreamTrackRendererInternalUnitManagerMessageReceiver.cpp"
-#include "RemoteBarcodeDetectorMessageReceiver.cpp"
-#include "RemoteBindGroupLayoutMessageReceiver.cpp"
-#include "RemoteBindGroupMessageReceiver.cpp"
-#include "RemoteBufferMessageReceiver.cpp"

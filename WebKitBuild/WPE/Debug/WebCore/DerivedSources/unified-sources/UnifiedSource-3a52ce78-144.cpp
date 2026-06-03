@@ -1,8 +1,0 @@
-#include "JSShareData.cpp"
-#include "JSSharedWorker.cpp"
-#include "JSSharedWorkerGlobalScope.cpp"
-#include "JSSlotAssignmentMode.cpp"
-#include "JSSlotable.cpp"
-#include "JSSourceBuffer.cpp"
-#include "JSSourceBufferList.cpp"
-#include "JSSpeechRecognition.cpp"

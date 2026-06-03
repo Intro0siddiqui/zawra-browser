@@ -1,8 +1,0 @@
-#include "svg/SVGLocatable.cpp"
-#include "svg/SVGMPathElement.cpp"
-#include "svg/SVGMarkerElement.cpp"
-#include "svg/SVGMaskElement.cpp"
-#include "svg/SVGMetadataElement.cpp"
-#include "svg/SVGMissingGlyphElement.cpp"
-#include "svg/SVGNumberList.cpp"
-#include "svg/SVGParserUtilities.cpp"

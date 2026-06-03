@@ -1,8 +1,0 @@
-#include "style/AttributeChangeInvalidation.cpp"
-#include "style/ChildChangeInvalidation.cpp"
-#include "style/ClassChangeInvalidation.cpp"
-#include "style/ColorFromPrimitiveValue.cpp"
-#include "style/ContainerQueryEvaluator.cpp"
-#include "style/CustomPropertyRegistry.cpp"
-#include "style/ElementRuleCollector.cpp"
-#include "style/FilterOperationsBuilder.cpp"

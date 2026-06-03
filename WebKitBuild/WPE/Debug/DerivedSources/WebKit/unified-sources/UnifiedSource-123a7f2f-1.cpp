@@ -1,8 +1,0 @@
-#include "Platform/LogInitialization.cpp"
-#include "Platform/Logging.cpp"
-#include "Platform/Module.cpp"
-#include "Platform/SharedMemory.cpp"
-#include "Platform/IPC/DaemonCoders.cpp"
-#include "Platform/IPC/ArgumentCoders.cpp"
-#include "Platform/IPC/Connection.cpp"
-#include "Platform/IPC/DaemonConnection.cpp"

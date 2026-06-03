@@ -1,8 +1,0 @@
-#include "JSCanvasRect.cpp"
-#include "JSCanvasRenderingContext2D.cpp"
-#include "JSCanvasRenderingContext2DSettings.cpp"
-#include "JSCanvasShadowStyles.cpp"
-#include "JSCanvasState.cpp"
-#include "JSCanvasText.cpp"
-#include "JSCanvasTextAlign.cpp"
-#include "JSCanvasTextBaseline.cpp"

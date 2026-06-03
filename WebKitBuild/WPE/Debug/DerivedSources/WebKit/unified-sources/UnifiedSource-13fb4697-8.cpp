@@ -1,8 +1,0 @@
-#include "GPUProcess/media/RemoteMediaEngineConfigurationFactoryProxy.cpp"
-#include "GPUProcess/media/RemoteMediaPlayerManagerProxy.cpp"
-#include "GPUProcess/media/RemoteMediaPlayerProxy.cpp"
-#include "GPUProcess/media/RemoteMediaResource.cpp"
-#include "GPUProcess/media/RemoteMediaResourceLoader.cpp"
-#include "GPUProcess/media/RemoteMediaResourceManager.cpp"
-#include "GPUProcess/media/RemoteMediaSourceProxy.cpp"
-#include "GPUProcess/media/RemoteRemoteCommandListenerProxy.cpp"

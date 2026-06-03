@@ -1,8 +1,0 @@
-#include "JSSpeechRecognitionAlternative.cpp"
-#include "JSSpeechRecognitionErrorCode.cpp"
-#include "JSSpeechRecognitionErrorEvent.cpp"
-#include "JSSpeechRecognitionEvent.cpp"
-#include "JSSpeechRecognitionResult.cpp"
-#include "JSSpeechRecognitionResultList.cpp"
-#include "JSSpeechSynthesis.cpp"
-#include "JSSpeechSynthesisEvent.cpp"

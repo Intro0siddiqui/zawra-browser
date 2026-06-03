@@ -1,8 +1,0 @@
-#include "JSTextEncoderStream.cpp"
-#include "JSTextEncoderStreamEncoder.cpp"
-#include "JSTextEvent.cpp"
-#include "JSTextMetrics.cpp"
-#include "JSTextTrack.cpp"
-#include "JSTextTrackCue.cpp"
-#include "JSTextTrackCueGeneric.cpp"
-#include "JSTextTrackCueList.cpp"

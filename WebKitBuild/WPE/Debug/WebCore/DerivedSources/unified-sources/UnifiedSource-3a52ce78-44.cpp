@@ -1,8 +1,0 @@
-#include "JSElementCSSInlineStyle.cpp"
-#include "JSElementInternals.cpp"
-#include "JSEndingType.cpp"
-#include "JSErrorCallback.cpp"
-#include "JSErrorEvent.cpp"
-#include "JSEvent.cpp"
-#include "JSEventInit.cpp"
-#include "JSEventListenerOptions.cpp"

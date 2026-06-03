@@ -1,8 +1,0 @@
-#include "inspector/NetworkResourcesData.cpp"
-#include "inspector/PageDebugger.cpp"
-#include "inspector/TimelineRecordFactory.cpp"
-#include "inspector/UserGestureEmulationScope.cpp"
-#include "inspector/WebInjectedScriptHost.cpp"
-#include "inspector/WebInjectedScriptManager.cpp"
-#include "inspector/WorkerDebugger.cpp"
-#include "inspector/WorkerInspectorController.cpp"

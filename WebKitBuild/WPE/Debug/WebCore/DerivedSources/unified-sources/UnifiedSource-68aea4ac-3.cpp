@@ -1,8 +1,0 @@
-#include "bindings/js/JSAudioNodeCustom.cpp"
-#include "bindings/js/JSAudioWorkletGlobalScopeCustom.cpp"
-#include "bindings/js/JSAudioWorkletProcessorCustom.cpp"
-#include "bindings/js/JSAuthenticatorResponseCustom.cpp"
-#include "bindings/js/JSBaseAudioContextCustom.cpp"
-#include "bindings/js/JSBasicCredentialCustom.cpp"
-#include "bindings/js/JSBlobCustom.cpp"
-#include "bindings/js/JSCSSRuleCustom.cpp"

@@ -1,8 +1,0 @@
-#include "mathml/MathMLAnnotationElement.cpp"
-#include "mathml/MathMLElement.cpp"
-#include "mathml/MathMLFractionElement.cpp"
-#include "mathml/MathMLMathElement.cpp"
-#include "mathml/MathMLMencloseElement.cpp"
-#include "mathml/MathMLOperatorDictionary.cpp"
-#include "mathml/MathMLOperatorElement.cpp"
-#include "mathml/MathMLPaddedElement.cpp"

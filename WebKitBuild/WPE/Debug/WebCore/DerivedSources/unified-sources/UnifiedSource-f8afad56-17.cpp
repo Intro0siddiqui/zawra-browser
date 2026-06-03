@@ -1,8 +1,0 @@
-#include "Modules/indexeddb/IDBGetResult.cpp"
-#include "Modules/indexeddb/IDBIndex.cpp"
-#include "Modules/indexeddb/IDBKey.cpp"
-#include "Modules/indexeddb/IDBKeyData.cpp"
-#include "Modules/indexeddb/IDBKeyPath.cpp"
-#include "Modules/indexeddb/IDBKeyRange.cpp"
-#include "Modules/indexeddb/IDBKeyRangeData.cpp"
-#include "Modules/indexeddb/IDBObjectStore.cpp"

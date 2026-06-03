@@ -1,8 +1,0 @@
-#include "JSEXTFloatBlend.cpp"
-#include "JSEXTFragDepth.cpp"
-#include "JSEXTPolygonOffsetClamp.cpp"
-#include "JSEXTRenderSnorm.cpp"
-#include "JSEXTShaderTextureLOD.cpp"
-#include "JSEXTTextureCompressionBPTC.cpp"
-#include "JSEXTTextureCompressionRGTC.cpp"
-#include "JSEXTTextureFilterAnisotropic.cpp"

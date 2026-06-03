@@ -1,8 +1,0 @@
-#include "css/calc/CSSCalcCategoryMapping.cpp"
-#include "css/calc/CSSCalcExpressionNode.cpp"
-#include "css/calc/CSSCalcExpressionNodeParser.cpp"
-#include "css/calc/CSSCalcInvertNode.cpp"
-#include "css/calc/CSSCalcNegateNode.cpp"
-#include "css/calc/CSSCalcOperationNode.cpp"
-#include "css/calc/CSSCalcPrimitiveValueNode.cpp"
-#include "css/calc/CSSCalcSymbolTable.cpp"

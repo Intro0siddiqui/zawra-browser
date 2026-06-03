@@ -1,8 +1,0 @@
-#include "JSAudioNode.cpp"
-#include "JSAudioNodeOptions.cpp"
-#include "JSAudioParam.cpp"
-#include "JSAudioParamDescriptor.cpp"
-#include "JSAudioParamMap.cpp"
-#include "JSAudioProcessingEvent.cpp"
-#include "JSAudioProcessingEventInit.cpp"
-#include "JSAudioScheduledSourceNode.cpp"

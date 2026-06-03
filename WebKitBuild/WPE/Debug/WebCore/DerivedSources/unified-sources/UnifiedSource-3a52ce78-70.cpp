@@ -1,8 +1,0 @@
-#include "JSHTMLAnchorElement.cpp"
-#include "JSHTMLAreaElement.cpp"
-#include "JSHTMLAttachmentElement.cpp"
-#include "JSHTMLAudioElement.cpp"
-#include "JSHTMLBRElement.cpp"
-#include "JSHTMLBaseElement.cpp"
-#include "JSHTMLBodyElement.cpp"
-#include "JSHTMLButtonElement.cpp"

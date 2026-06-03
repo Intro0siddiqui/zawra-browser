@@ -1,8 +1,0 @@
-#include "JSDOMCacheStorage.cpp"
-#include "JSDOMException.cpp"
-#include "JSDOMFileSystem.cpp"
-#include "JSDOMFormData.cpp"
-#include "JSDOMImplementation.cpp"
-#include "JSDOMMatrix.cpp"
-#include "JSDOMMatrix2DInit.cpp"
-#include "JSDOMMatrixInit.cpp"

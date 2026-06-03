@@ -1,8 +1,0 @@
-#include "runtime/DatePrototype.cpp"
-#include "runtime/DeferredWorkTimer.cpp"
-#include "runtime/DirectArguments.cpp"
-#include "runtime/DirectArgumentsOffset.cpp"
-#include "runtime/DirectEvalExecutable.cpp"
-#include "runtime/DoublePredictionFuzzerAgent.cpp"
-#include "runtime/DumpContext.cpp"
-#include "runtime/ECMAMode.cpp"

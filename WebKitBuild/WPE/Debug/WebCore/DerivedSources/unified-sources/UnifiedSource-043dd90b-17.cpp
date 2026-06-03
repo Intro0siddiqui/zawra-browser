@@ -1,8 +1,0 @@
-#include "rendering/RenderView.cpp"
-#include "rendering/RenderWidget.cpp"
-#include "rendering/SelectionRangeData.cpp"
-#include "rendering/StyledMarkedText.cpp"
-#include "rendering/TableLayout.cpp"
-#include "rendering/TextBoxPainter.cpp"
-#include "rendering/TextDecorationPainter.cpp"
-#include "rendering/TextPaintStyle.cpp"

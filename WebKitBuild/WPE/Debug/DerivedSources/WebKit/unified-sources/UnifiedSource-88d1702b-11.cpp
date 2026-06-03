@@ -1,8 +1,0 @@
-#include "UIProcess/API/APIContextMenuElementInfo.cpp"
-#include "UIProcess/API/APIDataTask.cpp"
-#include "UIProcess/API/APIDebuggableInfo.cpp"
-#include "UIProcess/API/APIFeature.cpp"
-#include "UIProcess/API/APIFrameInfo.cpp"
-#include "UIProcess/API/APIFrameTreeNode.cpp"
-#include "UIProcess/API/APIHTTPCookieStore.cpp"
-#include "UIProcess/API/APIHitTestResult.cpp"

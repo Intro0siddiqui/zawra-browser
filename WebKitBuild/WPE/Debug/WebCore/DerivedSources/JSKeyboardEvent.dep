@@ -1,6 +1,0 @@
-JSKeyboardEvent.h : UIEvent.idl Event.idl EventModifierInit.idl UIEventInit.idl EventInit.idl
-UIEvent.idl :
-Event.idl :
-EventModifierInit.idl :
-UIEventInit.idl :
-EventInit.idl :

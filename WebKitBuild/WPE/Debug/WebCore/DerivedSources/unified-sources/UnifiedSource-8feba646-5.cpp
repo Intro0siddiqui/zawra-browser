@@ -1,8 +1,0 @@
-#include "svg/SVGFEFuncAElement.cpp"
-#include "svg/SVGFEFuncBElement.cpp"
-#include "svg/SVGFEFuncGElement.cpp"
-#include "svg/SVGFEFuncRElement.cpp"
-#include "svg/SVGFEGaussianBlurElement.cpp"
-#include "svg/SVGFEImageElement.cpp"
-#include "svg/SVGFELightElement.cpp"
-#include "svg/SVGFEMergeElement.cpp"

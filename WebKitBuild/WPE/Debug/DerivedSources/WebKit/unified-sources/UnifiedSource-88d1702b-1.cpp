@@ -1,8 +1,0 @@
-#include "UIProcess/AuxiliaryProcessProxy.cpp"
-#include "UIProcess/BackgroundProcessResponsivenessTimer.cpp"
-#include "UIProcess/DeviceIdHashSaltStorage.cpp"
-#include "UIProcess/DrawingAreaProxy.cpp"
-#include "UIProcess/FrameLoadState.cpp"
-#include "UIProcess/GeolocationPermissionRequestManagerProxy.cpp"
-#include "UIProcess/GeolocationPermissionRequestProxy.cpp"
-#include "UIProcess/LegacyGlobalSettings.cpp"

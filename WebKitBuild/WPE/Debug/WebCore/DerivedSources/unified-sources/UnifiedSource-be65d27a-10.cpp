@@ -1,8 +1,0 @@
-#include "dom/EventTarget.cpp"
-#include "dom/EventTargetConcrete.cpp"
-#include "dom/ExtensionStyleSheets.cpp"
-#include "dom/FocusEvent.cpp"
-#include "dom/FormDataEvent.cpp"
-#include "dom/FragmentDirectiveParser.cpp"
-#include "dom/FragmentDirectiveRangeFinder.cpp"
-#include "dom/FullscreenManager.cpp"

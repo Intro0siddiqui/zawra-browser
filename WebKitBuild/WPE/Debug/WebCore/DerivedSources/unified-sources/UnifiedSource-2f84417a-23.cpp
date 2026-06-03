@@ -1,8 +1,0 @@
-#include "css/typedom/CSSUnitValue.cpp"
-#include "css/typedom/CSSUnparsedValue.cpp"
-#include "css/typedom/ComputedStylePropertyMapReadOnly.cpp"
-#include "css/typedom/DeclaredStylePropertyMap.cpp"
-#include "css/typedom/HashMapStylePropertyMapReadOnly.cpp"
-#include "css/typedom/InlineStylePropertyMap.cpp"
-#include "css/typedom/MainThreadStylePropertyMapReadOnly.cpp"
-#include "css/typedom/StylePropertyMap.cpp"

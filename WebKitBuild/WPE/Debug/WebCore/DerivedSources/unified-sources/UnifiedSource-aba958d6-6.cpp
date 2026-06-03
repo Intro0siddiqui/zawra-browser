@@ -1,8 +1,0 @@
-#include "accessibility/atspi/AccessibilityObjectCollectionAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectComponentAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectDocumentAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectHyperlinkAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectHypertextAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectImageAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectSelectionAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectTableAtspi.cpp"

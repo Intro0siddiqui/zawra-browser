@@ -1,8 +1,0 @@
-#include "platform/text/PlatformLocale.cpp"
-#include "platform/text/QuotedPrintable.cpp"
-#include "platform/text/SegmentedString.cpp"
-#include "platform/text/TextBoundaries.cpp"
-#include "platform/text/TextFlags.cpp"
-#include "platform/text/Hyphenation.cpp"
-#include "platform/text/LocaleICU.cpp"
-#include "platform/unix/LoggingUnix.cpp"

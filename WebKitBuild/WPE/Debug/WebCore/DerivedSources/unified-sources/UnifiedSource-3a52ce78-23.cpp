@@ -1,8 +1,0 @@
-#include "JSCanvasGradient.cpp"
-#include "JSCanvasImageData.cpp"
-#include "JSCanvasImageSmoothing.cpp"
-#include "JSCanvasLineCap.cpp"
-#include "JSCanvasLineJoin.cpp"
-#include "JSCanvasPath.cpp"
-#include "JSCanvasPathDrawingStyles.cpp"
-#include "JSCanvasPattern.cpp"

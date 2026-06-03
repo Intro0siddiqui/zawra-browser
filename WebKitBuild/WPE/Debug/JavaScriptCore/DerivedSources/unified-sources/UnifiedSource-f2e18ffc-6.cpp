@@ -1,8 +1,0 @@
-#include "runtime/CommonIdentifiers.cpp"
-#include "runtime/CommonSlowPaths.cpp"
-#include "runtime/CompilationResult.cpp"
-#include "runtime/Completion.cpp"
-#include "runtime/ConfigFile.cpp"
-#include "runtime/ConsoleClient.cpp"
-#include "runtime/ConsoleObject.cpp"
-#include "runtime/ConstantMode.cpp"

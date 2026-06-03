@@ -1,8 +1,0 @@
-#include "platform/gamepad/libwpe/GamepadLibWPE.cpp"
-#include "platform/gamepad/libwpe/GamepadProviderLibWPE.cpp"
-#include "platform/generic/ScrollbarsControllerGeneric.cpp"
-#include "platform/glib/ApplicationGLib.cpp"
-#include "platform/glib/FileMonitorGLib.cpp"
-#include "platform/glib/KeyedDecoderGlib.cpp"
-#include "platform/glib/KeyedEncoderGlib.cpp"
-#include "platform/glib/LowPowerModeNotifierGLib.cpp"

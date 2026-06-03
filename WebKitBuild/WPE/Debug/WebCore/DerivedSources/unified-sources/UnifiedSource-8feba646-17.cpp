@@ -1,8 +1,0 @@
-#include "svg/animation/SMILTime.cpp"
-#include "svg/animation/SMILTimeContainer.cpp"
-#include "svg/animation/SVGSMILElement.cpp"
-#include "svg/graphics/SVGImage.cpp"
-#include "svg/graphics/SVGImageCache.cpp"
-#include "svg/graphics/SVGImageForContainer.cpp"
-#include "svg/graphics/filters/SVGFilter.cpp"
-#include "svg/properties/SVGAnimatedProperty.cpp"

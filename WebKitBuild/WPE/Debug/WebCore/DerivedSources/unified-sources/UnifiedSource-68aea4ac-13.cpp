@@ -1,8 +1,0 @@
-#include "bindings/js/JSMutationObserverCustom.cpp"
-#include "bindings/js/JSMutationRecordCustom.cpp"
-#include "bindings/js/JSNavigatorCustom.cpp"
-#include "bindings/js/JSNodeCustom.cpp"
-#include "bindings/js/JSNodeIteratorCustom.cpp"
-#include "bindings/js/JSNodeListCustom.cpp"
-#include "bindings/js/JSObservableArray.cpp"
-#include "bindings/js/JSOffscreenCanvasRenderingContext2DCustom.cpp"

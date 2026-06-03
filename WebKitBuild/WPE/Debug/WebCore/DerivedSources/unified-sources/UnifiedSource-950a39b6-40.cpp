@@ -1,8 +1,0 @@
-#include "html/track/InbandWebVTTTextTrack.cpp"
-#include "html/track/LoadableTextTrack.cpp"
-#include "html/track/TextTrack.cpp"
-#include "html/track/TextTrackCue.cpp"
-#include "html/track/TextTrackCueGeneric.cpp"
-#include "html/track/TextTrackCueList.cpp"
-#include "html/track/TextTrackList.cpp"
-#include "html/track/TrackBase.cpp"

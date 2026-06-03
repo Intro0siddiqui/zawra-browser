@@ -1,8 +1,0 @@
-#include "JSGPUCommandEncoder.cpp"
-#include "JSGPUCommandEncoderDescriptor.cpp"
-#include "JSGPUCommandsMixin.cpp"
-#include "JSGPUCompareFunction.cpp"
-#include "JSGPUCompilationInfo.cpp"
-#include "JSGPUCompilationMessage.cpp"
-#include "JSGPUCompilationMessageType.cpp"
-#include "JSGPUComputePassDescriptor.cpp"

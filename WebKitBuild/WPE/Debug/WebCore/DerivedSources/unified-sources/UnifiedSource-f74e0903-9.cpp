@@ -1,8 +1,0 @@
-#include "workers/shared/SharedWorker.cpp"
-#include "workers/shared/SharedWorkerGlobalScope.cpp"
-#include "workers/shared/SharedWorkerObjectConnection.cpp"
-#include "workers/shared/SharedWorkerProvider.cpp"
-#include "workers/shared/SharedWorkerScriptLoader.cpp"
-#include "workers/shared/context/SharedWorkerContextManager.cpp"
-#include "workers/shared/context/SharedWorkerThread.cpp"
-#include "workers/shared/context/SharedWorkerThreadProxy.cpp"

@@ -1,8 +1,0 @@
-#include "JSAbortAlgorithm.cpp"
-#include "JSAbortController.cpp"
-#include "JSAbortSignal.cpp"
-#include "JSAbstractRange.cpp"
-#include "JSAbstractWorker.cpp"
-#include "JSAddEventListenerOptions.cpp"
-#include "JSAddressErrors.cpp"
-#include "JSAesCbcCfbParams.cpp"

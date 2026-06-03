@@ -1,8 +1,0 @@
-#include "JSOfflineAudioCompletionEventInit.cpp"
-#include "JSOfflineAudioContext.cpp"
-#include "JSOfflineAudioContextOptions.cpp"
-#include "JSOffscreenCanvas.cpp"
-#include "JSOffscreenCanvasRenderingContext2D.cpp"
-#include "JSOptionalEffectTiming.cpp"
-#include "JSOscillatorNode.cpp"
-#include "JSOscillatorOptions.cpp"

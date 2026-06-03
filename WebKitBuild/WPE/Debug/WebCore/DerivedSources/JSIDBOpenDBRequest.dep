@@ -1,3 +1,0 @@
-JSIDBOpenDBRequest.h : IDBRequest.idl EventTarget.idl
-IDBRequest.idl :
-EventTarget.idl :

@@ -1,8 +1,0 @@
-#include "JSHTMLCanvasElement.cpp"
-#include "JSHTMLCollection.cpp"
-#include "JSHTMLDListElement.cpp"
-#include "JSHTMLDataElement.cpp"
-#include "JSHTMLDataListElement.cpp"
-#include "JSHTMLDetailsElement.cpp"
-#include "JSHTMLDialogElement.cpp"
-#include "JSHTMLDirectoryElement.cpp"

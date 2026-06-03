@@ -1,8 +1,0 @@
-#include "svg/SVGStopElement.cpp"
-#include "svg/SVGStringList.cpp"
-#include "svg/SVGStyleElement.cpp"
-#include "svg/SVGSwitchElement.cpp"
-#include "svg/SVGSymbolElement.cpp"
-#include "svg/SVGTRefElement.cpp"
-#include "svg/SVGTSpanElement.cpp"
-#include "svg/SVGTests.cpp"

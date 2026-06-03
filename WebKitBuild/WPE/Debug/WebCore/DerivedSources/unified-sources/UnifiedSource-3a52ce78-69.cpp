@@ -1,8 +1,0 @@
-#include "JSGamepadHapticActuator.cpp"
-#include "JSGamepadHapticEffectType.cpp"
-#include "JSGeolocation.cpp"
-#include "JSGeolocationCoordinates.cpp"
-#include "JSGeolocationPosition.cpp"
-#include "JSGeolocationPositionError.cpp"
-#include "JSGetAnimationsOptions.cpp"
-#include "JSHTMLAllCollection.cpp"

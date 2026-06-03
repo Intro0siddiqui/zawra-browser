@@ -1,8 +1,0 @@
-#include "Shared/WebGPU/WebGPUBindGroupLayoutEntry.cpp"
-#include "Shared/WebGPU/WebGPUBlendComponent.cpp"
-#include "Shared/WebGPU/WebGPUBlendState.cpp"
-#include "Shared/WebGPU/WebGPUBufferBinding.cpp"
-#include "Shared/WebGPU/WebGPUBufferBindingLayout.cpp"
-#include "Shared/WebGPU/WebGPUBufferDescriptor.cpp"
-#include "Shared/WebGPU/WebGPUCanvasConfiguration.cpp"
-#include "Shared/WebGPU/WebGPUColor.cpp"

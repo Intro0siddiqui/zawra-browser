@@ -1,8 +1,0 @@
-#include "JSRTCIceServer.cpp"
-#include "JSRTCIceTcpCandidateType.cpp"
-#include "JSRTCIceTransport.cpp"
-#include "JSRTCIceTransportState.cpp"
-#include "JSRTCLocalSessionDescriptionInit.cpp"
-#include "JSRTCOfferAnswerOptions.cpp"
-#include "JSRTCOfferOptions.cpp"
-#include "JSRTCPeerConnection.cpp"

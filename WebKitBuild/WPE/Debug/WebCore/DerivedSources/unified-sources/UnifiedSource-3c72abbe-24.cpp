@@ -1,8 +1,0 @@
-#include "platform/graphics/ColorSerialization.cpp"
-#include "platform/graphics/ColorSpace.cpp"
-#include "platform/graphics/ColorUtilities.cpp"
-#include "platform/graphics/ComplexTextController.cpp"
-#include "platform/graphics/ContentTypeUtilities.cpp"
-#include "platform/graphics/CrossfadeGeneratedImage.cpp"
-#include "platform/graphics/DecomposedGlyphs.cpp"
-#include "platform/graphics/DestinationColorSpace.cpp"

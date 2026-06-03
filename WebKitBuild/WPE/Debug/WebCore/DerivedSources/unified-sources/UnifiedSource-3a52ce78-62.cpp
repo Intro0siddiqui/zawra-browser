@@ -1,8 +1,0 @@
-#include "JSGPUQueue.cpp"
-#include "JSGPURenderBundle.cpp"
-#include "JSGPURenderBundleDescriptor.cpp"
-#include "JSGPURenderBundleEncoder.cpp"
-#include "JSGPURenderBundleEncoderDescriptor.cpp"
-#include "JSGPURenderEncoderBase.cpp"
-#include "JSGPURenderPassColorAttachment.cpp"
-#include "JSGPURenderPassDepthStencilAttachment.cpp"

@@ -1,8 +1,0 @@
-#include "dom/DeviceOrientationEvent.cpp"
-#include "dom/Document.cpp"
-#include "dom/DocumentFontLoader.cpp"
-#include "dom/DocumentFragment.cpp"
-#include "dom/DocumentFullscreen.cpp"
-#include "dom/DocumentMarkerController.cpp"
-#include "dom/DocumentOrShadowRootFullscreen.cpp"
-#include "dom/DocumentParser.cpp"

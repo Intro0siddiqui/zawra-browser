@@ -1,7 +1,0 @@
-JSSVGEllipseElement.h : SVGGeometryElement.idl SVGGraphicsElement.idl SVGElement.idl Element.idl Node.idl EventTarget.idl
-SVGGeometryElement.idl :
-SVGGraphicsElement.idl :
-SVGElement.idl :
-Element.idl :
-Node.idl :
-EventTarget.idl :

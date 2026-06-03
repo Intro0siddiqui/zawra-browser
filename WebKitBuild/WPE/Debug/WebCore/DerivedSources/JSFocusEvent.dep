@@ -1,5 +1,0 @@
-JSFocusEvent.h : UIEvent.idl Event.idl UIEventInit.idl EventInit.idl
-UIEvent.idl :
-Event.idl :
-UIEventInit.idl :
-EventInit.idl :

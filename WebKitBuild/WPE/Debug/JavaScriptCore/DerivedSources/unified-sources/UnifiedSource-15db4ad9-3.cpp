@@ -1,8 +1,0 @@
-#include "wasm/WasmFunctionIPIntMetadataGenerator.cpp"
-#include "wasm/WasmGlobal.cpp"
-#include "wasm/WasmHandlerInfo.cpp"
-#include "wasm/WasmIPIntGenerator.cpp"
-#include "wasm/WasmIPIntPlan.cpp"
-#include "wasm/WasmIndexOrName.cpp"
-#include "wasm/WasmInstance.cpp"
-#include "wasm/WasmLLIntGenerator.cpp"

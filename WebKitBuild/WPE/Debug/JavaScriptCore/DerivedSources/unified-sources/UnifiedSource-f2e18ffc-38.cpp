@@ -1,8 +1,0 @@
-#include "runtime/SymbolTable.cpp"
-#include "runtime/SyntheticModuleRecord.cpp"
-#include "runtime/TemplateObjectDescriptor.cpp"
-#include "runtime/TemporalCalendar.cpp"
-#include "runtime/TemporalCalendarConstructor.cpp"
-#include "runtime/TemporalCalendarPrototype.cpp"
-#include "runtime/TemporalDuration.cpp"
-#include "runtime/TemporalDurationConstructor.cpp"

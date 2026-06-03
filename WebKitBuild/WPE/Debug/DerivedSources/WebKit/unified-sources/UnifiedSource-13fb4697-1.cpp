@@ -1,8 +1,0 @@
-#include "GPUProcess/GPUConnectionToWebProcess.cpp"
-#include "GPUProcess/GPUProcess.cpp"
-#include "GPUProcess/GPUProcessCreationParameters.cpp"
-#include "GPUProcess/GPUProcessPreferences.cpp"
-#include "GPUProcess/ShapeDetection/RemoteBarcodeDetector.cpp"
-#include "GPUProcess/ShapeDetection/RemoteFaceDetector.cpp"
-#include "GPUProcess/ShapeDetection/RemoteTextDetector.cpp"
-#include "GPUProcess/ShapeDetection/ShapeDetectionObjectHeap.cpp"

@@ -1,8 +1,0 @@
-#include "WebProcess/WebCoreSupport/WebDataListSuggestionPicker.cpp"
-#include "WebProcess/WebCoreSupport/WebDateTimeChooser.cpp"
-#include "WebProcess/WebCoreSupport/WebDiagnosticLoggingClient.cpp"
-#include "WebProcess/WebCoreSupport/WebDragClient.cpp"
-#include "WebProcess/WebCoreSupport/WebEditorClient.cpp"
-#include "WebProcess/WebCoreSupport/WebFileSystemStorageConnection.cpp"
-#include "WebProcess/WebCoreSupport/WebFrameLoaderClient.cpp"
-#include "WebProcess/WebCoreSupport/WebGeolocationClient.cpp"

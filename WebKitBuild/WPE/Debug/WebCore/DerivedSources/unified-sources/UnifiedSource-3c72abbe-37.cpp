@@ -1,8 +1,0 @@
-#include "platform/graphics/TextTransform.cpp"
-#include "platform/graphics/TrackBuffer.cpp"
-#include "platform/graphics/TrackPrivateBase.cpp"
-#include "platform/graphics/VP9Utilities.cpp"
-#include "platform/graphics/VelocityData.cpp"
-#include "platform/graphics/WOFFFileFormat.cpp"
-#include "platform/graphics/WebMResourceClient.cpp"
-#include "platform/graphics/WidthIterator.cpp"

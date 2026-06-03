@@ -1,8 +1,0 @@
-#include "JSOESShaderMultisampleInterpolation.cpp"
-#include "JSOESStandardDerivatives.cpp"
-#include "JSOESTextureFloat.cpp"
-#include "JSOESTextureFloatLinear.cpp"
-#include "JSOESTextureHalfFloat.cpp"
-#include "JSOESTextureHalfFloatLinear.cpp"
-#include "JSOESVertexArrayObject.cpp"
-#include "JSOfflineAudioCompletionEvent.cpp"

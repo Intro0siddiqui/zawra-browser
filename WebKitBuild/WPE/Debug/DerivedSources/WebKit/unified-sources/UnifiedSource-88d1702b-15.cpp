@@ -1,8 +1,0 @@
-#include "UIProcess/API/C/WKDownloadRef.cpp"
-#include "UIProcess/API/C/WKFeature.cpp"
-#include "UIProcess/API/C/WKFormSubmissionListener.cpp"
-#include "UIProcess/API/C/WKFrame.cpp"
-#include "UIProcess/API/C/WKFrameHandleRef.cpp"
-#include "UIProcess/API/C/WKFrameInfoRef.cpp"
-#include "UIProcess/API/C/WKFramePolicyListener.cpp"
-#include "UIProcess/API/C/WKGeolocationManager.cpp"

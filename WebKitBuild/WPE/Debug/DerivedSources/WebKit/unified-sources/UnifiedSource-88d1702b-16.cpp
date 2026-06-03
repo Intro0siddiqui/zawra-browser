@@ -1,8 +1,0 @@
-#include "UIProcess/API/C/WKGeolocationPermissionRequest.cpp"
-#include "UIProcess/API/C/WKGeolocationPosition.cpp"
-#include "UIProcess/API/C/WKHTTPCookieStoreRef.cpp"
-#include "UIProcess/API/C/WKHitTestResult.cpp"
-#include "UIProcess/API/C/WKIconDatabase.cpp"
-#include "UIProcess/API/C/WKInspector.cpp"
-#include "UIProcess/API/C/WKKeyValueStorageManager.cpp"
-#include "UIProcess/API/C/WKMediaKeySystemPermissionCallback.cpp"

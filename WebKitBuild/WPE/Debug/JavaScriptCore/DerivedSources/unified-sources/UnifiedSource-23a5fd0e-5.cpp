@@ -1,8 +1,0 @@
-#include "b3/B3FrequencyClass.cpp"
-#include "b3/B3Generate.cpp"
-#include "b3/B3HoistLoopInvariantValues.cpp"
-#include "b3/B3InferSwitches.cpp"
-#include "b3/B3InsertionSet.cpp"
-#include "b3/B3Kind.cpp"
-#include "b3/B3LegalizeMemoryOffsets.cpp"
-#include "b3/B3LowerMacros.cpp"

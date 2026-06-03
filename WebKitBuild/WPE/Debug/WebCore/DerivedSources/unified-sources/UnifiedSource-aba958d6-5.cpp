@@ -1,8 +1,0 @@
-#include "accessibility/AccessibilityTableHeaderContainer.cpp"
-#include "accessibility/AccessibilityTableRow.cpp"
-#include "accessibility/AccessibilityTree.cpp"
-#include "accessibility/AccessibilityTreeItem.cpp"
-#include "accessibility/atspi/AXObjectCacheAtspi.cpp"
-#include "accessibility/atspi/AccessibilityAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectActionAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectAtspi.cpp"

@@ -1,8 +1,0 @@
-#include "animation/CSSTransition.cpp"
-#include "animation/CSSTransitionEvent.cpp"
-#include "animation/CompositeOperation.cpp"
-#include "animation/CustomEffect.cpp"
-#include "animation/DeclarativeAnimation.cpp"
-#include "animation/DeclarativeAnimationEvent.cpp"
-#include "animation/DocumentTimeline.cpp"
-#include "animation/DocumentTimelinesController.cpp"

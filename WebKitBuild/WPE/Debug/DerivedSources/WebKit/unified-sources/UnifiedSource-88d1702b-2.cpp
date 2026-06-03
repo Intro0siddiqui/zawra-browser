@@ -1,8 +1,0 @@
-#include "UIProcess/MediaKeySystemPermissionRequestManagerProxy.cpp"
-#include "UIProcess/MediaKeySystemPermissionRequestProxy.cpp"
-#include "UIProcess/ModelElementController.cpp"
-#include "UIProcess/OverrideLanguages.cpp"
-#include "UIProcess/PageLoadState.cpp"
-#include "UIProcess/ProcessAssertion.cpp"
-#include "UIProcess/ProcessThrottler.cpp"
-#include "UIProcess/ProvisionalFrameProxy.cpp"

@@ -1,8 +1,0 @@
-#include "JSGPUTextureViewDescriptor.cpp"
-#include "JSGPUTextureViewDimension.cpp"
-#include "JSGPUUncapturedErrorEvent.cpp"
-#include "JSGPUUncapturedErrorEventInit.cpp"
-#include "JSGPUValidationError.cpp"
-#include "JSGPUVertexAttribute.cpp"
-#include "JSGPUVertexBufferLayout.cpp"
-#include "JSGPUVertexFormat.cpp"

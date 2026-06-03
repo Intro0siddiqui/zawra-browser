@@ -1,8 +1,0 @@
-#include "JSXRInputSourceEvent.cpp"
-#include "JSXRInputSourcesChangeEvent.cpp"
-#include "JSXRInteractionMode.cpp"
-#include "JSXRReferenceSpaceEvent.cpp"
-#include "JSXRReferenceSpaceType.cpp"
-#include "JSXRRenderStateInit.cpp"
-#include "JSXRSessionEvent.cpp"
-#include "JSXRSessionInit.cpp"

@@ -1,3 +1,0 @@
-PushSubscriptionChangeEventInit.h : ExtendableEventInit.idl EventInit.idl
-ExtendableEventInit.idl :
-EventInit.idl :

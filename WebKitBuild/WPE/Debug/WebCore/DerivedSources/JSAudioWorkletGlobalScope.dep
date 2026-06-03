@@ -1,3 +1,0 @@
-JSAudioWorkletGlobalScope.h : WorkletGlobalScope.idl EventTarget.idl
-WorkletGlobalScope.idl :
-EventTarget.idl :

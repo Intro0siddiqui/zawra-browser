@@ -1,8 +1,0 @@
-#include "JSCOEPInheritenceViolationReportBody.cpp"
-#include "JSCORPViolationReportBody.cpp"
-#include "JSCSPViolationReportBody.cpp"
-#include "JSCSSAnimation.cpp"
-#include "JSCSSAnimationEvent.cpp"
-#include "JSCSSColor.cpp"
-#include "JSCSSColorValue.cpp"
-#include "JSCSSConditionRule.cpp"

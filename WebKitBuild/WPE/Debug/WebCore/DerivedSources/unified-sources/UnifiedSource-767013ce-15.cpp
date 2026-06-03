@@ -1,8 +1,0 @@
-#include "page/csp/CSPViolationReportBody.cpp"
-#include "page/csp/ContentSecurityPolicy.cpp"
-#include "page/csp/ContentSecurityPolicyDirective.cpp"
-#include "page/csp/ContentSecurityPolicyDirectiveList.cpp"
-#include "page/csp/ContentSecurityPolicyDirectiveNames.cpp"
-#include "page/csp/ContentSecurityPolicyMediaListDirective.cpp"
-#include "page/csp/ContentSecurityPolicyResponseHeaders.cpp"
-#include "page/csp/ContentSecurityPolicySource.cpp"

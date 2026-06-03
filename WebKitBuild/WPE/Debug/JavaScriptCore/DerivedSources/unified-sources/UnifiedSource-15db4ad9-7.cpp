@@ -1,8 +1,0 @@
-#include "wasm/WasmValueLocation.cpp"
-#include "wasm/WasmWorklist.cpp"
-#include "wasm/js/JSToWasm.cpp"
-#include "wasm/js/JSWebAssembly.cpp"
-#include "wasm/js/JSWebAssemblyCompileError.cpp"
-#include "wasm/js/JSWebAssemblyException.cpp"
-#include "wasm/js/JSWebAssemblyGlobal.cpp"
-#include "wasm/js/JSWebAssemblyInstance.cpp"

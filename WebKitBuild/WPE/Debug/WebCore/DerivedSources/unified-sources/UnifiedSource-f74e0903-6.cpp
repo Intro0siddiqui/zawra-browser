@@ -1,8 +1,0 @@
-#include "workers/service/ServiceWorkerWindowClient.cpp"
-#include "workers/service/WorkerSWClientConnection.cpp"
-#include "workers/service/background-fetch/BackgroundFetch.cpp"
-#include "workers/service/background-fetch/BackgroundFetchEngine.cpp"
-#include "workers/service/background-fetch/BackgroundFetchEvent.cpp"
-#include "workers/service/background-fetch/BackgroundFetchManager.cpp"
-#include "workers/service/background-fetch/BackgroundFetchRecord.cpp"
-#include "workers/service/background-fetch/BackgroundFetchRegistration.cpp"

@@ -1,8 +1,0 @@
-#include "rendering/style/StyleTransformData.cpp"
-#include "rendering/style/StyleVisitedLinkColorData.cpp"
-#include "rendering/style/TextSizeAdjustment.cpp"
-#include "rendering/style/WillChangeData.cpp"
-#include "rendering/svg/LegacyRenderSVGContainer.cpp"
-#include "rendering/svg/LegacyRenderSVGEllipse.cpp"
-#include "rendering/svg/LegacyRenderSVGForeignObject.cpp"
-#include "rendering/svg/LegacyRenderSVGHiddenContainer.cpp"

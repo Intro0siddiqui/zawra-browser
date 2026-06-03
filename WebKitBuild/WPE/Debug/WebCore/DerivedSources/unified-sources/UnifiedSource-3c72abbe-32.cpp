@@ -1,8 +1,0 @@
-#include "platform/graphics/IntRect.cpp"
-#include "platform/graphics/IntSize.cpp"
-#include "platform/graphics/LayoutPoint.cpp"
-#include "platform/graphics/LayoutRect.cpp"
-#include "platform/graphics/LayoutSize.cpp"
-#include "platform/graphics/MIMETypeCache.cpp"
-#include "platform/graphics/MediaPlayer.cpp"
-#include "platform/graphics/MediaPlayerPrivate.cpp"

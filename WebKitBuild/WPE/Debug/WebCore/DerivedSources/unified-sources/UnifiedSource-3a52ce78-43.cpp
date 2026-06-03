@@ -1,8 +1,0 @@
-#include "JSEXTTextureMirrorClampToEdge.cpp"
-#include "JSEXTTextureNorm16.cpp"
-#include "JSEXTsRGB.cpp"
-#include "JSEcKeyParams.cpp"
-#include "JSEcdhKeyDeriveParams.cpp"
-#include "JSEcdsaParams.cpp"
-#include "JSEffectTiming.cpp"
-#include "JSElement.cpp"

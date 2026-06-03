@@ -1,8 +1,0 @@
-#include "bindings/js/JSHTMLCollectionCustom.cpp"
-#include "bindings/js/JSHTMLDocumentCustom.cpp"
-#include "bindings/js/JSHTMLElementCustom.cpp"
-#include "bindings/js/JSHTMLTemplateElementCustom.cpp"
-#include "bindings/js/JSHistoryCustom.cpp"
-#include "bindings/js/JSIDBCursorCustom.cpp"
-#include "bindings/js/JSIDBCursorWithValueCustom.cpp"
-#include "bindings/js/JSIDBObjectStoreCustom.cpp"

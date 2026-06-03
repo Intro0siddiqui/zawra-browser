@@ -1,4 +1,0 @@
-JSText.h : CharacterData.idl Node.idl EventTarget.idl
-CharacterData.idl :
-Node.idl :
-EventTarget.idl :

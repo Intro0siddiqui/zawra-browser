@@ -1,8 +1,0 @@
-#include "platform/sql/SQLiteDatabaseTracker.cpp"
-#include "platform/sql/SQLiteFileSystem.cpp"
-#include "platform/sql/SQLiteStatement.cpp"
-#include "platform/sql/SQLiteStatementAutoResetScope.cpp"
-#include "platform/sql/SQLiteTransaction.cpp"
-#include "platform/text/BidiContext.cpp"
-#include "platform/text/DateTimeFormat.cpp"
-#include "platform/text/LocaleToScriptMapping.cpp"

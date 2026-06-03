@@ -1,8 +1,0 @@
-#include "JSFetchRequestInit.cpp"
-#include "JSFetchRequestMode.cpp"
-#include "JSFetchRequestRedirect.cpp"
-#include "JSFetchResponse.cpp"
-#include "JSFile.cpp"
-#include "JSFileCallback.cpp"
-#include "JSFileList.cpp"
-#include "JSFileReader.cpp"

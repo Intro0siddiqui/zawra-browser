@@ -1,8 +1,0 @@
-#include "layout/formattingContexts/inline/InlineLineBox.cpp"
-#include "layout/formattingContexts/inline/InlineLineBoxBuilder.cpp"
-#include "layout/formattingContexts/inline/InlineLineBoxVerticalAligner.cpp"
-#include "layout/formattingContexts/inline/InlineLineBuilder.cpp"
-#include "layout/formattingContexts/inline/InlineTextItem.cpp"
-#include "layout/formattingContexts/inline/display/InlineDisplayContent.cpp"
-#include "layout/formattingContexts/inline/display/InlineDisplayContentBuilder.cpp"
-#include "layout/formattingContexts/inline/display/InlineDisplayLineBuilder.cpp"

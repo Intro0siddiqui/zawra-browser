@@ -1,8 +1,0 @@
-#include "Modules/WebGPU/Implementation/WebGPURenderBundleImpl.cpp"
-#include "Modules/WebGPU/Implementation/WebGPURenderPassEncoderImpl.cpp"
-#include "Modules/WebGPU/Implementation/WebGPURenderPipelineImpl.cpp"
-#include "Modules/WebGPU/Implementation/WebGPUSamplerImpl.cpp"
-#include "Modules/WebGPU/Implementation/WebGPUShaderModuleImpl.cpp"
-#include "Modules/WebGPU/Implementation/WebGPUTextureImpl.cpp"
-#include "Modules/WebGPU/Implementation/WebGPUTextureViewImpl.cpp"
-#include "Modules/airplay/WebKitPlaybackTargetAvailabilityEvent.cpp"

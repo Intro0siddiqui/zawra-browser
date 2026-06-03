@@ -1,8 +1,0 @@
-#include "rendering/RenderTableCaption.cpp"
-#include "rendering/RenderTableCell.cpp"
-#include "rendering/RenderTableCol.cpp"
-#include "rendering/RenderTableRow.cpp"
-#include "rendering/RenderTableSection.cpp"
-#include "rendering/RenderText.cpp"
-#include "rendering/RenderTextControl.cpp"
-#include "rendering/RenderTextControlMultiLine.cpp"

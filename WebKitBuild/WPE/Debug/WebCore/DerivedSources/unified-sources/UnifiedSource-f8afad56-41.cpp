@@ -1,8 +1,0 @@
-#include "Modules/storage/WorkerStorageConnection.cpp"
-#include "Modules/streams/ReadableStream.cpp"
-#include "Modules/streams/ReadableStreamSink.cpp"
-#include "Modules/streams/ReadableStreamSource.cpp"
-#include "Modules/streams/TransformStream.cpp"
-#include "Modules/streams/WritableStream.cpp"
-#include "Modules/web-locks/WebLock.cpp"
-#include "Modules/web-locks/WebLockManager.cpp"

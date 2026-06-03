@@ -1,8 +1,0 @@
-#include "svg/SVGPolygonElement.cpp"
-#include "svg/SVGPolylineElement.cpp"
-#include "svg/SVGPreserveAspectRatioValue.cpp"
-#include "svg/SVGRadialGradientElement.cpp"
-#include "svg/SVGRectElement.cpp"
-#include "svg/SVGSVGElement.cpp"
-#include "svg/SVGScriptElement.cpp"
-#include "svg/SVGSetElement.cpp"

@@ -1,8 +1,0 @@
-#include "platform/graphics/filters/software/FECompositeSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FEConvolveMatrixSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FEDisplacementMapSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FEDropShadowSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FEFloodSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FEGaussianBlurSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FEImageSoftwareApplier.cpp"
-#include "platform/graphics/filters/software/FELightingSoftwareApplier.cpp"

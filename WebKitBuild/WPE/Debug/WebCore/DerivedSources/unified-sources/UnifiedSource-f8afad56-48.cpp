@@ -1,8 +1,0 @@
-#include "Modules/webaudio/OfflineAudioDestinationNode.cpp"
-#include "Modules/webaudio/OscillatorNode.cpp"
-#include "Modules/webaudio/PannerNode.cpp"
-#include "Modules/webaudio/PeriodicWave.cpp"
-#include "Modules/webaudio/RealtimeAnalyser.cpp"
-#include "Modules/webaudio/ScriptProcessorNode.cpp"
-#include "Modules/webaudio/StereoPannerNode.cpp"
-#include "Modules/webaudio/WaveShaperDSPKernel.cpp"

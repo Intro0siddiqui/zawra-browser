@@ -1,8 +1,0 @@
-#include "JSSVGDefsElement.cpp"
-#include "JSSVGDescElement.cpp"
-#include "JSSVGElement.cpp"
-#include "JSSVGElementWrapperFactory.cpp"
-#include "JSSVGEllipseElement.cpp"
-#include "JSSVGFEBlendElement.cpp"
-#include "JSSVGFEColorMatrixElement.cpp"
-#include "JSSVGFEComponentTransferElement.cpp"

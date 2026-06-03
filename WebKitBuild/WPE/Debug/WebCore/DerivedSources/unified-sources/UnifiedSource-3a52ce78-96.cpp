@@ -1,8 +1,0 @@
-#include "JSMutationObserver.cpp"
-#include "JSMutationRecord.cpp"
-#include "JSNVShaderNoperspectiveInterpolation.cpp"
-#include "JSNamedNodeMap.cpp"
-#include "JSNavigationPreloadManager.cpp"
-#include "JSNavigationPreloadState.cpp"
-#include "JSNavigator.cpp"
-#include "JSNavigatorGPU.cpp"

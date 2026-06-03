@@ -1,3 +1,0 @@
-GPUComputePipelineDescriptor.h : GPUPipelineDescriptorBase.idl GPUObjectDescriptorBase.idl
-GPUPipelineDescriptorBase.idl :
-GPUObjectDescriptorBase.idl :

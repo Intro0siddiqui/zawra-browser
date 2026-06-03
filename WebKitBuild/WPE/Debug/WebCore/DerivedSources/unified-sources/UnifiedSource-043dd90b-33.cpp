@@ -1,8 +1,0 @@
-#include "rendering/svg/RenderSVGRoot.cpp"
-#include "rendering/svg/RenderSVGShape.cpp"
-#include "rendering/svg/RenderSVGTSpan.cpp"
-#include "rendering/svg/RenderSVGText.cpp"
-#include "rendering/svg/RenderSVGTextPath.cpp"
-#include "rendering/svg/RenderSVGTransformableContainer.cpp"
-#include "rendering/svg/RenderSVGViewportContainer.cpp"
-#include "rendering/svg/SVGBoundingBoxComputation.cpp"

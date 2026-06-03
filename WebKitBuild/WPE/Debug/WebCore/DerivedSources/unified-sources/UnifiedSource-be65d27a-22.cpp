@@ -1,8 +1,0 @@
-#include "dom/UIEvent.cpp"
-#include "dom/UIEventWithKeyState.cpp"
-#include "dom/UserActionElementSet.cpp"
-#include "dom/UserGestureIndicator.cpp"
-#include "dom/UserTypingGestureIndicator.cpp"
-#include "dom/ViewportArguments.cpp"
-#include "dom/VisitedLinkState.cpp"
-#include "dom/WheelEvent.cpp"

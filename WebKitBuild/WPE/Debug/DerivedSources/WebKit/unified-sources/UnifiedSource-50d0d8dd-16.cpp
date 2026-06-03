@@ -1,8 +1,0 @@
-#include "Shared/WebGPU/WebGPUColorTargetState.cpp"
-#include "Shared/WebGPU/WebGPUCommandBufferDescriptor.cpp"
-#include "Shared/WebGPU/WebGPUCommandEncoderDescriptor.cpp"
-#include "Shared/WebGPU/WebGPUCompilationMessage.cpp"
-#include "Shared/WebGPU/WebGPUComputePassDescriptor.cpp"
-#include "Shared/WebGPU/WebGPUComputePassTimestampWrites.cpp"
-#include "Shared/WebGPU/WebGPUComputePipelineDescriptor.cpp"
-#include "Shared/WebGPU/WebGPUDepthStencilState.cpp"

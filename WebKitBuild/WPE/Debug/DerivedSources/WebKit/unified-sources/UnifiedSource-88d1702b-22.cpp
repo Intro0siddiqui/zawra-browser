@@ -1,8 +1,0 @@
-#include "UIProcess/Authentication/WebProtectionSpace.cpp"
-#include "UIProcess/Automation/cairo/WebAutomationSessionCairo.cpp"
-#include "UIProcess/Automation/libwpe/WebAutomationSessionLibWPE.cpp"
-#include "UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp"
-#include "UIProcess/Downloads/DownloadProxy.cpp"
-#include "UIProcess/Downloads/DownloadProxyMap.cpp"
-#include "UIProcess/Extensions/WebExtensionContext.cpp"
-#include "UIProcess/Extensions/WebExtensionController.cpp"

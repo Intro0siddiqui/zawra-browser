@@ -1,8 +1,0 @@
-#include "JSMediaImage.cpp"
-#include "JSMediaKeyEncryptionScheme.cpp"
-#include "JSMediaKeyMessageEvent.cpp"
-#include "JSMediaKeyMessageEventInit.cpp"
-#include "JSMediaKeyMessageType.cpp"
-#include "JSMediaKeySession.cpp"
-#include "JSMediaKeySessionType.cpp"
-#include "JSMediaKeyStatusMap.cpp"

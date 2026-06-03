@@ -1,8 +1,0 @@
-#include "Modules/highlight/HighlightRegister.cpp"
-#include "Modules/indexeddb/IDBCursor.cpp"
-#include "Modules/indexeddb/IDBCursorWithValue.cpp"
-#include "Modules/indexeddb/IDBDatabase.cpp"
-#include "Modules/indexeddb/IDBDatabaseIdentifier.cpp"
-#include "Modules/indexeddb/IDBDatabaseNameAndVersionRequest.cpp"
-#include "Modules/indexeddb/IDBFactory.cpp"
-#include "Modules/indexeddb/IDBGetAllResult.cpp"

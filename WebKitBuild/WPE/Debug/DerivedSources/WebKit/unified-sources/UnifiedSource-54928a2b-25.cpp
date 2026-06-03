@@ -1,8 +1,0 @@
-#include "WebProcess/WebCoreSupport/WebStorageConnection.cpp"
-#include "WebProcess/WebCoreSupport/WebUserMediaClient.cpp"
-#include "WebProcess/WebCoreSupport/WebWorkerClient.cpp"
-#include "WebProcess/WebCoreSupport/glib/WebEditorClientGLib.cpp"
-#include "WebProcess/WebCoreSupport/soup/WebFrameNetworkingContext.cpp"
-#include "WebProcess/WebCoreSupport/wpe/WebEditorClientWPE.cpp"
-#include "WebProcess/WebPage/DrawingArea.cpp"
-#include "WebProcess/WebPage/EventDispatcher.cpp"

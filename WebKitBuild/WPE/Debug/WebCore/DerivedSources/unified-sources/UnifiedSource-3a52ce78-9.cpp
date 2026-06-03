@@ -1,8 +1,0 @@
-#include "JSAuthenticatorTransport.cpp"
-#include "JSAutomationRate.cpp"
-#include "JSAvcEncoderConfig.cpp"
-#include "JSBackgroundFetchEvent.cpp"
-#include "JSBackgroundFetchEventInit.cpp"
-#include "JSBackgroundFetchFailureReason.cpp"
-#include "JSBackgroundFetchManager.cpp"
-#include "JSBackgroundFetchOptions.cpp"

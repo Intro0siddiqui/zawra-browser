@@ -1,3 +1,0 @@
-SpeechSynthesisErrorEventInit.h : SpeechSynthesisEventInit.idl EventInit.idl
-SpeechSynthesisEventInit.idl :
-EventInit.idl :

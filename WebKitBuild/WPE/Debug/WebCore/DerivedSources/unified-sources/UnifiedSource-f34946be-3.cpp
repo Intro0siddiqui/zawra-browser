@@ -1,8 +1,0 @@
-#include "editing/Editor.cpp"
-#include "editing/EditorCommand.cpp"
-#include "editing/FontAttributeChanges.cpp"
-#include "editing/FontShadow.cpp"
-#include "editing/FormatBlockCommand.cpp"
-#include "editing/FrameSelection.cpp"
-#include "editing/HTMLInterchange.cpp"
-#include "editing/IndentOutdentCommand.cpp"

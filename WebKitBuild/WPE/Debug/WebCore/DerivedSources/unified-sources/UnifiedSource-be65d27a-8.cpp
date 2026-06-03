@@ -1,8 +1,0 @@
-#include "dom/DocumentSharedObjectPool.cpp"
-#include "dom/DocumentStorageAccess.cpp"
-#include "dom/DocumentType.cpp"
-#include "dom/DragEvent.cpp"
-#include "dom/Element.cpp"
-#include "dom/ElementData.cpp"
-#include "dom/ElementInternals.cpp"
-#include "dom/ElementRareData.cpp"

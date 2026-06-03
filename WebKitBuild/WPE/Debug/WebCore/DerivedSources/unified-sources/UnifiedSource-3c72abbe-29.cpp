@@ -1,8 +1,0 @@
-#include "platform/graphics/GradientColorStops.cpp"
-#include "platform/graphics/GradientImage.cpp"
-#include "platform/graphics/GraphicsContext.cpp"
-#include "platform/graphics/GraphicsContextGL.cpp"
-#include "platform/graphics/GraphicsContextGLImageExtractor.cpp"
-#include "platform/graphics/GraphicsContextState.cpp"
-#include "platform/graphics/GraphicsLayer.cpp"
-#include "platform/graphics/GraphicsLayerContentsDisplayDelegate.cpp"

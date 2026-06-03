@@ -1,8 +1,0 @@
-#include "Modules/webaudio/WaveShaperNode.cpp"
-#include "Modules/webaudio/WaveShaperProcessor.cpp"
-#include "Modules/webauthn/AuthenticatorAssertionResponse.cpp"
-#include "Modules/webauthn/AuthenticatorAttestationResponse.cpp"
-#include "Modules/webauthn/AuthenticatorCoordinator.cpp"
-#include "Modules/webauthn/AuthenticatorResponse.cpp"
-#include "Modules/webauthn/PublicKeyCredential.cpp"
-#include "Modules/webauthn/WebAuthenticationUtils.cpp"

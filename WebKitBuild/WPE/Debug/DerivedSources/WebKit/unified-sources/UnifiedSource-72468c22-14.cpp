@@ -1,8 +1,0 @@
-#include "NetworkProcess/storage/OriginQuotaManager.cpp"
-#include "NetworkProcess/storage/OriginStorageManager.cpp"
-#include "NetworkProcess/storage/SQLiteStorageArea.cpp"
-#include "NetworkProcess/storage/ServiceWorkerStorageManager.cpp"
-#include "NetworkProcess/storage/SessionStorageManager.cpp"
-#include "NetworkProcess/storage/StorageAreaBase.cpp"
-#include "NetworkProcess/storage/StorageAreaRegistry.cpp"
-#include "NetworkProcess/webrtc/NetworkMDNSRegister.cpp"

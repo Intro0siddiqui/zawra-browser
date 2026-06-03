@@ -1,8 +1,0 @@
-#include "JSWebCodecsVideoEncoderConfig.cpp"
-#include "JSWebCodecsVideoEncoderEncodeOptions.cpp"
-#include "JSWebCodecsVideoEncoderSupport.cpp"
-#include "JSWebCodecsVideoFrame.cpp"
-#include "JSWebCodecsVideoFrameOutputCallback.cpp"
-#include "JSWebGL2RenderingContext.cpp"
-#include "JSWebGLActiveInfo.cpp"
-#include "JSWebGLBuffer.cpp"

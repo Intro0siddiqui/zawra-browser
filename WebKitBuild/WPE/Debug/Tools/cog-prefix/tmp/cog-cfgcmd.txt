@@ -1,1 +1,0 @@
-cmd='meson;setup;<BINARY_DIR>;<SOURCE_DIR>;--buildtype;debugoptimized;--pkg-config-path;/home/Intro/spectre-enviroment/ZAWRA-BROWSER/zawra-browser/WebKitBuild/WPE/Debug;-Dwpe_api=2.0;-Dplatforms=drm,headless,gtk4,x11,wayland;-Db_sanitize=none'

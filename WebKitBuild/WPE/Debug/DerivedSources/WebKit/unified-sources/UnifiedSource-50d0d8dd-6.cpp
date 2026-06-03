@@ -1,8 +1,0 @@
-#include "Shared/WebConnection.cpp"
-#include "Shared/WebConnectionClient.cpp"
-#include "Shared/WebContextMenuItem.cpp"
-#include "Shared/WebContextMenuItemData.cpp"
-#include "Shared/WebCoreArgumentCoders.cpp"
-#include "Shared/WebErrors.cpp"
-#include "Shared/WebEvent.cpp"
-#include "Shared/WebEventConversion.cpp"

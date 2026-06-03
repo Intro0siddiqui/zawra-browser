@@ -1,8 +1,0 @@
-#include "UIProcess/WebAuthentication/fido/CtapNfcDriver.cpp"
-#include "UIProcess/WebAuthentication/fido/FidoAuthenticator.cpp"
-#include "UIProcess/WebAuthentication/fido/FidoService.cpp"
-#include "UIProcess/WebAuthentication/fido/U2fAuthenticator.cpp"
-#include "UIProcess/WebsiteData/WebDeviceOrientationAndMotionAccessController.cpp"
-#include "UIProcess/WebsiteData/WebsiteDataRecord.cpp"
-#include "UIProcess/WebsiteData/WebsiteDataStore.cpp"
-#include "UIProcess/WebsiteData/WebsiteDataStoreConfiguration.cpp"

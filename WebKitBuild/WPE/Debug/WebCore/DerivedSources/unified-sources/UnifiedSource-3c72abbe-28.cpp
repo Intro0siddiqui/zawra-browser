@@ -1,8 +1,0 @@
-#include "platform/graphics/FontSelectionAlgorithm.cpp"
-#include "platform/graphics/FontSelector.cpp"
-#include "platform/graphics/FontTaggedSettings.cpp"
-#include "platform/graphics/FourCC.cpp"
-#include "platform/graphics/GeneratedImage.cpp"
-#include "platform/graphics/GeometryUtilities.cpp"
-#include "platform/graphics/Gradient.cpp"
-#include "platform/graphics/GradientColorStop.cpp"

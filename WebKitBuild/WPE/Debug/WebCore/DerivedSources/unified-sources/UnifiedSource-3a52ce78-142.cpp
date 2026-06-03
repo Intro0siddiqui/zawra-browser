@@ -1,8 +1,0 @@
-#include "JSScrollToOptions.cpp"
-#include "JSSecurityPolicyViolationEvent.cpp"
-#include "JSSecurityPolicyViolationEventDisposition.cpp"
-#include "JSServiceWorker.cpp"
-#include "JSServiceWorkerClient.cpp"
-#include "JSServiceWorkerClientType.cpp"
-#include "JSServiceWorkerClients.cpp"
-#include "JSServiceWorkerContainer.cpp"

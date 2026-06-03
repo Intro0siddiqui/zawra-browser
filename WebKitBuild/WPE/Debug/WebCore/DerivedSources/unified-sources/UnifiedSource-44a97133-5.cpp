@@ -1,8 +1,0 @@
-#include "crypto/gcrypt/CryptoAlgorithmHKDFGCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmHMACGCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmPBKDF2GCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmRSAES_PKCS1_v1_5GCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmRSASSA_PKCS1_v1_5GCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmRSA_OAEPGCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmRSA_PSSGCrypt.cpp"
-#include "crypto/gcrypt/CryptoAlgorithmRegistryGCrypt.cpp"

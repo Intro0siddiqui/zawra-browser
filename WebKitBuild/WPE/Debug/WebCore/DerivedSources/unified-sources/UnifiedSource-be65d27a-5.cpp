@@ -1,8 +1,0 @@
-#include "dom/DOMPointReadOnly.cpp"
-#include "dom/DOMQuad.cpp"
-#include "dom/DOMRectList.cpp"
-#include "dom/DOMRectReadOnly.cpp"
-#include "dom/DOMStringList.cpp"
-#include "dom/DataTransfer.cpp"
-#include "dom/DataTransferItem.cpp"
-#include "dom/DataTransferItemList.cpp"

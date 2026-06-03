@@ -1,8 +1,0 @@
-#include "platform/graphics/FloatQuad.cpp"
-#include "platform/graphics/FloatRect.cpp"
-#include "platform/graphics/FloatRoundedRect.cpp"
-#include "platform/graphics/FloatSize.cpp"
-#include "platform/graphics/Font.cpp"
-#include "platform/graphics/FontCache.cpp"
-#include "platform/graphics/FontCascade.cpp"
-#include "platform/graphics/FontCascadeCache.cpp"

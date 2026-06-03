@@ -1,8 +1,0 @@
-#include "Modules/websockets/WebSocketFrame.cpp"
-#include "Modules/websockets/WebSocketHandshake.cpp"
-#include "Modules/websockets/WorkerThreadableWebSocketChannel.cpp"
-#include "Modules/webxr/NavigatorWebXR.cpp"
-#include "Modules/webxr/WebXRBoundedReferenceSpace.cpp"
-#include "Modules/webxr/WebXRFrame.cpp"
-#include "Modules/webxr/WebXRGamepad.cpp"
-#include "Modules/webxr/WebXRHand.cpp"

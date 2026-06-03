@@ -1,8 +1,0 @@
-#include "html/shadow/TextPlaceholderElement.cpp"
-#include "html/track/AudioTrack.cpp"
-#include "html/track/AudioTrackList.cpp"
-#include "html/track/BufferedLineReader.cpp"
-#include "html/track/DataCue.cpp"
-#include "html/track/InbandDataTextTrack.cpp"
-#include "html/track/InbandGenericTextTrack.cpp"
-#include "html/track/InbandTextTrack.cpp"

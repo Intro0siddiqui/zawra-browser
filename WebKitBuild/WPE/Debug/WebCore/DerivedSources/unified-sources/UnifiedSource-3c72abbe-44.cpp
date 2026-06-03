@@ -1,8 +1,0 @@
-#include "platform/graphics/filters/FELighting.cpp"
-#include "platform/graphics/filters/FEMerge.cpp"
-#include "platform/graphics/filters/FEMorphology.cpp"
-#include "platform/graphics/filters/FEOffset.cpp"
-#include "platform/graphics/filters/FESpecularLighting.cpp"
-#include "platform/graphics/filters/FETile.cpp"
-#include "platform/graphics/filters/FETurbulence.cpp"
-#include "platform/graphics/filters/Filter.cpp"

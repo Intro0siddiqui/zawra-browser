@@ -1,8 +1,0 @@
-#include "page/csp/ContentSecurityPolicySourceList.cpp"
-#include "page/csp/ContentSecurityPolicySourceListDirective.cpp"
-#include "page/linux/ResourceUsageOverlayLinux.cpp"
-#include "page/linux/ResourceUsageThreadLinux.cpp"
-#include "page/scrolling/AsyncScrollingCoordinator.cpp"
-#include "page/scrolling/ScrollAnchoringController.cpp"
-#include "page/scrolling/ScrollLatchingController.cpp"
-#include "page/scrolling/ScrollSnapOffsetsInfo.cpp"

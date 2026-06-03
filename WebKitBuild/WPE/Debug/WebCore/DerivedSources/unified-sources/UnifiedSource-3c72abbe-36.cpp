@@ -1,8 +1,0 @@
-#include "platform/graphics/SourceBufferPrivate.cpp"
-#include "platform/graphics/SourceBufferPrivateClient.cpp"
-#include "platform/graphics/SourceImage.cpp"
-#include "platform/graphics/StringTruncator.cpp"
-#include "platform/graphics/SystemFallbackFontCache.cpp"
-#include "platform/graphics/SystemFontDatabase.cpp"
-#include "platform/graphics/TextRun.cpp"
-#include "platform/graphics/TextTrackRepresentation.cpp"

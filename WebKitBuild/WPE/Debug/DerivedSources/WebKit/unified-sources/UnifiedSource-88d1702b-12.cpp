@@ -1,8 +1,0 @@
-#include "UIProcess/API/APIInspectorConfiguration.cpp"
-#include "UIProcess/API/APIInspectorExtension.cpp"
-#include "UIProcess/API/APINavigation.cpp"
-#include "UIProcess/API/APINavigationData.cpp"
-#include "UIProcess/API/APIOpenPanelParameters.cpp"
-#include "UIProcess/API/APIPageConfiguration.cpp"
-#include "UIProcess/API/APIProcessPoolConfiguration.cpp"
-#include "UIProcess/API/APISessionState.cpp"

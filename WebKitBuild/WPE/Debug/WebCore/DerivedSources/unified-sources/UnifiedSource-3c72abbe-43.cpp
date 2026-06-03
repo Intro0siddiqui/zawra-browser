@@ -1,8 +1,0 @@
-#include "platform/graphics/filters/FEComposite.cpp"
-#include "platform/graphics/filters/FEConvolveMatrix.cpp"
-#include "platform/graphics/filters/FEDiffuseLighting.cpp"
-#include "platform/graphics/filters/FEDisplacementMap.cpp"
-#include "platform/graphics/filters/FEDropShadow.cpp"
-#include "platform/graphics/filters/FEFlood.cpp"
-#include "platform/graphics/filters/FEGaussianBlur.cpp"
-#include "platform/graphics/filters/FEImage.cpp"

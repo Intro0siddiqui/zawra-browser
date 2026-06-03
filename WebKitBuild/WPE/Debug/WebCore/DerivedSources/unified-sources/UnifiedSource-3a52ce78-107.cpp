@@ -1,8 +1,0 @@
-#include "JSPerformanceServerTiming.cpp"
-#include "JSPerformanceTiming.cpp"
-#include "JSPeriodicWave.cpp"
-#include "JSPeriodicWaveConstraints.cpp"
-#include "JSPeriodicWaveOptions.cpp"
-#include "JSPermissionDescriptor.cpp"
-#include "JSPermissionName.cpp"
-#include "JSPermissionState.cpp"

@@ -1,8 +1,0 @@
-#include "RemoteQueueMessageReceiver.cpp"
-#include "RemoteRenderBundleEncoderMessageReceiver.cpp"
-#include "RemoteRenderBundleMessageReceiver.cpp"
-#include "RemoteRenderPassEncoderMessageReceiver.cpp"
-#include "RemoteRenderPipelineMessageReceiver.cpp"
-#include "RemoteSamplerMessageReceiver.cpp"
-#include "RemoteShaderModuleMessageReceiver.cpp"
-#include "RemoteTextDetectorMessageReceiver.cpp"

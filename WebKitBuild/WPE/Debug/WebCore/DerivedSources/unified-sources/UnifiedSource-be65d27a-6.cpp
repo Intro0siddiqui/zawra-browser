@@ -1,8 +1,0 @@
-#include "dom/DatasetDOMStringMap.cpp"
-#include "dom/DecodedDataDocumentParser.cpp"
-#include "dom/DeviceMotionController.cpp"
-#include "dom/DeviceMotionData.cpp"
-#include "dom/DeviceMotionEvent.cpp"
-#include "dom/DeviceOrientationAndMotionAccessController.cpp"
-#include "dom/DeviceOrientationController.cpp"
-#include "dom/DeviceOrientationData.cpp"

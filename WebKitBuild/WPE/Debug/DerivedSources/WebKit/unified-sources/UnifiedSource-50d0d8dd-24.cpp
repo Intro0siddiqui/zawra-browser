@@ -1,8 +1,0 @@
-#include "Shared/glib/WebContextMenuItemGlib.cpp"
-#include "Shared/libwpe/NativeWebKeyboardEventLibWPE.cpp"
-#include "Shared/libwpe/NativeWebMouseEventLibWPE.cpp"
-#include "Shared/libwpe/NativeWebTouchEventLibWPE.cpp"
-#include "Shared/libwpe/NativeWebWheelEventLibWPE.cpp"
-#include "Shared/libwpe/WebEventFactory.cpp"
-#include "Shared/linux/WebMemorySamplerLinux.cpp"
-#include "Shared/soup/WebCoreArgumentCodersSoup.cpp"

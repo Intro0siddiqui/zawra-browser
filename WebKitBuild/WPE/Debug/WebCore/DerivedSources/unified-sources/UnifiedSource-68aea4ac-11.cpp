@@ -1,8 +1,0 @@
-#include "bindings/js/JSIDBRequestCustom.cpp"
-#include "bindings/js/JSIDBSerializationGlobalObject.cpp"
-#include "bindings/js/JSIDBTransactionCustom.cpp"
-#include "bindings/js/JSImageDataCustom.cpp"
-#include "bindings/js/JSIntersectionObserverCustom.cpp"
-#include "bindings/js/JSIntersectionObserverEntryCustom.cpp"
-#include "bindings/js/JSKeyframeEffectCustom.cpp"
-#include "bindings/js/JSLazyEventListener.cpp"

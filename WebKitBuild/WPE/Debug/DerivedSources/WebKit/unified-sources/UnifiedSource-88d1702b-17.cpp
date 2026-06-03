@@ -1,8 +1,0 @@
-#include "UIProcess/API/C/WKMessageListener.cpp"
-#include "UIProcess/API/C/WKMockDisplay.cpp"
-#include "UIProcess/API/C/WKMockMediaDevice.cpp"
-#include "UIProcess/API/C/WKNavigationActionRef.cpp"
-#include "UIProcess/API/C/WKNavigationDataRef.cpp"
-#include "UIProcess/API/C/WKNavigationRef.cpp"
-#include "UIProcess/API/C/WKNavigationResponseRef.cpp"
-#include "UIProcess/API/C/WKNotification.cpp"

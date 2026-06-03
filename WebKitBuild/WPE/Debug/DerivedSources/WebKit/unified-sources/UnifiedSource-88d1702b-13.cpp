@@ -1,8 +1,0 @@
-#include "UIProcess/API/APIUIClient.cpp"
-#include "UIProcess/API/APIUserScript.cpp"
-#include "UIProcess/API/APIUserStyleSheet.cpp"
-#include "UIProcess/API/APIWebAuthenticationAssertionResponse.cpp"
-#include "UIProcess/API/APIWebAuthenticationPanel.cpp"
-#include "UIProcess/API/APIWebsitePolicies.cpp"
-#include "UIProcess/API/APIWindowFeatures.cpp"
-#include "UIProcess/API/C/WKApplicationCacheManager.cpp"

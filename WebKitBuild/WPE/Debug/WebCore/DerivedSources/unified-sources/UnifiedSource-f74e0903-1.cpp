@@ -1,8 +1,0 @@
-#include "workers/AbstractWorker.cpp"
-#include "workers/DedicatedWorkerGlobalScope.cpp"
-#include "workers/DedicatedWorkerThread.cpp"
-#include "workers/ScriptBuffer.cpp"
-#include "workers/Worker.cpp"
-#include "workers/WorkerAnimationController.cpp"
-#include "workers/WorkerConsoleClient.cpp"
-#include "workers/WorkerEventLoop.cpp"

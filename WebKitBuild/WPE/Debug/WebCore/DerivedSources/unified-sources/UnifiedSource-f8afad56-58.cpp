@@ -1,8 +1,0 @@
-#include "Modules/webxr/WebXRReferenceSpace.cpp"
-#include "Modules/webxr/WebXRRenderState.cpp"
-#include "Modules/webxr/WebXRRigidTransform.cpp"
-#include "Modules/webxr/WebXRSession.cpp"
-#include "Modules/webxr/WebXRSpace.cpp"
-#include "Modules/webxr/WebXRSystem.cpp"
-#include "Modules/webxr/WebXRView.cpp"
-#include "Modules/webxr/WebXRViewerPose.cpp"

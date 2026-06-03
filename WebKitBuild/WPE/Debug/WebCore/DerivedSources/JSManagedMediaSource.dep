@@ -1,3 +1,0 @@
-JSManagedMediaSource.h : MediaSource.idl EventTarget.idl
-MediaSource.idl :
-EventTarget.idl :

@@ -1,8 +1,0 @@
-#include "runtime/ObjectPrototype.cpp"
-#include "runtime/Operations.cpp"
-#include "runtime/Options.cpp"
-#include "runtime/PageCount.cpp"
-#include "runtime/PredictionFileCreatingFuzzerAgent.cpp"
-#include "runtime/PrivateFieldPutKind.cpp"
-#include "runtime/ProgramExecutable.cpp"
-#include "runtime/PropertyDescriptor.cpp"

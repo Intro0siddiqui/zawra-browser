@@ -1,8 +1,0 @@
-#include "workers/service/ServiceWorkerGlobalScope.cpp"
-#include "workers/service/ServiceWorkerJob.cpp"
-#include "workers/service/ServiceWorkerJobData.cpp"
-#include "workers/service/ServiceWorkerProvider.cpp"
-#include "workers/service/ServiceWorkerRegistration.cpp"
-#include "workers/service/ServiceWorkerRegistrationData.cpp"
-#include "workers/service/ServiceWorkerRegistrationKey.cpp"
-#include "workers/service/ServiceWorkerRegistrationOptions.cpp"

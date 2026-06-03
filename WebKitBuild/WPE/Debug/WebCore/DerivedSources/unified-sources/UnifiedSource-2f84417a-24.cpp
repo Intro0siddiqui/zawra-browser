@@ -1,8 +1,0 @@
-#include "css/typedom/StylePropertyMapReadOnly.cpp"
-#include "css/typedom/color/CSSColor.cpp"
-#include "css/typedom/color/CSSColorValue.cpp"
-#include "css/typedom/color/CSSHSL.cpp"
-#include "css/typedom/color/CSSHWB.cpp"
-#include "css/typedom/color/CSSLCH.cpp"
-#include "css/typedom/color/CSSLab.cpp"
-#include "css/typedom/color/CSSOKLCH.cpp"

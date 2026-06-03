@@ -1,8 +1,0 @@
-#include "UIProcess/WebContextConnectionClient.cpp"
-#include "UIProcess/WebContextInjectedBundleClient.cpp"
-#include "UIProcess/WebContextMenuListenerProxy.cpp"
-#include "UIProcess/WebContextMenuProxy.cpp"
-#include "UIProcess/WebDataListSuggestionsDropdown.cpp"
-#include "UIProcess/WebDateTimePicker.cpp"
-#include "UIProcess/WebEditCommandProxy.cpp"
-#include "UIProcess/WebFormClient.cpp"

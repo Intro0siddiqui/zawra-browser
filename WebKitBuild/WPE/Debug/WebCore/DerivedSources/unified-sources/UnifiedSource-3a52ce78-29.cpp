@@ -1,8 +1,0 @@
-#include "JSCookieInit.cpp"
-#include "JSCookieListItem.cpp"
-#include "JSCookieSameSite.cpp"
-#include "JSCookieStore.cpp"
-#include "JSCookieStoreDeleteOptions.cpp"
-#include "JSCookieStoreGetOptions.cpp"
-#include "JSCountQueuingStrategy.cpp"
-#include "JSCredentialCreationOptions.cpp"

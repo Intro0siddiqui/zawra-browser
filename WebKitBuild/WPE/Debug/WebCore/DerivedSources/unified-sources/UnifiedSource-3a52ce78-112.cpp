@@ -1,8 +1,0 @@
-#include "JSPushSubscriptionOptionsInit.cpp"
-#include "JSRTCAnswerOptions.cpp"
-#include "JSRTCCertificate.cpp"
-#include "JSRTCConfiguration.cpp"
-#include "JSRTCDTMFSender.cpp"
-#include "JSRTCDTMFToneChangeEvent.cpp"
-#include "JSRTCDataChannel.cpp"
-#include "JSRTCDataChannelEvent.cpp"

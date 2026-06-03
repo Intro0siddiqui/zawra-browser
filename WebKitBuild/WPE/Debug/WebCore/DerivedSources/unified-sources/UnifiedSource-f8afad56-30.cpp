@@ -1,8 +1,0 @@
-#include "Modules/mediastream/RTCPeerConnectionIceEvent.cpp"
-#include "Modules/mediastream/RTCRtpReceiver.cpp"
-#include "Modules/mediastream/RTCRtpSFrameTransform.cpp"
-#include "Modules/mediastream/RTCRtpSFrameTransformErrorEvent.cpp"
-#include "Modules/mediastream/RTCRtpSFrameTransformer.cpp"
-#include "Modules/mediastream/RTCRtpScriptTransform.cpp"
-#include "Modules/mediastream/RTCRtpScriptTransformer.cpp"
-#include "Modules/mediastream/RTCRtpSender.cpp"

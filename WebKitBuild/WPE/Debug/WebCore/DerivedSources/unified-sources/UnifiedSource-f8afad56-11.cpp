@@ -1,8 +1,0 @@
-#include "Modules/compression/CompressionStreamEncoder.cpp"
-#include "Modules/compression/DecompressionStreamDecoder.cpp"
-#include "Modules/contact-picker/ContactsManager.cpp"
-#include "Modules/contact-picker/NavigatorContacts.cpp"
-#include "Modules/cookie-consent/NavigatorCookieConsent.cpp"
-#include "Modules/cookie-store/CookieStore.cpp"
-#include "Modules/credentialmanagement/BasicCredential.cpp"
-#include "Modules/credentialmanagement/CredentialsContainer.cpp"

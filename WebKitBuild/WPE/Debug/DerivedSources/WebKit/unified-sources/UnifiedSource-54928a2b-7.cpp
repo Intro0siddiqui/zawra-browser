@@ -1,8 +1,0 @@
-#include "WebProcess/GPU/graphics/WebGPU/RemoteTextureProxy.cpp"
-#include "WebProcess/GPU/graphics/WebGPU/RemoteTextureViewProxy.cpp"
-#include "WebProcess/GPU/graphics/WebGPU/WebGPUDowncastConvertToBackingContext.cpp"
-#include "WebProcess/GPU/graphics/gbm/RemoteGraphicsContextGLProxyGBM.cpp"
-#include "WebProcess/GPU/media/AudioTrackPrivateRemote.cpp"
-#include "WebProcess/GPU/media/MediaPlayerPrivateRemote.cpp"
-#include "WebProcess/GPU/media/MediaSourcePrivateRemote.cpp"
-#include "WebProcess/GPU/media/RemoteAudioDestinationProxy.cpp"

@@ -1,8 +1,0 @@
-#include "bindings/js/JSCSSRuleListCustom.cpp"
-#include "bindings/js/JSCSSStyleDeclarationCustom.cpp"
-#include "bindings/js/JSCSSStyleValueCustom.cpp"
-#include "bindings/js/JSCSSTransformComponentCustom.cpp"
-#include "bindings/js/JSCallbackData.cpp"
-#include "bindings/js/JSCanvasRenderingContext2DCustom.cpp"
-#include "bindings/js/JSCustomElementInterface.cpp"
-#include "bindings/js/JSCustomElementRegistryCustom.cpp"

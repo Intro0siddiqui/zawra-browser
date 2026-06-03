@@ -1,8 +1,0 @@
-#include "JSVideoTrackConfiguration.cpp"
-#include "JSVideoTrackList.cpp"
-#include "JSVideoTransferCharacteristics.cpp"
-#include "JSVisibilityState.cpp"
-#include "JSVisualViewport.cpp"
-#include "JSVoidCallback.cpp"
-#include "JSWakeLock.cpp"
-#include "JSWakeLockSentinel.cpp"

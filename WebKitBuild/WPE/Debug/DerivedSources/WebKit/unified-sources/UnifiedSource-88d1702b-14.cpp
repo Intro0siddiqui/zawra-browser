@@ -1,8 +1,0 @@
-#include "UIProcess/API/C/WKAuthenticationChallenge.cpp"
-#include "UIProcess/API/C/WKAuthenticationDecisionListener.cpp"
-#include "UIProcess/API/C/WKBackForwardListItemRef.cpp"
-#include "UIProcess/API/C/WKBackForwardListRef.cpp"
-#include "UIProcess/API/C/WKContext.cpp"
-#include "UIProcess/API/C/WKContextConfigurationRef.cpp"
-#include "UIProcess/API/C/WKCookieManager.cpp"
-#include "UIProcess/API/C/WKCredential.cpp"

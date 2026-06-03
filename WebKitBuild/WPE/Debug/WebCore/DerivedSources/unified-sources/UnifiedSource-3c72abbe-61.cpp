@@ -1,8 +1,0 @@
-#include "platform/network/ResourceHandle.cpp"
-#include "platform/network/ResourceHandleClient.cpp"
-#include "platform/network/ResourceRequestBase.cpp"
-#include "platform/network/ResourceResponseBase.cpp"
-#include "platform/network/SameSiteInfo.cpp"
-#include "platform/network/SynchronousLoaderClient.cpp"
-#include "platform/network/TimingAllowOrigin.cpp"
-#include "platform/network/glib/DNSResolveQueueGLib.cpp"

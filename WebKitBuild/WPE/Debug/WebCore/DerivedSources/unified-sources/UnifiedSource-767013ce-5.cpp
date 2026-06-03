@@ -1,8 +1,0 @@
-#include "page/IntersectionObserver.cpp"
-#include "page/IntersectionObserverEntry.cpp"
-#include "page/LocalDOMWindow.cpp"
-#include "page/LocalDOMWindowProperty.cpp"
-#include "page/LocalFrame.cpp"
-#include "page/LocalFrameView.cpp"
-#include "page/LocalFrameViewLayoutContext.cpp"
-#include "page/Location.cpp"

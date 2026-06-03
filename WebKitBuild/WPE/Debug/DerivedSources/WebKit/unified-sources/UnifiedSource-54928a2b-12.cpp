@@ -1,8 +1,0 @@
-#include "WebProcess/InjectedBundle/InjectedBundleDOMWindowExtension.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundleHitTestResult.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundlePageContextMenuClient.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundlePageEditorClient.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundlePageFormClient.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundlePageFullScreenClient.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundlePageLoaderClient.cpp"
-#include "WebProcess/InjectedBundle/InjectedBundlePageResourceLoadClient.cpp"

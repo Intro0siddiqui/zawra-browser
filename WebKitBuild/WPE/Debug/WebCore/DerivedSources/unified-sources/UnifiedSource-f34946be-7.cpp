@@ -1,8 +1,0 @@
-#include "editing/SplitElementCommand.cpp"
-#include "editing/SplitTextNodeCommand.cpp"
-#include "editing/SplitTextNodeContainingElementCommand.cpp"
-#include "editing/TextCheckingHelper.cpp"
-#include "editing/TextInsertionBaseCommand.cpp"
-#include "editing/TextIterator.cpp"
-#include "editing/TextManipulationController.cpp"
-#include "editing/TypingCommand.cpp"

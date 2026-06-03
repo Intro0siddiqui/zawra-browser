@@ -1,8 +1,0 @@
-#include "UIProcess/Network/NetworkProcessProxy.cpp"
-#include "UIProcess/Notifications/ServiceWorkerNotificationHandler.cpp"
-#include "UIProcess/Notifications/WebNotification.cpp"
-#include "UIProcess/Notifications/WebNotificationManagerMessageHandler.cpp"
-#include "UIProcess/Notifications/WebNotificationManagerProxy.cpp"
-#include "UIProcess/Notifications/WebNotificationProvider.cpp"
-#include "UIProcess/Notifications/glib/NotificationService.cpp"
-#include "UIProcess/UserContent/WebScriptMessageHandler.cpp"

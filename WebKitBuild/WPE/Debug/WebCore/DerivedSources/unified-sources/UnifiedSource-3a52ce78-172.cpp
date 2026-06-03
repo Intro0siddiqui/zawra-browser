@@ -1,8 +1,0 @@
-#include "JSXRSessionMode.cpp"
-#include "JSXRTargetRayMode.cpp"
-#include "JSXRVisibilityState.cpp"
-#include "JSXRWebGLLayerInit.cpp"
-#include "JSXSLTProcessor.cpp"
-#include "MathMLElementFactory.cpp"
-#include "PlugInsResourcesData.cpp"
-#include "SVGElementFactory.cpp"

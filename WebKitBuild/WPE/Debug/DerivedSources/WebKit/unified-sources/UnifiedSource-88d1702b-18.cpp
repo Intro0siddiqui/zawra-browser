@@ -1,8 +1,0 @@
-#include "UIProcess/API/C/WKNotificationManager.cpp"
-#include "UIProcess/API/C/WKNotificationPermissionRequest.cpp"
-#include "UIProcess/API/C/WKOpenPanelParametersRef.cpp"
-#include "UIProcess/API/C/WKOpenPanelResultListener.cpp"
-#include "UIProcess/API/C/WKPage.cpp"
-#include "UIProcess/API/C/WKPageConfigurationRef.cpp"
-#include "UIProcess/API/C/WKPageGroup.cpp"
-#include "UIProcess/API/C/WKPreferences.cpp"

@@ -1,8 +1,0 @@
-#include "JSGPURenderPassDescriptor.cpp"
-#include "JSGPURenderPassEncoder.cpp"
-#include "JSGPURenderPassLayout.cpp"
-#include "JSGPURenderPassTimestampLocation.cpp"
-#include "JSGPURenderPassTimestampWrite.cpp"
-#include "JSGPURenderPipeline.cpp"
-#include "JSGPURenderPipelineDescriptor.cpp"
-#include "JSGPURequestAdapterOptions.cpp"

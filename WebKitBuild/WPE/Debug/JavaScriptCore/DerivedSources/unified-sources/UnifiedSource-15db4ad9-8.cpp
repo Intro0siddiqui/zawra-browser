@@ -1,8 +1,0 @@
-#include "wasm/js/JSWebAssemblyLinkError.cpp"
-#include "wasm/js/JSWebAssemblyMemory.cpp"
-#include "wasm/js/JSWebAssemblyModule.cpp"
-#include "wasm/js/JSWebAssemblyRuntimeError.cpp"
-#include "wasm/js/JSWebAssemblyStruct.cpp"
-#include "wasm/js/JSWebAssemblyTable.cpp"
-#include "wasm/js/JSWebAssemblyTag.cpp"
-#include "wasm/js/WasmToJS.cpp"

@@ -1,8 +1,0 @@
-#include "Shared/WebGPU/WebGPUImageCopyTexture.cpp"
-#include "Shared/WebGPU/WebGPUImageCopyTextureTagged.cpp"
-#include "Shared/WebGPU/WebGPUImageDataLayout.cpp"
-#include "Shared/WebGPU/WebGPUInternalError.cpp"
-#include "Shared/WebGPU/WebGPUMultisampleState.cpp"
-#include "Shared/WebGPU/WebGPUObjectDescriptorBase.cpp"
-#include "Shared/WebGPU/WebGPUOrigin2D.cpp"
-#include "Shared/WebGPU/WebGPUOrigin3D.cpp"

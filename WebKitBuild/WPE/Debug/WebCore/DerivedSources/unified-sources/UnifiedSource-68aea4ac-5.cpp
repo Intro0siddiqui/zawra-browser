@@ -1,8 +1,0 @@
-#include "bindings/js/JSCustomEventCustom.cpp"
-#include "bindings/js/JSDOMBindingSecurity.cpp"
-#include "bindings/js/JSDOMBuiltinConstructorBase.cpp"
-#include "bindings/js/JSDOMConstructorBase.cpp"
-#include "bindings/js/JSDOMConstructorWithDocument.cpp"
-#include "bindings/js/JSDOMConvertDate.cpp"
-#include "bindings/js/JSDOMConvertNumbers.cpp"
-#include "bindings/js/JSDOMConvertStrings.cpp"

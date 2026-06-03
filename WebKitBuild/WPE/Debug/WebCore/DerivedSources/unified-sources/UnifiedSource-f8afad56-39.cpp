@@ -1,8 +1,0 @@
-#include "Modules/speech/SpeechRecognitionAlternative.cpp"
-#include "Modules/speech/SpeechRecognitionCaptureSource.cpp"
-#include "Modules/speech/SpeechRecognitionCaptureSourceImpl.cpp"
-#include "Modules/speech/SpeechRecognitionErrorEvent.cpp"
-#include "Modules/speech/SpeechRecognitionEvent.cpp"
-#include "Modules/speech/SpeechRecognitionRequest.cpp"
-#include "Modules/speech/SpeechRecognitionResult.cpp"
-#include "Modules/speech/SpeechRecognitionResultList.cpp"

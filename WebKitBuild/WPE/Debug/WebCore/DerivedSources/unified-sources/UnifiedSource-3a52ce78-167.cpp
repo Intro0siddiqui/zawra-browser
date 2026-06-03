@@ -1,8 +1,0 @@
-#include "JSWindowEventHandlers+Gamepad.cpp"
-#include "JSWindowEventHandlers.cpp"
-#include "JSWindowOrWorkerGlobalScope.cpp"
-#include "JSWindowPostMessageOptions.cpp"
-#include "JSWorker.cpp"
-#include "JSWorkerGlobalScope.cpp"
-#include "JSWorkerLocation.cpp"
-#include "JSWorkerNavigator.cpp"

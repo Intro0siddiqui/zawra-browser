@@ -1,8 +1,0 @@
-#include "JSCustomElementRegistry.cpp"
-#include "JSCustomEvent.cpp"
-#include "JSCustomXPathNSResolver.cpp"
-#include "JSDOMApplicationCache.cpp"
-#include "JSDOMAudioSession.cpp"
-#include "JSDOMCSSCustomPropertyDescriptor.cpp"
-#include "JSDOMCSSNamespace.cpp"
-#include "JSDOMCache.cpp"

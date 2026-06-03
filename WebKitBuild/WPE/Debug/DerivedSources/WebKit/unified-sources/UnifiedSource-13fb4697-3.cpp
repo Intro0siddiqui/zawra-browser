@@ -1,8 +1,0 @@
-#include "GPUProcess/graphics/ScopedRenderingResourcesRequest.cpp"
-#include "GPUProcess/graphics/ScopedWebGLRenderingResourcesRequest.cpp"
-#include "GPUProcess/graphics/ShareablePixelBuffer.cpp"
-#include "GPUProcess/graphics/RemoteGraphicsContextGLGBM.cpp"
-#include "GPUProcess/graphics/WebGPU/RemoteAdapter.cpp"
-#include "GPUProcess/graphics/WebGPU/RemoteBindGroup.cpp"
-#include "GPUProcess/graphics/WebGPU/RemoteBindGroupLayout.cpp"
-#include "GPUProcess/graphics/WebGPU/RemoteBuffer.cpp"

@@ -1,8 +1,0 @@
-#include "Shared/WebTouchEvent.cpp"
-#include "Shared/WebUserContentControllerDataTypes.cpp"
-#include "Shared/WebWheelEvent.cpp"
-#include "Shared/WebWheelEventCoalescer.cpp"
-#include "Shared/WebsitePoliciesData.cpp"
-#include "Shared/API/APIArray.cpp"
-#include "Shared/API/APIData.cpp"
-#include "Shared/API/APIDictionary.cpp"

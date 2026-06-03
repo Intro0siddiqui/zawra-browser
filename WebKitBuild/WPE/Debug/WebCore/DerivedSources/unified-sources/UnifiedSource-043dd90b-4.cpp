@@ -1,8 +1,0 @@
-#include "rendering/HighlightData.cpp"
-#include "rendering/HitTestLocation.cpp"
-#include "rendering/HitTestResult.cpp"
-#include "rendering/HitTestingTransformState.cpp"
-#include "rendering/ImageQualityController.cpp"
-#include "rendering/InlineBoxPainter.cpp"
-#include "rendering/LayerAncestorClippingStack.cpp"
-#include "rendering/LayerOverlapMap.cpp"

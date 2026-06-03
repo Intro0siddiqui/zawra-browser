@@ -1,8 +1,0 @@
-#include "JSRTCRtpSFrameTransformErrorEvent.cpp"
-#include "JSRTCRtpScriptTransform.cpp"
-#include "JSRTCRtpScriptTransformer.cpp"
-#include "JSRTCRtpSendParameters.cpp"
-#include "JSRTCRtpSender.cpp"
-#include "JSRTCRtpSynchronizationSource.cpp"
-#include "JSRTCRtpTransceiver.cpp"
-#include "JSRTCRtpTransceiverDirection.cpp"

@@ -1,8 +1,0 @@
-#include "runtime/RegExpCache.cpp"
-#include "runtime/RegExpCachedResult.cpp"
-#include "runtime/RegExpConstructor.cpp"
-#include "runtime/RegExpGlobalData.cpp"
-#include "runtime/RegExpMatchesArray.cpp"
-#include "runtime/RegExpObject.cpp"
-#include "runtime/RegExpPrototype.cpp"
-#include "runtime/RegExpStringIteratorPrototype.cpp"

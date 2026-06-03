@@ -1,8 +1,0 @@
-#include "JSHTMLUnknownElement.cpp"
-#include "JSHTMLVideoElement.cpp"
-#include "JSHardwareAcceleration.cpp"
-#include "JSHashChangeEvent.cpp"
-#include "JSHdrMetadataType.cpp"
-#include "JSHighlight.cpp"
-#include "JSHighlightRegister.cpp"
-#include "JSHistory.cpp"

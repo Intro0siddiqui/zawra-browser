@@ -17,6 +17,17 @@
 
 ## Core Workflows for AI Agents
 
+### ⚠️ Behavioral Guidelines for AI Agents: NEVER TAKE UNSOLICITED LIBERTIES ⚠️
+If you encounter a blocked path, a missing dependency (like a completed subsystem not mentioned in the prompt), or a broken script, **DO NOT** unilaterally decide to write a patch, compile the dependency, or drastically alter the build environment on the user's behalf. 
+
+Instead, you MUST:
+1. Stop execution.
+2. Explain exactly what is broken or missing.
+3. Propose a solution to the user.
+4. **WAIT for explicit permission** before executing the fix.
+
+Agents must **never** adopt the mindset of "I just went ahead and took the liberty for you and completed the work." Always prioritize the user's explicit consent over proactive execution, especially when it involves Git history, the build system, or undocumented dependencies.
+
 ### 1. WebKit Setup (The Patch System)
 We do **not** use a Git submodule for the main WebKit source to avoid repository bloat and "detached HEAD" stress. Instead, we use a custom Rust setup tool.
 
@@ -24,8 +35,8 @@ We do **not** use a Git submodule for the main WebKit source to avoid repository
 - **History**: 0% WebKit history is pulled, saving ~5GB of Git metadata.
 - **Patching**: Files in `patches/webkit/` are overlaid onto the official source via `fs_extra::dir::copy` (full file copy, not diffs). Both new files and modified existing files are supported.
 - **Patch locations**:
-  - `webkit/patches/Source/WebKit/` — WebKit2 layer (network, IPC, build system)
-  - `webkit/patches/Source/WebCore/` — WebCore layer (storage bridge, cookie/soup integration)
+  - `patches/webkit/Source/WebKit/` — WebKit2 layer (network, IPC, build system)
+  - `patches/webkit/Source/WebCore/` — WebCore layer (storage bridge, cookie/soup integration)
 - **Setup Command**: 
   ```bash
   # Note: The custom setup tool overlays patches onto the WebKit source
@@ -35,7 +46,12 @@ We do **not** use a Git submodule for the main WebKit source to avoid repository
 ### 3. Git Workflow (PR-Based)
 To maintain a stable `master` branch and ensure all code passes continuous integration, agents **MUST** use a Pull Request workflow for all changes:
 
-1. **Branching**: Never commit directly to `master`. Create a descriptive feature branch:
+1. **Branching**: Never commit directly to `master`. Create a descriptive feature branch.
+   **⚠️ CRITICAL GIT RULES:**
+   - **NEVER** branch directly off `main` if it only contains the `Initial commit` or lacks the `src/` directory. Always branch off the active development branch (e.g., `feat/graphics-pipeline-complete`).
+   - **NEVER** run `git add .` or `git commit -a` blindly without checking `git status`, especially on a bare branch without a `.gitignore`. This will bloat the repository with the massive `target/` directory and `.o` binaries.
+   - **NEVER** run `git clean -fdx` or `git reset --hard` when switching between branches with different histories, as it will instantly vaporize untracked source files and submodules.
+
    ```bash
    git checkout -b feat/my-new-feature
    ```
@@ -151,9 +167,9 @@ git gc --aggressive --prune=now
 ## Coding Guidelines
 
 ### WebKit Modifications
-- **NEVER** commit changes directly to `dependencies/WebKit/`.
-- **ALWAYS** mirror any changes to WebKit files in the `patches/webkit/` directory.
-- The `patches/webkit/` directory must exactly reflect the target path inside `dependencies/WebKit/`.
+- **NEVER** commit changes directly to `webkit/source/`. This directory is explicitly untracked because it represents the extracted tarball.
+- **ALWAYS** write and mirror any changes to WebKit files in the `patches/webkit/` directory.
+- The `patches/webkit/` directory must exactly reflect the target path inside `webkit/source/`.
 - For **new WebCore source files** (e.g. `platform/network/zawra/`), also add them to `Source/WebCore/SourcesWPE.txt` and mirror that file to patches.
 - The C++ bridge (`ZawraStorageBridge`) lives in `Source/WebCore/platform/network/zawra/` and exposes static methods that call into the Rust FFI layer. Add new bridge methods for any new BrowserDB functionality that WebKit needs to call.
 

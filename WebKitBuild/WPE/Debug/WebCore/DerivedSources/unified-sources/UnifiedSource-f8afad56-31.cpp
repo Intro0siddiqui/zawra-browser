@@ -1,8 +1,0 @@
-#include "Modules/mediastream/RTCRtpTransceiver.cpp"
-#include "Modules/mediastream/RTCRtpTransform.cpp"
-#include "Modules/mediastream/RTCSctpTransport.cpp"
-#include "Modules/mediastream/RTCSessionDescription.cpp"
-#include "Modules/mediastream/RTCTrackEvent.cpp"
-#include "Modules/mediastream/RTCTransformEvent.cpp"
-#include "Modules/mediastream/SFrameUtils.cpp"
-#include "Modules/mediastream/STUNMessageParsing.cpp"

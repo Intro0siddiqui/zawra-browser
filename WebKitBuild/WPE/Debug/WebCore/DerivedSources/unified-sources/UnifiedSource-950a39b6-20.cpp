@@ -1,8 +1,0 @@
-#include "html/RangeInputType.cpp"
-#include "html/ResetInputType.cpp"
-#include "html/RubyElement.cpp"
-#include "html/RubyTextElement.cpp"
-#include "html/SearchInputType.cpp"
-#include "html/StepRange.cpp"
-#include "html/SubmitEvent.cpp"
-#include "html/SubmitInputType.cpp"

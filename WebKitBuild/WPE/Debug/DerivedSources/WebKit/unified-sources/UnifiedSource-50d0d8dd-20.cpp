@@ -1,8 +1,0 @@
-#include "Shared/WebGPU/WebGPURenderBundleEncoderDescriptor.cpp"
-#include "Shared/WebGPU/WebGPURenderPassColorAttachment.cpp"
-#include "Shared/WebGPU/WebGPURenderPassDepthStencilAttachment.cpp"
-#include "Shared/WebGPU/WebGPURenderPassDescriptor.cpp"
-#include "Shared/WebGPU/WebGPURenderPassLayout.cpp"
-#include "Shared/WebGPU/WebGPURenderPassTimestampWrites.cpp"
-#include "Shared/WebGPU/WebGPURenderPipelineDescriptor.cpp"
-#include "Shared/WebGPU/WebGPURequestAdapterOptions.cpp"

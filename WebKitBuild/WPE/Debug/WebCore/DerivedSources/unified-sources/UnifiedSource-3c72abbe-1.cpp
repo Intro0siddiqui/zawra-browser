@@ -1,8 +1,0 @@
-#include "platform/CaretAnimator.cpp"
-#include "platform/CommonAtomStrings.cpp"
-#include "platform/ContentType.cpp"
-#include "platform/ContextMenu.cpp"
-#include "platform/ContextMenuItem.cpp"
-#include "platform/Cursor.cpp"
-#include "platform/DateComponents.cpp"
-#include "platform/Decimal.cpp"

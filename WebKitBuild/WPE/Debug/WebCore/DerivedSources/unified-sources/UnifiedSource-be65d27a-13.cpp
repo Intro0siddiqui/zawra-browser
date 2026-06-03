@@ -1,8 +1,0 @@
-#include "dom/MessageChannel.cpp"
-#include "dom/MessageEvent.cpp"
-#include "dom/MessagePort.cpp"
-#include "dom/Microtasks.cpp"
-#include "dom/MouseEvent.cpp"
-#include "dom/MouseRelatedEvent.cpp"
-#include "dom/MutationEvent.cpp"
-#include "dom/MutationObserver.cpp"

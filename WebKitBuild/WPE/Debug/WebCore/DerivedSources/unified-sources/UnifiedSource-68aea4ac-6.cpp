@@ -1,8 +1,0 @@
-#include "bindings/js/JSDOMConvertWebGL.cpp"
-#include "bindings/js/JSDOMExceptionHandling.cpp"
-#include "bindings/js/JSDOMGlobalObject.cpp"
-#include "bindings/js/JSDOMGuardedObject.cpp"
-#include "bindings/js/JSDOMIterator.cpp"
-#include "bindings/js/JSDOMMapLike.cpp"
-#include "bindings/js/JSDOMMicrotask.cpp"
-#include "bindings/js/JSDOMPromise.cpp"

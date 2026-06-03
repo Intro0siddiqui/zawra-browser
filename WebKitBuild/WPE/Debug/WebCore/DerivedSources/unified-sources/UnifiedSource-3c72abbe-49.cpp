@@ -1,8 +1,0 @@
-#include "platform/graphics/gbm/GBMDevice.cpp"
-#include "platform/graphics/iso/ISOBox.cpp"
-#include "platform/graphics/iso/ISOOriginalFormatBox.cpp"
-#include "platform/graphics/iso/ISOProtectionSchemeInfoBox.cpp"
-#include "platform/graphics/iso/ISOProtectionSystemSpecificHeaderBox.cpp"
-#include "platform/graphics/iso/ISOSchemeInformationBox.cpp"
-#include "platform/graphics/iso/ISOSchemeTypeBox.cpp"
-#include "platform/graphics/iso/ISOTrackEncryptionBox.cpp"

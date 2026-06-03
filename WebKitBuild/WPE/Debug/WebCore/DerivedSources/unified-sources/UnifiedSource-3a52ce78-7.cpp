@@ -1,8 +1,0 @@
-#include "JSAudioTimestamp.cpp"
-#include "JSAudioTrack.cpp"
-#include "JSAudioTrackConfiguration.cpp"
-#include "JSAudioTrackList.cpp"
-#include "JSAudioWorklet.cpp"
-#include "JSAudioWorkletGlobalScope.cpp"
-#include "JSAudioWorkletNode.cpp"
-#include "JSAudioWorkletNodeOptions.cpp"

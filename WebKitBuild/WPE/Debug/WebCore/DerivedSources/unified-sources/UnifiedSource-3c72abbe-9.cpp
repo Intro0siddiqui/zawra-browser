@@ -1,8 +1,0 @@
-#include "platform/Scrollbar.cpp"
-#include "platform/ScrollbarTheme.cpp"
-#include "platform/ScrollbarThemeComposite.cpp"
-#include "platform/ScrollbarsController.cpp"
-#include "platform/ScrollingEffectsController.cpp"
-#include "platform/ScrollingMomentumCalculator.cpp"
-#include "platform/SerializedPlatformDataCue.cpp"
-#include "platform/SharedBuffer.cpp"

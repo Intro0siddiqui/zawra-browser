@@ -1,8 +1,0 @@
-#include "page/SpatialNavigation.cpp"
-#include "page/SuspendableTimer.cpp"
-#include "page/TextIndicator.cpp"
-#include "page/UndoItem.cpp"
-#include "page/UndoManager.cpp"
-#include "page/UserContentController.cpp"
-#include "page/UserContentProvider.cpp"
-#include "page/UserContentURLPattern.cpp"

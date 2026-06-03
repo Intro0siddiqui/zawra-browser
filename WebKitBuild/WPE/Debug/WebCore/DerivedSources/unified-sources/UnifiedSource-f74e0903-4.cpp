@@ -1,8 +1,0 @@
-#include "workers/service/SWClientConnection.cpp"
-#include "workers/service/ServiceWorker.cpp"
-#include "workers/service/ServiceWorkerClient.cpp"
-#include "workers/service/ServiceWorkerClientData.cpp"
-#include "workers/service/ServiceWorkerClients.cpp"
-#include "workers/service/ServiceWorkerContainer.cpp"
-#include "workers/service/ServiceWorkerContextData.cpp"
-#include "workers/service/ServiceWorkerData.cpp"

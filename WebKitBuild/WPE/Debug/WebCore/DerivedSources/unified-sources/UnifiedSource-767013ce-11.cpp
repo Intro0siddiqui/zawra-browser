@@ -1,8 +1,0 @@
-#include "page/RemoteFrame.cpp"
-#include "page/RemoteFrameView.cpp"
-#include "page/RenderingUpdateScheduler.cpp"
-#include "page/ResizeObservation.cpp"
-#include "page/ResizeObserver.cpp"
-#include "page/ResourceUsageOverlay.cpp"
-#include "page/ResourceUsageThread.cpp"
-#include "page/Screen.cpp"

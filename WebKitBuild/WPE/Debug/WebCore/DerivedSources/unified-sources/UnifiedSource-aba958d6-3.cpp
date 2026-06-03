@@ -1,8 +1,0 @@
-#include "accessibility/AccessibilityMenuListOption.cpp"
-#include "accessibility/AccessibilityMenuListPopup.cpp"
-#include "accessibility/AccessibilityMockObject.cpp"
-#include "accessibility/AccessibilityNodeObject.cpp"
-#include "accessibility/AccessibilityObject.cpp"
-#include "accessibility/AccessibilityProgressIndicator.cpp"
-#include "accessibility/AccessibilityRenderObject.cpp"
-#include "accessibility/AccessibilitySVGElement.cpp"

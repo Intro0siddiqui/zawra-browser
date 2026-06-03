@@ -1,8 +1,0 @@
-#include "html/FileInputType.cpp"
-#include "html/FormAssociatedCustomElement.cpp"
-#include "html/FormAssociatedElement.cpp"
-#include "html/FormController.cpp"
-#include "html/FormListedElement.cpp"
-#include "html/GenericCachedHTMLCollection.cpp"
-#include "html/HTMLAllCollection.cpp"
-#include "html/HTMLAnchorElement.cpp"

@@ -1,8 +1,0 @@
-#include "platform/SharedBufferChunkReader.cpp"
-#include "platform/SharedStringHash.cpp"
-#include "platform/SimpleCaretAnimator.cpp"
-#include "platform/SleepDisabler.cpp"
-#include "platform/SleepDisablerClient.cpp"
-#include "platform/StaticPasteboard.cpp"
-#include "platform/SystemSoundManager.cpp"
-#include "platform/Theme.cpp"

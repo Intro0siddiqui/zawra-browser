@@ -1,8 +1,0 @@
-#include "rendering/TextPainter.cpp"
-#include "rendering/RenderThemeAdwaita.cpp"
-#include "rendering/line/LineBreaker.cpp"
-#include "rendering/line/LineInfo.cpp"
-#include "rendering/line/LineWidth.cpp"
-#include "rendering/line/TrailingObjects.cpp"
-#include "rendering/mathml/MathMLStyle.cpp"
-#include "rendering/mathml/MathOperator.cpp"

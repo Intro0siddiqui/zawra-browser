@@ -1,8 +1,0 @@
-#include "JSTextTrackList.cpp"
-#include "JSTimeRanges.cpp"
-#include "JSToggleEvent.cpp"
-#include "JSTrackEvent.cpp"
-#include "JSTransferFunction.cpp"
-#include "JSTransformStream.cpp"
-#include "JSTransformStreamDefaultController.cpp"
-#include "JSTreeWalker.cpp"

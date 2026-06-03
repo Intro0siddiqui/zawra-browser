@@ -1,6 +1,0 @@
-#include "accessibility/atspi/AccessibilityObjectTableCellAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectTextAtspi.cpp"
-#include "accessibility/atspi/AccessibilityObjectValueAtspi.cpp"
-#include "accessibility/atspi/AccessibilityRootAtspi.cpp"
-#include "accessibility/isolatedtree/AXIsolatedObject.cpp"
-#include "accessibility/isolatedtree/AXIsolatedTree.cpp"

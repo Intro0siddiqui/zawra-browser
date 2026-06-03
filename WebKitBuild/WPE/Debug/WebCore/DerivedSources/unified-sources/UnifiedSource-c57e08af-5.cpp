@@ -1,8 +1,0 @@
-#include "loader/MediaResourceLoader.cpp"
-#include "loader/MixedContentChecker.cpp"
-#include "loader/NavigationAction.cpp"
-#include "loader/NavigationRequester.cpp"
-#include "loader/NavigationScheduler.cpp"
-#include "loader/NetscapePlugInStreamLoader.cpp"
-#include "loader/PingLoader.cpp"
-#include "loader/PolicyChecker.cpp"

@@ -1,8 +1,0 @@
-#include "platform/graphics/DisplayRefreshMonitor.cpp"
-#include "platform/graphics/DisplayRefreshMonitorClient.cpp"
-#include "platform/graphics/DisplayRefreshMonitorManager.cpp"
-#include "platform/graphics/DisplayUpdate.cpp"
-#include "platform/graphics/FloatLine.cpp"
-#include "platform/graphics/FloatPoint.cpp"
-#include "platform/graphics/FloatPoint3D.cpp"
-#include "platform/graphics/FloatPolygon.cpp"

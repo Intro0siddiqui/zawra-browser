@@ -1,8 +1,0 @@
-#include "JSWebGLTexture.cpp"
-#include "JSWebGLTimerQueryEXT.cpp"
-#include "JSWebGLTransformFeedback.cpp"
-#include "JSWebGLUniformLocation.cpp"
-#include "JSWebGLVertexArrayObject.cpp"
-#include "JSWebGLVertexArrayObjectOES.cpp"
-#include "JSWebKitMediaKeyError.cpp"
-#include "JSWebKitMediaKeyMessageEvent.cpp"

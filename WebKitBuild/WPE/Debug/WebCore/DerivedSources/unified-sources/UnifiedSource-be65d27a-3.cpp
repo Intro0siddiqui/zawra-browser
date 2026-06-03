@@ -1,8 +1,0 @@
-#include "dom/ClipboardEvent.cpp"
-#include "dom/CollectionIndexCache.cpp"
-#include "dom/Comment.cpp"
-#include "dom/ComposedTreeIterator.cpp"
-#include "dom/CompositionEvent.cpp"
-#include "dom/ConstantPropertyMap.cpp"
-#include "dom/ContainerNode.cpp"
-#include "dom/ContainerNodeAlgorithms.cpp"

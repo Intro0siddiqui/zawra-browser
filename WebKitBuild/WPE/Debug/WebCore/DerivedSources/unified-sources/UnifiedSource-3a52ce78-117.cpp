@@ -1,8 +1,0 @@
-#include "JSRTCRtpContributingSource.cpp"
-#include "JSRTCRtpEncodingParameters.cpp"
-#include "JSRTCRtpFecParameters.cpp"
-#include "JSRTCRtpHeaderExtensionParameters.cpp"
-#include "JSRTCRtpParameters.cpp"
-#include "JSRTCRtpReceiver.cpp"
-#include "JSRTCRtpRtxParameters.cpp"
-#include "JSRTCRtpSFrameTransform.cpp"

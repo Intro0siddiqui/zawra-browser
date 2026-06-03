@@ -1,8 +1,0 @@
-#include "JSWebXRInputSourceArray.cpp"
-#include "JSWebXRJointPose.cpp"
-#include "JSWebXRJointSpace.cpp"
-#include "JSWebXRLayer.cpp"
-#include "JSWebXRPose.cpp"
-#include "JSWebXRReferenceSpace.cpp"
-#include "JSWebXRRenderState.cpp"
-#include "JSWebXRRigidTransform.cpp"

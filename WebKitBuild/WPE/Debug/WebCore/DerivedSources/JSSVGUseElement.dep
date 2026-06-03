@@ -1,6 +1,0 @@
-JSSVGUseElement.h : SVGGraphicsElement.idl SVGElement.idl Element.idl Node.idl EventTarget.idl
-SVGGraphicsElement.idl :
-SVGElement.idl :
-Element.idl :
-Node.idl :
-EventTarget.idl :

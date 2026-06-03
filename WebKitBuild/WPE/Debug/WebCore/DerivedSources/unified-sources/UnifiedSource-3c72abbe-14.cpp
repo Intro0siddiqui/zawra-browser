@@ -1,8 +1,0 @@
-#include "platform/audio/AudioResampler.cpp"
-#include "platform/audio/AudioResamplerKernel.cpp"
-#include "platform/audio/AudioUtilities.cpp"
-#include "platform/audio/Biquad.cpp"
-#include "platform/audio/Cone.cpp"
-#include "platform/audio/DirectConvolver.cpp"
-#include "platform/audio/Distance.cpp"
-#include "platform/audio/DownSampler.cpp"

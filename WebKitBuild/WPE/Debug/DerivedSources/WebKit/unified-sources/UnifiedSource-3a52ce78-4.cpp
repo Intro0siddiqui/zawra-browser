@@ -1,8 +1,0 @@
-#include "RemoteFaceDetectorMessageReceiver.cpp"
-#include "RemoteGPUMessageReceiver.cpp"
-#include "RemoteGPUProxyMessageReceiver.cpp"
-#include "RemoteGraphicsContextGLMessageReceiver.cpp"
-#include "RemoteGraphicsContextGLProxyMessageReceiver.cpp"
-#include "RemotePipelineLayoutMessageReceiver.cpp"
-#include "RemotePresentationContextMessageReceiver.cpp"
-#include "RemoteQuerySetMessageReceiver.cpp"

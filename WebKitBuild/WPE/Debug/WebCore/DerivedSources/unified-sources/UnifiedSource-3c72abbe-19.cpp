@@ -1,8 +1,0 @@
-#include "platform/calc/CalcExpressionNegation.cpp"
-#include "platform/calc/CalcExpressionNode.cpp"
-#include "platform/calc/CalcExpressionNumber.cpp"
-#include "platform/calc/CalcExpressionOperation.cpp"
-#include "platform/calc/CalcOperator.cpp"
-#include "platform/calc/CalculationCategory.cpp"
-#include "platform/calc/CalculationValue.cpp"
-#include "platform/encryptedmedia/CDMFactory.cpp"

@@ -1,8 +1,0 @@
-#include "JSSVGZoomAndPan.cpp"
-#include "JSScreen.cpp"
-#include "JSScreenOrientation.cpp"
-#include "JSScriptProcessorNode.cpp"
-#include "JSScrollBehavior.cpp"
-#include "JSScrollIntoViewOptions.cpp"
-#include "JSScrollLogicalPosition.cpp"
-#include "JSScrollOptions.cpp"

@@ -13,6 +13,9 @@ public:
     static void recordHistory(const URL& url, const String& title);
     static void incrementHistoryVisit(const URL& url);
     static void storeDataWithTTL(const String& key, const String& value, uint64_t ttl);
+    static String getData(const String& key);
+    static void removeData(const String& key);
+    static void clearData();
     static void addBookmark(const URL& url, const String& title, const String& folder = String());
     static void removeBookmark(const URL& url);
     static String getBookmarks();

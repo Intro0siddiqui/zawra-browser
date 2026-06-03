@@ -246,28 +246,11 @@ Expected<String, StorageError> SQLiteStorageArea::getItem(const String& key)
 
 Expected<String, StorageError> SQLiteStorageArea::getItemFromDatabase(const String& key)
 {
-    if (!prepareDatabase(ShouldCreateIfNotExists::No))
-        return makeUnexpected(StorageError::Database);
-
-    if (!m_database)
-        return makeUnexpected(StorageError::ItemNotFound);
-
-    auto statement = cachedStatement(StatementType::GetItem);
-    if (!statement || statement->bindText(1, key)) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::getItemFromDatabase failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return makeUnexpected(StorageError::Database);
-    }
-
-    const auto result = statement->step();
-    if (result == SQLITE_ROW)
-        return statement->columnBlobAsString(0);
-    if (result != SQLITE_DONE) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::getItemFromDatabase failed on stepping statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        handleDatabaseCorruptionIfNeeded(result);
-
-        return makeUnexpected(StorageError::Database);
-    }
-
+    // Zawra Modification: Read data from BrowserDB via FFI bridge instead of SQLite
+    String value = WebCore::ZawraStorageBridge::getData(key);
+    if (!value.isNull() && !value.isEmpty())
+        return value;
+    
     return makeUnexpected(StorageError::ItemNotFound);
 }
 
@@ -379,6 +362,10 @@ Expected<void, StorageError> SQLiteStorageArea::removeItem(IPC::Connection::Uniq
     else
         return makeUnexpected(StorageError::ItemNotFound);
 
+    // Zawra Modification: Delete data via BrowserDB FFI bridge instead of SQLite
+    WebCore::ZawraStorageBridge::removeData(key);
+
+/* Zawra: Disable SQLite persistence
     auto statement = cachedStatement(StatementType::DeleteItem);
     if (!statement || statement->bindText(1, key)) {
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::removeItem failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
@@ -392,6 +379,7 @@ Expected<void, StorageError> SQLiteStorageArea::removeItem(IPC::Connection::Uniq
 
         return makeUnexpected(StorageError::Database);
     }
+*/
 
     dispatchEvents(connection, storageAreaImplID, key, oldValue, String(), urlString);
     updateCacheIfNeeded(key, { });
@@ -418,6 +406,11 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
         return makeUnexpected(StorageError::ItemNotFound);
 
     startTransactionIfNecessary();
+    
+    // Zawra Modification: Clear all data via BrowserDB FFI bridge instead of SQLite
+    WebCore::ZawraStorageBridge::clearData();
+
+/* Zawra: Disable SQLite persistence
     auto statement = cachedStatement(StatementType::DeleteAllItems);
     if (!statement) {
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::clear failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
@@ -434,6 +427,7 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
 
     if (m_database->lastChanges() <= 0)
         return makeUnexpected(StorageError::ItemNotFound);
+*/
 
     dispatchEvents(connection, storageAreaImplID, String(), String(), String(), urlString);
 

@@ -2,6 +2,8 @@
 
 #include <wtf/text/WTFString.h>
 #include <wtf/URL.h>
+#include <wtf/HashMap.h>
+#include <wtf/text/StringHash.h>
 
 namespace WebCore {
 
@@ -14,6 +16,7 @@ public:
     static void incrementHistoryVisit(const URL& url);
     static void storeDataWithTTL(const String& key, const String& value, uint64_t ttl);
     static String getData(const String& key);
+    static HashMap<String, String> getAllData();
     static void removeData(const String& key);
     static void clearData();
     static void addBookmark(const URL& url, const String& title, const String& folder = String());

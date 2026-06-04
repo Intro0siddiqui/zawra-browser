@@ -89,7 +89,7 @@ To maintain a stable `master` branch and ensure all code passes continuous integ
   ```
 - **Step 3: Compile Subsystems**:
   - Hajr: `cd dependencies/hajr && zig build`
-  - Z-Net: `cd dependencies/z-net/rust_net && cargo build --release`
+  - Z-Net: `cd dependencies/z-net/engine && cargo build --release`
   - BrowserDB: `cd dependencies/Browser-db/bindings && cargo build --release`
 - **Step 4: Configure & Build WebKit**:
   ```bash

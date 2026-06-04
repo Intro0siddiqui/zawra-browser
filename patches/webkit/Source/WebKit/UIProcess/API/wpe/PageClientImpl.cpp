@@ -25,7 +25,7 @@
 
 #include "config.h"
 #include "PageClientImpl.h"
-#include <WebCore/ZawraGraphicsBridge.h>
+#include "../../../../WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h"
 
 #include "APIViewClient.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"

@@ -9,12 +9,16 @@ namespace WebCore {
 class ZawraGraphicsBridge {
     WTF_MAKE_NONCOPYABLE(ZawraGraphicsBridge);
 public:
-    static void initialize(void* windowHandle, int width, int height);
-    static int exportCompositorFD();
-    static void presentFrame();
+    ZawraGraphicsBridge() = default;
+    ~ZawraGraphicsBridge() = default;
+
+    bool initialize(void* windowHandle, int width, int height);
+    int exportCompositorFD();
+    void presentFrame();
+    void renderLayer(void* state);
 
 private:
-    ZawraGraphicsBridge() = delete;
+    void* m_surfaceHandle { nullptr };
 };
 
 } // namespace WebCore

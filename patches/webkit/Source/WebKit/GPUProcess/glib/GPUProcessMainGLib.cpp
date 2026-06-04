@@ -39,10 +39,12 @@ class GPUProcessMainGStreamer final: public AuxiliaryProcessMainBaseNoSingleton<
 #endif
 
 extern "C" void hajr_seal_process();
+extern "C" int Zawra_Init_Subsystems(const char* profile_path);
 
 int GPUProcessMain(int argc, char** argv)
 {
     hajr_seal_process();
+    Zawra_Init_Subsystems("/tmp/zawra-profile");
 #if ENABLE(GPU_PROCESS) && (PLATFORM(GTK) || PLATFORM(WPE))
     return AuxiliaryProcessMain<GPUProcessMainGStreamer>(argc, argv);
 #else

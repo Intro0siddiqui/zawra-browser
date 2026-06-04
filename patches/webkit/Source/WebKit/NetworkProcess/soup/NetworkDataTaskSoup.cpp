@@ -51,18 +51,6 @@
 #include <wtf/MainThread.h>
 #include <wtf/glib/RunLoopSourcePriority.h>
 
-extern "C" {
-    void* z_fetch(const char* url, void* task, void (*callback)(void*, const uint8_t*, size_t));
-}
-
-extern "C" void z_fetch_callback(void* task_ptr, const uint8_t* data, size_t len) {
-    auto* task = static_cast<WebKit::NetworkDataTaskSoup*>(task_ptr);
-    if (!task) return;
-    if (auto* client = task->client()) {
-        client->didReceiveData(WebCore::SharedBuffer::create(data, len));
-    }
-}
-
 namespace WebKit {
 using namespace WebCore;
 
@@ -309,13 +297,32 @@ void NetworkDataTaskSoup::resume()
     startTimeout();
 
     RefPtr<NetworkDataTaskSoup> protectedThis(this);
-    if (!m_zFetchHandle && !m_cancellable) {
+    if (m_soupMessage && !m_cancellable) {
         m_cancellable = adoptGRef(g_cancellable_new());
-        m_networkLoadMetrics.fetchStart = MonotonicTime::now();
-        if (!m_networkLoadMetrics.redirectStart)
-            m_networkLoadMetrics.redirectStart = m_networkLoadMetrics.fetchStart;
-        
-        m_zFetchHandle = z_fetch(m_currentRequest.url().string().utf8().data(), this, z_fetch_callback);
+        if (m_shouldPreconnectOnly == PreconnectOnly::Yes) {
+#if !USE(SOUP2)
+            soup_session_preconnect_async(static_cast<NetworkSessionSoup&>(*m_session).soupSession(), m_soupMessage.get(), RunLoopSourcePriority::AsyncIONetwork, m_cancellable.get(),
+                reinterpret_cast<GAsyncReadyCallback>(preconnectCallback), protectedThis.leakRef());
+#else
+            RELEASE_ASSERT_NOT_REACHED();
+#endif
+        } else {
+            // We need to protect cancellable here, because soup_session_send_async uses it after emitting SoupSession::request-queued, and we
+            // might cancel the operation in a feature callback emitted on request-queued, for example hsts-enforced.
+            GRefPtr<GCancellable> protectCancellable(m_cancellable);
+            soup_session_send_async(static_cast<NetworkSessionSoup&>(*m_session).soupSession(), m_soupMessage.get(), RunLoopSourcePriority::AsyncIONetwork, m_cancellable.get(),
+                reinterpret_cast<GAsyncReadyCallback>(sendRequestCallback), new SendRequestData({ m_soupMessage, WTFMove(protectedThis) }));
+            if (!g_cancellable_is_cancelled(protectCancellable.get()) && !m_networkLoadMetrics.fetchStart) {
+#if USE(SOUP2)
+                m_networkLoadMetrics.fetchStart = MonotonicTime::now();
+#else
+                auto* metrics = soup_message_get_metrics(m_soupMessage.get());
+                m_networkLoadMetrics.fetchStart = MonotonicTime::fromRawSeconds(Seconds::fromMicroseconds(soup_message_metrics_get_fetch_start(metrics)).seconds());
+#endif
+                if (!m_networkLoadMetrics.redirectStart)
+                    m_networkLoadMetrics.redirectStart = m_networkLoadMetrics.fetchStart;
+            }
+        }
         return;
     }
 

@@ -125,6 +125,16 @@ void ProcessLauncher::launchProcess()
     uint64_t ringID = Zawra_Hajr_CreateBootstrapRing(1024 * 1024);
     IPC::SocketPair socketPair = IPC::createPlatformConnection(connectionOptions());
 
+    gchar* ringStr = g_strdup_printf("%" PRIu64, ringID);
+    gchar* envClient = g_strdup_printf("ZAWRA_HAJR_RING_%d", socketPair.client);
+    g_setenv(envClient, ringStr, TRUE);
+    g_free(envClient);
+
+    gchar* envServer = g_strdup_printf("ZAWRA_HAJR_RING_%d", socketPair.server);
+    g_setenv(envServer, ringStr, TRUE);
+    g_free(envServer);
+    g_free(ringStr);
+
     GUniquePtr<gchar> processIdentifier(g_strdup_printf("%" PRIu64, m_launchOptions.processIdentifier.toUInt64()));
     GUniquePtr<gchar> webkitSocket(g_strdup_printf("%d", socketPair.client));
 
@@ -196,8 +206,7 @@ void ProcessLauncher::launchProcess()
 #endif
     argv[i++] = const_cast<char*>(realExecutablePath.data());
     argv[i++] = processIdentifier.get();
-    argv[2] = g_strdup_printf("%" PRIu64, ringID);
-    i++;
+    argv[i++] = webkitSocket.get();
 #if ENABLE(DEVELOPER_MODE)
     if (configureJSCForTesting)
         argv[i++] = const_cast<char*>("--configure-jsc-for-testing");

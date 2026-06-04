@@ -57,10 +57,14 @@ public:
 };
 
 extern "C" void hajr_seal_process();
+extern "C" int Zawra_Init_Subsystems(const char* profile_path);
+extern "C" int Zawra_Register_Protocols();
 
 int NetworkProcessMain(int argc, char** argv)
 {
     hajr_seal_process();
+    Zawra_Init_Subsystems("/tmp/zawra-profile");
+    Zawra_Register_Protocols();
     return AuxiliaryProcessMain<NetworkProcessMainSoup>(argc, argv);
 }
 

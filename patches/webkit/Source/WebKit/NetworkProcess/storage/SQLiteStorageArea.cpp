@@ -75,14 +75,8 @@ SQLiteStorageArea::SQLiteStorageArea(unsigned quota, const WebCore::ClientOrigin
 
 void SQLiteStorageArea::close()
 {
-    ASSERT(!isMainRunLoop());
-
     m_cache = std::nullopt;
     m_cacheSize = std::nullopt;
-    commitTransactionIfNecessary();
-    for (size_t i = 0; i < static_cast<size_t>(StatementType::Invalid); ++i)
-        m_cachedStatements[i] = nullptr;
-    m_database = nullptr;
 }
 
 SQLiteStorageArea::~SQLiteStorageArea()
@@ -97,24 +91,9 @@ SQLiteStorageArea::~SQLiteStorageArea()
 
 bool SQLiteStorageArea::isEmpty()
 {
-    ASSERT(!isMainRunLoop());
-
     if (m_cache)
         return m_cache->isEmpty();
-
-    if (!prepareDatabase(ShouldCreateIfNotExists::No))
-        return true;
-
-    if (!m_database)
-        return true;
-
-    auto statement = cachedStatement(StatementType::CountItems);
-    if (!statement || statement->step() != SQLITE_ROW) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::isEmpty failed on executing statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return true;
-    }
-
-    return !statement->columnInt(0);
+    return true;
 }
 
 void SQLiteStorageArea::clear()
@@ -128,104 +107,22 @@ void SQLiteStorageArea::clear()
 
 bool SQLiteStorageArea::createTableIfNecessary()
 {
-    if (!m_database)
-        return false;
-
-    String statement = m_database->tableSQL("ItemTable"_s);
-    if (statement == createItemTableStatement || statement == createItemTableStatementAlternative)
-        return true;
-
-    // Table exists but statement is wrong; drop it.
-    if (!statement.isEmpty()) {
-        if (!m_database->executeCommand("DROP TABLE ItemTable"_s)) {
-            RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::createTableIfNecessary failed to drop existing item table (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-            return false;
-        }
-    }
-
-    // Table does not exist.
-    if (!m_database->executeCommand(createItemTableStatement)) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::createTableIfNecessary failed to create item table (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return false;
-    }
-
     return true;
 }
 
 bool SQLiteStorageArea::prepareDatabase(ShouldCreateIfNotExists shouldCreateIfNotExists)
 {
-    if (m_database && m_database->isOpen())
-        return true;
-
-    m_database = nullptr;
-    bool databaseExists = FileSystem::fileExists(m_path);
-    if (shouldCreateIfNotExists == ShouldCreateIfNotExists::No && !databaseExists)
-        return true;
-
-    m_database = makeUnique<WebCore::SQLiteDatabase>();
-    FileSystem::makeAllDirectories(FileSystem::parentPath(m_path));
-    auto openResult  = m_database->open(m_path, WebCore::SQLiteDatabase::OpenMode::ReadWriteCreate, WebCore::SQLiteDatabase::OpenOptions::CanSuspendWhileLocked);
-    if (!openResult && handleDatabaseCorruptionIfNeeded(m_database->lastError())) {
-        databaseExists = false;
-        if (shouldCreateIfNotExists == ShouldCreateIfNotExists::No)
-            return true;
-
-        m_database = makeUnique<WebCore::SQLiteDatabase>();
-        openResult = m_database->open(m_path);
-    }
-
-    if (!openResult) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::prepareDatabase failed to open database at '%s'", m_path.utf8().data());
-        m_database = nullptr;
-        return false;
-    }
-
-    // Since a WorkQueue isn't bound to a specific thread, we need to disable threading check.
-    // We will never access the database from different threads simultaneously.
-    m_database->disableThreadingChecks();
-
-    if (!createTableIfNecessary()) {
-        m_database = nullptr;
-        return false;
-    }
-
-    if (!databaseExists) {
-        m_cache = HashMap<String, Value> { };
-        m_cacheSize = 0;
-    }
-
     return true;
 }
 
 void SQLiteStorageArea::startTransactionIfNecessary()
 {
-    ASSERT(m_database);
-
-    if (!m_transaction || m_transaction->wasRolledBackBySqlite())
-        m_transaction = makeUnique<WebCore::SQLiteTransaction>(*m_database);
-
-    if (m_transaction->inProgress())
-        return;
-    m_transaction->begin();
-
-    m_queue->dispatchAfter(transactionDuration, [weakThis = WeakPtr { *this }] {
-        if (weakThis)
-            weakThis->commitTransactionIfNecessary();
-    });
+    // removed
 }
 
 WebCore::SQLiteStatementAutoResetScope SQLiteStorageArea::cachedStatement(StatementType type)
 {
-    ASSERT(m_database);
-    ASSERT(type < StatementType::Invalid);
-
-    auto index = static_cast<uint8_t>(type);
-    if (!m_cachedStatements[index]) {
-        if (auto result = m_database->prepareHeapStatement(statementString(type)))
-            m_cachedStatements[index] = result.value().moveToUniquePtr();
-    }
-
-    return WebCore::SQLiteStatementAutoResetScope { m_cachedStatements[index].get() };
+    return WebCore::SQLiteStatementAutoResetScope { nullptr };
 }
 
 Expected<String, StorageError> SQLiteStorageArea::getItem(const String& key)
@@ -258,49 +155,13 @@ HashMap<String, String> SQLiteStorageArea::allItems()
 {
     ASSERT(!isMainRunLoop());
 
-    if (!prepareDatabase(ShouldCreateIfNotExists::No) || !m_database)
-        return HashMap<String, String> { };
-
-    HashMap<String, String> items;
-    if (m_cache) {
-        items.reserveInitialCapacity(m_cache->size());
-        for (auto& [key, value] : *m_cache) {
-            if (auto* valueString = std::get_if<String>(&value)) {
-                ASSERT(!valueString->isNull());
-                items.add(key, *valueString);
-                continue;
-            }
-
-            if (auto result = getItemFromDatabase(key))
-                items.add(key, result.value());
-        }
-        return items;
-    }
-
-    // Import from database.
-    auto statement = cachedStatement(StatementType::GetAllItems);
-    if (!statement) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::allItems failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return { };
-    }
+    HashMap<String, String> items = WebCore::ZawraStorageBridge::getAllData();
 
     m_cache = HashMap<String, Value> { };
     m_cacheSize = 0;
-    auto result = statement->step();
-    while (result == SQLITE_ROW) {
-        String key = statement->columnText(0);
-        String value = statement->columnBlobAsString(1);
-        if (!key.isNull() && !value.isNull()) {
-            items.add(key, value);
-            updateCacheIfNeeded(WTFMove(key), WTFMove(value));
-        }
-
-        result = statement->step();
-    }
-
-    if (result != SQLITE_DONE) {
-        RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::allItems failed on executing statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        handleDatabaseCorruptionIfNeeded(result);
+    
+    for (auto& item : items) {
+        updateCacheIfNeeded(item.key, item.value);
     }
 
     return items;
@@ -310,8 +171,8 @@ Expected<void, StorageError> SQLiteStorageArea::setItem(IPC::Connection::UniqueI
 {
     ASSERT(!isMainRunLoop());
 
-    if (!prepareDatabase(ShouldCreateIfNotExists::Yes))
-        return makeUnexpected(StorageError::Database);
+    //
+        
 
     if (!requestSpace(key, value))
         return makeUnexpected(StorageError::QuotaExceeded);
@@ -319,7 +180,7 @@ Expected<void, StorageError> SQLiteStorageArea::setItem(IPC::Connection::UniqueI
     // Zawra Modification: Persist data to BrowserDB via FFI bridge instead of SQLite
     WebCore::ZawraStorageBridge::storeDataWithTTL(key, value, 0); // No TTL by default
 
-    startTransactionIfNecessary();
+    // startTransactionIfNecessary();
     String oldValue;
     if (auto valueOrError = getItem(key))
         oldValue = valueOrError.value();
@@ -328,14 +189,14 @@ Expected<void, StorageError> SQLiteStorageArea::setItem(IPC::Connection::UniqueI
     auto statement = cachedStatement(StatementType::SetItem);
     if (!statement || statement->bindText(1, key) || statement->bindBlob(2, value)) {
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::setItem failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return makeUnexpected(StorageError::Database);
+        
     }
 
     const auto result = statement->step();
     if (result != SQLITE_DONE) {
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::setItem failed on stepping statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
         handleDatabaseCorruptionIfNeeded(result);
-        return makeUnexpected(StorageError::Database);
+        
     }
 */
 
@@ -349,13 +210,12 @@ Expected<void, StorageError> SQLiteStorageArea::removeItem(IPC::Connection::Uniq
 {
     ASSERT(!isMainRunLoop());
 
-    if (!prepareDatabase(ShouldCreateIfNotExists::No))
-        return makeUnexpected(StorageError::Database);
+    //
+        
 
-    if (!m_database)
-        return makeUnexpected(StorageError::ItemNotFound);
+    
 
-    startTransactionIfNecessary();
+    // startTransactionIfNecessary();
     String oldValue;
     if (auto valueOrError = getItem(key))
         oldValue = valueOrError.value();
@@ -369,7 +229,7 @@ Expected<void, StorageError> SQLiteStorageArea::removeItem(IPC::Connection::Uniq
     auto statement = cachedStatement(StatementType::DeleteItem);
     if (!statement || statement->bindText(1, key)) {
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::removeItem failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return makeUnexpected(StorageError::Database);
+        
     }
 
     const auto result = statement->step();
@@ -377,7 +237,7 @@ Expected<void, StorageError> SQLiteStorageArea::removeItem(IPC::Connection::Uniq
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::removeItem failed on executing statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
         handleDatabaseCorruptionIfNeeded(result);
 
-        return makeUnexpected(StorageError::Database);
+        
     }
 */
 
@@ -391,8 +251,8 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
 {
     ASSERT(!isMainRunLoop());
 
-    if (!prepareDatabase(ShouldCreateIfNotExists::No))
-        return makeUnexpected(StorageError::Database);
+    //
+        
 
     if (m_cache && m_cache->isEmpty())
         return makeUnexpected(StorageError::ItemNotFound);
@@ -402,10 +262,9 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
         m_cacheSize = 0;
     }
 
-    if (!m_database)
-        return makeUnexpected(StorageError::ItemNotFound);
+    
 
-    startTransactionIfNecessary();
+    // startTransactionIfNecessary();
     
     // Zawra Modification: Clear all data via BrowserDB FFI bridge instead of SQLite
     WebCore::ZawraStorageBridge::clearData();
@@ -414,7 +273,7 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
     auto statement = cachedStatement(StatementType::DeleteAllItems);
     if (!statement) {
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::clear failed on creating statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
-        return makeUnexpected(StorageError::Database);
+        
     }
 
     const auto result = statement->step();
@@ -422,7 +281,7 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
         RELEASE_LOG_ERROR(Storage, "SQLiteStorageArea::clear failed on executing statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
         handleDatabaseCorruptionIfNeeded(result);
 
-        return makeUnexpected(StorageError::Database);
+        
     }
 
     if (m_database->lastChanges() <= 0)
@@ -436,29 +295,17 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
 
 void SQLiteStorageArea::commitTransactionIfNecessary()
 {
-    if (auto transaction = std::exchange(m_transaction, nullptr))
-        transaction->commit();
+    // removed
 }
 
 void SQLiteStorageArea::handleLowMemoryWarning()
 {
-    ASSERT(!isMainRunLoop());
-
-    if (m_database && m_database->isOpen())
-        m_database->releaseMemory();
+    // removed
 }
 
 bool SQLiteStorageArea::handleDatabaseCorruptionIfNeeded(int databaseError)
 {
-    if (databaseError != SQLITE_CORRUPT && databaseError != SQLITE_NOTADB)
-        return false;
-
-    m_database = nullptr;
-    m_cache = std::nullopt;
-    m_cacheSize = std::nullopt;
-    RELEASE_LOG(Storage, "SQLiteStorageArea::handleDatabaseCorruption deletes corrupted database file '%s'", m_path.utf8().data());
-    WebCore::SQLiteFileSystem::deleteDatabaseFile(m_path);
-    return true;
+    return false;
 }
 
 void SQLiteStorageArea::updateCacheIfNeeded(const String& key, const String& value)
@@ -516,14 +363,10 @@ void SQLiteStorageArea::updateCacheIfNeeded(const String& key, const String& val
 
 bool SQLiteStorageArea::requestSpace(const String& key, const String& value)
 {
-    ASSERT(m_database && m_database->isOpen());
     if (!m_cache)
         return key.sizeInBytes() + value.sizeInBytes() <= quota();
-
     if (value.isNull())
         return true;
-
-    ASSERT(m_cacheSize);
     CheckedUint32 newCacheSize = *m_cacheSize;
     auto iter = m_cache->find(key);
     if (iter == m_cache->end())
@@ -539,7 +382,6 @@ bool SQLiteStorageArea::requestSpace(const String& key, const String& value)
     newCacheSize += value.sizeInBytes();
     if (newCacheSize.hasOverflowed())
         return false;
-
     return newCacheSize <= quota();
 }
 

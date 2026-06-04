@@ -185,7 +185,6 @@ private:
     State m_state { State::Suspended };
     WebCore::ContentSniffingPolicy m_shouldContentSniff;
     PreconnectOnly m_shouldPreconnectOnly { PreconnectOnly::No };
-    void* m_zFetchHandle { nullptr };
     GRefPtr<GFile> m_file;
     GRefPtr<GInputStream> m_inputStream;
     GRefPtr<GCancellable> m_cancellable;

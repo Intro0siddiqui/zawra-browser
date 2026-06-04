@@ -121,25 +121,24 @@ static_assert(sizeof(MessageInfo) + sizeof(AttachmentInfo) * attachmentMaxAmount
 void Connection::platformInitialize(Identifier identifier)
 {
     m_socketDescriptor = identifier.handle;
+#if USE(GLIB)
+    m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
+#endif
     m_readBuffer.reserveInitialCapacity(messageMaxSize);
     m_fileDescriptors.reserveInitialCapacity(attachmentMaxAmount);
 }
 
 void Connection::platformInvalidate()
 {
-    if (m_inboundRing) {
-        hajr_ring_free(m_inboundRing);
-        m_inboundRing = nullptr;
-    }
-    if (m_outboundRing) {
+    if (m_hajrRings) {
         // Flush any batched messages before destroying the ring
         if (m_pendingRingMessages > 0) {
             uint8_t kick = 1;
             ::send(m_socketDescriptor, &kick, 1, MSG_NOSIGNAL);
             m_pendingRingMessages = 0;
         }
-        hajr_ring_free(m_outboundRing);
-        m_outboundRing = nullptr;
+        hajr_ring_free(m_hajrRings);
+        m_hajrRings = nullptr;
     }
     if (m_inboundMem) {
         munmap(m_inboundMem, 65728);
@@ -324,11 +323,11 @@ static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer
 
 void Connection::readyReadHandler()
 {
-    if (m_inboundRing) {
+    if (m_hajrRings) {
         while (true) {
             MessageInfo msgInfo;
             size_t msgInfoBytesRead = 0;
-            int32_t res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&msgInfo), sizeof(msgInfo), &msgInfoBytesRead);
+            int32_t res = hajr_ring_read(m_hajrRings, reinterpret_cast<uint8_t*>(&msgInfo), sizeof(msgInfo), &msgInfoBytesRead);
             if (res != 1 || msgInfoBytesRead == 0)
                 break;
 
@@ -343,7 +342,7 @@ void Connection::readyReadHandler()
 
             Vector<uint8_t> body(msgInfo.bodySize());
             size_t bodyBytesRead = 0;
-            res = hajr_ring_read(m_inboundRing, body.data(), msgInfo.bodySize(), &bodyBytesRead);
+            res = hajr_ring_read(m_hajrRings, body.data(), msgInfo.bodySize(), &bodyBytesRead);
             if (res != 1 || bodyBytesRead != msgInfo.bodySize())
                 break;
 
@@ -382,7 +381,7 @@ void Connection::readyReadHandler()
         }
 
         // If we just read a 1-byte Hajr 'kick' signal, discard it from the buffer.
-        if (m_inboundRing && bytesRead == 1 && m_readBuffer.size() == 1 && m_readBuffer[0] == 1) {
+        if (m_hajrRings && bytesRead == 1 && m_readBuffer.size() == 1 && m_readBuffer[0] == 1) {
             m_readBuffer.shrink(0);
         }
 
@@ -412,31 +411,40 @@ void Connection::platformOpen()
     fflush(stderr);
 
     // [ZAWRA] Pure Hajr Connection: Bypass the legacy socket handshake.
-    void* ringPtr = Zawra_Hajr_MapBootstrapRing(m_socketDescriptor);
+    uint64_t ringID = 0;
+    char envName[64];
+    snprintf(envName, sizeof(envName), "ZAWRA_HAJR_RING_%d", m_socketDescriptor);
+    if (const char* envRing = getenv(envName))
+        ringID = strtoull(envRing, nullptr, 10);
+
+    void* ringPtr = Zawra_Hajr_MapBootstrapRing(ringID);
     if (ringPtr) {
         // Bind our local Hajr state to the pre-allocated rings.
         // (Assuming m_hajrRings is the new member in Connection.h)
         m_hajrRings = static_cast<C_HardenedRingBuffer*>(ringPtr);
         m_isHajrEnabled = true;
-        fprintf(stderr, "[ZAWRA] Established Pure Hajr Connection using RingID: %d\n", m_socketDescriptor);
+        fprintf(stderr, "[ZAWRA] Established Pure Hajr Connection using RingID: %" PRIu64 "\n", ringID);
     } else {
-        fprintf(stderr, "[ZAWRA] FAILED to map Hajr bootstrap ring with ID: %d\n", m_socketDescriptor);
+        fprintf(stderr, "[ZAWRA] FAILED to map Hajr bootstrap ring with ID: %" PRIu64 "\n", ringID);
         m_isConnected = false;
         return;
     }
 
-// Use portable SocketMonitor abstraction for socket event monitoring
-    // This works with both GLib event loop and generic poll() fallback
-    m_readSocketMonitor.start(m_socketDescriptor, SocketCondition::Readable | SocketCondition::Error | SocketCondition::Hangup, m_connectionQueue->runLoop(), [protectedThis](SocketCondition condition) {
-        if (condition == SocketCondition::Error || condition == SocketCondition::Hangup) {
+#if USE(GLIB)
+    m_readSocketMonitor.start(m_socket.get(), static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL), m_connectionQueue->runLoop(), [protectedThis](GIOCondition condition) -> gboolean {
+        if (condition & G_IO_HUP || condition & G_IO_ERR || condition & G_IO_NVAL) {
             protectedThis->connectionDidClose();
-            return;
+            return G_SOURCE_REMOVE;
         }
 
-        if (condition == SocketCondition::Readable) {
+        if (condition & G_IO_IN) {
             protectedThis->readyReadHandler();
+            return G_SOURCE_CONTINUE;
         }
+
+        return G_SOURCE_REMOVE;
     });
+#endif
 
     // Schedule a call to readyReadHandler. Data may have arrived before installation of the signal handler.
     m_connectionQueue->dispatch([protectedThis] {
@@ -481,16 +489,16 @@ bool Connection::sendOutgoingMessage(UniqueRef<Encoder>&& encoder)
 
 bool Connection::sendOutputMessage(UnixMessage& outputMessage)
 {
-    if (m_outboundRing && outputMessage.attachments().isEmpty()) {
+    if (m_hajrRings && outputMessage.attachments().isEmpty()) {
         auto& messageInfo = outputMessage.messageInfo();
         size_t total_size = sizeof(messageInfo) + outputMessage.bodySize();
         Vector<uint8_t> payload(total_size);
         memcpy(payload.data(), &messageInfo, sizeof(messageInfo));
         memcpy(payload.data() + sizeof(messageInfo), outputMessage.body(), outputMessage.bodySize());
 
-        int32_t res = hajr_ring_write(m_outboundRing, payload.data(), payload.size());
+        int32_t res = hajr_ring_write(m_hajrRings, payload.data(), payload.size());
         if (res == 1) { // 1 is Success in Hajr FFI
-            hajr_ring_signal(m_outboundRing);
+            hajr_ring_signal(m_hajrRings);
             m_pendingRingMessages++;
 
             // Kick the reader only when the batch is full.
@@ -590,9 +598,10 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
         if (errno == EINTR)
             continue;
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
+#if USE(GLIB)
             m_pendingOutputMessage = makeUnique<UnixMessage>(WTFMove(outputMessage));
-            m_writeSocketMonitor.start(m_socketDescriptor, SocketCondition::Writable, m_connectionQueue->runLoop(), [this, protectedThis = Ref { *this }](SocketCondition condition) {
-                if (condition == SocketCondition::Writable) {
+            m_writeSocketMonitor.start(m_socket.get(), G_IO_OUT, m_connectionQueue->runLoop(), [this, protectedThis = Ref { *this }](GIOCondition condition) -> gboolean {
+                if (condition & G_IO_OUT) {
                     ASSERT(m_pendingOutputMessage);
                     m_connectionQueue->dispatch([this, protectedThis = Ref { *this }] {
                         m_writeSocketMonitor.stop();
@@ -603,7 +612,9 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
                         }
                     });
                 }
+                return G_SOURCE_REMOVE;
             });
+#endif
             return false;
         }
 

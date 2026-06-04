@@ -527,29 +527,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
-name = "lean-net"
-version = "0.1.0"
-dependencies = [
- "base64",
- "brotli",
- "cookie",
- "errno",
- "flate2",
- "h2",
- "httparse",
- "libc",
- "log",
- "mio",
- "quinn-proto",
- "rustls",
- "socks",
- "thiserror 1.0.69",
- "tokio",
- "url",
- "zstd",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1653,15 +1630,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "z-net-engine"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "brotli",
+ "bytes",
+ "cookie",
+ "errno",
+ "flate2",
+ "h2",
+ "httparse",
+ "libc",
+ "log",
+ "mio",
+ "quinn-proto",
+ "rustls",
+ "socks",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "zstd",
+]
+
+[[package]]
 name = "zawra-browser"
 version = "0.1.0"
 dependencies = [
  "browserdb",
  "dashmap",
  "dirs",
- "lean-net",
  "libc",
  "ring",
+ "z-net-engine",
 ]
 
 [[package]]

@@ -9,32 +9,45 @@ extern "C" {
     void* ZawraGraphics_CreateSurface(void* window, unsigned int width, unsigned int height);
     void ZawraGraphics_SwapBuffers(void* handle);
     int ZawraGraphics_ExportSurfaceFD(void* handle);
+    bool ZawraGraphics_CompositorRenderLayer(void* state);
 }
 
 namespace WebCore {
 
-static void* g_surfaceHandle = nullptr;
-
-void ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
+bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
 {
-    if (!g_surfaceHandle) {
-        ZawraGraphics_Initialize();
-        g_surfaceHandle = ZawraGraphics_CreateSurface(windowHandle, width, height);
+    if (!m_surfaceHandle) {
+        if (!ZawraGraphics_Initialize()) {
+            return false;
+        }
+        void* handle = ZawraGraphics_CreateSurface(windowHandle, width, height);
+        if (!handle) {
+            return false;
+        }
+        m_surfaceHandle = handle;
     }
+    return true;
 }
 
 int ZawraGraphicsBridge::exportCompositorFD()
 {
-    if (g_surfaceHandle) {
-        return ZawraGraphics_ExportSurfaceFD(g_surfaceHandle);
+    if (m_surfaceHandle) {
+        return ZawraGraphics_ExportSurfaceFD(m_surfaceHandle);
     }
     return -1;
 }
 
 void ZawraGraphicsBridge::presentFrame()
 {
-    if (g_surfaceHandle) {
-        ZawraGraphics_SwapBuffers(g_surfaceHandle);
+    if (m_surfaceHandle) {
+        ZawraGraphics_SwapBuffers(m_surfaceHandle);
+    }
+}
+
+void ZawraGraphicsBridge::renderLayer(void* state)
+{
+    if (m_surfaceHandle && state) {
+        ZawraGraphics_CompositorRenderLayer(state);
     }
 }
 

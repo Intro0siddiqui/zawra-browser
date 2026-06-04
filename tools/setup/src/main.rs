@@ -61,7 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Apply Patches
     println!("🛠️ Applying Zawra Patches...");
     if patch_dir.exists() {
-        let options = fs_extra::dir::CopyOptions::new().overwrite(true);
+        let mut options = fs_extra::dir::CopyOptions::new().overwrite(true);
+        options.content_only = true;
         // Use a loop to copy contents of patches/webkit into webkit/source
         for entry in fs::read_dir(patch_dir)? {
             let entry = entry?;

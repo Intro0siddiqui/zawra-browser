@@ -8,13 +8,12 @@ fn main() {
     eprintln!("╚══════════════════════════════════════╝");
 
     // Resolve profile directory
-    let profile = std::env::var("ZAWRA_PROFILE")
-        .unwrap_or_else(|_| {
-            let mut home = dirs::home_dir().unwrap_or_default();
-            home.push(".zawra/profile");
-            std::fs::create_dir_all(&home).ok();
-            home.to_string_lossy().into_owned()
-        });
+    let profile = std::env::var("ZAWRA_PROFILE").unwrap_or_else(|_| {
+        let mut home = dirs::home_dir().unwrap_or_default();
+        home.push(".zawra/profile");
+        std::fs::create_dir_all(&home).ok();
+        home.to_string_lossy().into_owned()
+    });
 
     eprintln!("[zawra] Profile: {}", profile);
 

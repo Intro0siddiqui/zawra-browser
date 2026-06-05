@@ -22,10 +22,10 @@ pub enum TabState {
 
 /// Per-tab data.
 pub struct Tab {
-    pub id:           TabId,
-    pub url:          String,
-    pub title:        String,
-    pub state:        TabState,
+    pub id: TabId,
+    pub url: String,
+    pub title: String,
+    pub state: TabState,
     /// Each tab gets its own BrowserDB container for isolated storage.
     pub container_id: String,
     /// WPE content process handle (opaque). NULL in headless mode.
@@ -40,9 +40,9 @@ impl Tab {
     fn new(id: TabId, url: &str) -> Self {
         Tab {
             id,
-            url:          url.to_string(),
-            title:        "New Tab".to_string(),
-            state:        TabState::Loading,
+            url: url.to_string(),
+            title: "New Tab".to_string(),
+            state: TabState::Loading,
             container_id: format!("tab_{}", id),
             content_proc: std::ptr::null_mut(),
         }
@@ -51,23 +51,25 @@ impl Tab {
 
 /// Manages all tabs for a browser window.
 pub struct TabManager {
-    tabs:       Mutex<HashMap<TabId, Tab>>,
+    tabs: Mutex<HashMap<TabId, Tab>>,
     active_tab: Mutex<Option<TabId>>,
-    next_id:    std::sync::atomic::AtomicU64,
+    next_id: std::sync::atomic::AtomicU64,
 }
 
 impl TabManager {
     pub fn new() -> Arc<Self> {
         Arc::new(TabManager {
-            tabs:       Mutex::new(HashMap::new()),
+            tabs: Mutex::new(HashMap::new()),
             active_tab: Mutex::new(None),
-            next_id:    std::sync::atomic::AtomicU64::new(1),
+            next_id: std::sync::atomic::AtomicU64::new(1),
         })
     }
 
     /// Open a new tab navigating to `url`. Returns the new `TabId`.
     pub fn open_tab(&self, url: &str) -> TabId {
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let tab = Tab::new(id, url);
 
         if let Ok(mut tabs) = self.tabs.lock() {
@@ -83,13 +85,16 @@ impl TabManager {
 
     /// Close a tab by ID. Returns `true` if it was found.
     pub fn close_tab(&self, id: TabId) -> bool {
-        let removed = self.tabs.lock().map(|mut t| t.remove(&id).is_some()).unwrap_or(false);
+        let removed = self
+            .tabs
+            .lock()
+            .map(|mut t| t.remove(&id).is_some())
+            .unwrap_or(false);
         if removed {
             // If we closed the active tab, activate the most recent remaining one
             if let Ok(mut active) = self.active_tab.lock() {
                 if *active == Some(id) {
-                    *active = self.tabs.lock().ok()
-                        .and_then(|t| t.keys().next().copied());
+                    *active = self.tabs.lock().ok().and_then(|t| t.keys().next().copied());
                 }
             }
             eprintln!("[zawra-tabs] Closed tab #{}", id);
@@ -99,7 +104,11 @@ impl TabManager {
 
     /// Switch the active tab to `id`. Returns `false` if not found.
     pub fn switch_to(&self, id: TabId) -> bool {
-        let exists = self.tabs.lock().map(|t| t.contains_key(&id)).unwrap_or(false);
+        let exists = self
+            .tabs
+            .lock()
+            .map(|t| t.contains_key(&id))
+            .unwrap_or(false);
         if exists {
             if let Ok(mut active) = self.active_tab.lock() {
                 *active = Some(id);
@@ -150,9 +159,9 @@ impl TabManager {
 impl Default for TabManager {
     fn default() -> Self {
         TabManager {
-            tabs:       Mutex::new(HashMap::new()),
+            tabs: Mutex::new(HashMap::new()),
             active_tab: Mutex::new(None),
-            next_id:    std::sync::atomic::AtomicU64::new(1),
+            next_id: std::sync::atomic::AtomicU64::new(1),
         }
     }
 }

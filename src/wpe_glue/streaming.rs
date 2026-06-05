@@ -10,22 +10,22 @@
 //!  3. **HTTP Redirect Following** — detects 301/302/307/308 status codes and
 //!     recursively creates a new `ZNetChannel` for the target location.
 
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use lean_net::{net_read, NetError};
+use lean_net::{NetError, net_read};
 
 use crate::wpe_glue::networking::{
-    global_engine, OwnedBodyRing, ZNetChannel, ZNetInputStream, ns_result,
+    OwnedBodyRing, ZNetChannel, ZNetInputStream, global_engine, ns_result,
 };
 
 // ── nsresult values used in this module ─────────────────────────────────────
-const NS_OK:                       u32 = ns_result::NS_OK;
-const NS_ERROR_FAILURE:            u32 = ns_result::NS_ERROR_FAILURE;
-const NS_BASE_STREAM_WOULD_BLOCK:  u32 = 0x80470007;
+const NS_OK: u32 = ns_result::NS_OK;
+const NS_ERROR_FAILURE: u32 = ns_result::NS_ERROR_FAILURE;
+const NS_BASE_STREAM_WOULD_BLOCK: u32 = 0x80470007;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // HTTP/1.1 Response Parser
@@ -34,11 +34,11 @@ const NS_BASE_STREAM_WOULD_BLOCK:  u32 = 0x80470007;
 /// Parsed summary of an HTTP/1.1 response header block.
 #[derive(Debug, Default)]
 pub struct HttpResponseHead {
-    pub status_code:    u16,
+    pub status_code: u16,
     pub content_length: Option<usize>,
-    pub content_type:   Option<String>,
-    pub location:       Option<String>,  // for redirects
-    pub header_end:     usize,           // byte offset where headers end (past \r\n\r\n)
+    pub content_type: Option<String>,
+    pub location: Option<String>, // for redirects
+    pub header_end: usize,        // byte offset where headers end (past \r\n\r\n)
 }
 
 /// Parse the leading HTTP/1.1 status line + headers from a raw byte slice.
@@ -63,9 +63,11 @@ pub fn parse_http_head(buf: &[u8]) -> Option<HttpResponseHead> {
 
     for line in lines {
         let line = line.trim();
-        if line.is_empty() { break; }
+        if line.is_empty() {
+            break;
+        }
         if let Some(colon) = line.find(':') {
-            let name  = line[..colon].trim().to_ascii_lowercase();
+            let name = line[..colon].trim().to_ascii_lowercase();
             let value = line[colon + 1..].trim();
             match name.as_str() {
                 "content-length" => {
@@ -94,14 +96,15 @@ pub fn parse_http_head(buf: &[u8]) -> Option<HttpResponseHead> {
 #[repr(C)]
 pub struct NsIStreamListenerVtable {
     // nsISupports
-    pub query_interface:    unsafe extern "C" fn(*mut c_void, *const u8, *mut *mut c_void) -> u32,
-    pub add_ref:            unsafe extern "C" fn(*mut c_void) -> u32,
-    pub release:            unsafe extern "C" fn(*mut c_void) -> u32,
+    pub query_interface: unsafe extern "C" fn(*mut c_void, *const u8, *mut *mut c_void) -> u32,
+    pub add_ref: unsafe extern "C" fn(*mut c_void) -> u32,
+    pub release: unsafe extern "C" fn(*mut c_void) -> u32,
     // nsIRequestObserver
-    pub on_start_request:   unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32,
-    pub on_stop_request:    unsafe extern "C" fn(*mut c_void, *mut c_void, u32) -> u32,
+    pub on_start_request: unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32,
+    pub on_stop_request: unsafe extern "C" fn(*mut c_void, *mut c_void, u32) -> u32,
     // nsIStreamListener
-    pub on_data_available:  unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, u64, u32) -> u32,
+    pub on_data_available:
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, u64, u32) -> u32,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -110,12 +113,12 @@ pub struct NsIStreamListenerVtable {
 
 /// State shared between `spawn_async_reader` thread and the calling `ZNetChannel`.
 pub struct AsyncReaderState {
-    pub ring:          Arc<Mutex<OwnedBodyRing>>,
-    pub listener:      *mut c_void,   // nsIStreamListener*
-    pub channel:       *mut c_void,   // nsIChannel* (for callbacks)
-    pub conn_handle:   lean_net::ConnectionHandle,
-    pub cancelled:     AtomicBool,
-    pub redirect_url:  Mutex<Option<String>>,
+    pub ring: Arc<Mutex<OwnedBodyRing>>,
+    pub listener: *mut c_void, // nsIStreamListener*
+    pub channel: *mut c_void,  // nsIChannel* (for callbacks)
+    pub conn_handle: lean_net::ConnectionHandle,
+    pub cancelled: AtomicBool,
+    pub redirect_url: Mutex<Option<String>>,
 }
 
 // SAFETY: We only access listener/channel from the reader thread under the
@@ -147,7 +150,9 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
     let mut byte_offset: u64 = 0;
 
     loop {
-        if state.cancelled.load(Ordering::Acquire) { break; }
+        if state.cancelled.load(Ordering::Acquire) {
+            break;
+        }
 
         // Drain what's available from the BodyRing into our local header_buf
         // (until headers are parsed) or directly notify WPE.
@@ -156,10 +161,19 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
             Err(_) => break,
         };
 
-        let head_val = ring_guard.descriptor.head.load(std::sync::atomic::Ordering::Acquire);
-        let tail_val = ring_guard.descriptor.tail.load(std::sync::atomic::Ordering::Acquire);
+        let head_val = ring_guard
+            .descriptor
+            .head
+            .load(std::sync::atomic::Ordering::Acquire);
+        let tail_val = ring_guard
+            .descriptor
+            .tail
+            .load(std::sync::atomic::Ordering::Acquire);
         let available = head_val.wrapping_sub(tail_val) as usize;
-        let is_closed = ring_guard.descriptor.is_closed.load(std::sync::atomic::Ordering::Acquire);
+        let is_closed = ring_guard
+            .descriptor
+            .is_closed
+            .load(std::sync::atomic::Ordering::Acquire);
 
         if !head_parsed {
             // Read available bytes into header_buf
@@ -175,7 +189,10 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
                     )
                 };
                 header_buf.extend_from_slice(slice);
-                ring_guard.descriptor.tail.fetch_add(contiguous as u64, std::sync::atomic::Ordering::Release);
+                ring_guard
+                    .descriptor
+                    .tail
+                    .fetch_add(contiguous as u64, std::sync::atomic::Ordering::Release);
 
                 // If there was a wrap-around portion
                 let remaining = available - contiguous;
@@ -184,7 +201,10 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
                         std::slice::from_raw_parts(ring_guard.descriptor.buffer_ptr, remaining)
                     };
                     header_buf.extend_from_slice(slice2);
-                    ring_guard.descriptor.tail.fetch_add(remaining as u64, std::sync::atomic::Ordering::Release);
+                    ring_guard
+                        .descriptor
+                        .tail
+                        .fetch_add(remaining as u64, std::sync::atomic::Ordering::Release);
                 }
             }
 
@@ -228,7 +248,12 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
             // Headers already parsed — notify WPE of new data
             if available > 0 {
                 drop(ring_guard);
-                fire_on_data_available(state.listener, state.channel, byte_offset, available as u32);
+                fire_on_data_available(
+                    state.listener,
+                    state.channel,
+                    byte_offset,
+                    available as u32,
+                );
                 byte_offset += available as u64;
             } else if is_closed {
                 drop(ring_guard);
@@ -245,16 +270,17 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
 // ── WPE callback helpers ────────────────────────────────────────────────────
 
 fn fire_on_start_request(listener: *mut c_void, channel: *mut c_void) {
-    if listener.is_null() { return; }
+    if listener.is_null() {
+        return;
+    }
     let vtable = unsafe { &*(*(listener as *const *const NsIStreamListenerVtable)) };
     unsafe { (vtable.on_start_request)(listener, channel) };
 }
 
-fn fire_on_data_available(
-    listener: *mut c_void, channel: *mut c_void,
-    offset: u64, count: u32,
-) {
-    if listener.is_null() { return; }
+fn fire_on_data_available(listener: *mut c_void, channel: *mut c_void, offset: u64, count: u32) {
+    if listener.is_null() {
+        return;
+    }
     let vtable = unsafe { &*(*(listener as *const *const NsIStreamListenerVtable)) };
     // Pass NULL for the input stream here — WPE will call nsIChannel::Open()
     // to get a stream separately. In a full impl we'd pass the ZNetInputStream.
@@ -262,7 +288,9 @@ fn fire_on_data_available(
 }
 
 fn fire_on_stop_request(listener: *mut c_void, channel: *mut c_void, status: u32) {
-    if listener.is_null() { return; }
+    if listener.is_null() {
+        return;
+    }
     let vtable = unsafe { &*(*(listener as *const *const NsIStreamListenerVtable)) };
     unsafe { (vtable.on_stop_request)(listener, channel, status) };
 }
@@ -280,20 +308,26 @@ fn fire_on_stop_request(listener: *mut c_void, channel: *mut c_void, status: u32
 /// `buf_ptr` must point to `buf_len` valid bytes. Out-params must be non-null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Zawra_ParseHttpHead(
-    buf_ptr:          *const u8,
-    buf_len:          usize,
-    out_status:       *mut u16,
-    out_body_offset:  *mut usize,
-    out_content_len:  *mut i64,
+    buf_ptr: *const u8,
+    buf_len: usize,
+    out_status: *mut u16,
+    out_body_offset: *mut usize,
+    out_content_len: *mut i64,
 ) -> i32 {
-    if buf_ptr.is_null() { return -1; }
+    if buf_ptr.is_null() {
+        return -1;
+    }
     let buf = unsafe { std::slice::from_raw_parts(buf_ptr, buf_len) };
     match parse_http_head(buf) {
         None => -1,
         Some(h) => {
             unsafe {
-                if !out_status.is_null()      { *out_status = h.status_code; }
-                if !out_body_offset.is_null() { *out_body_offset = h.header_end; }
+                if !out_status.is_null() {
+                    *out_status = h.status_code;
+                }
+                if !out_body_offset.is_null() {
+                    *out_body_offset = h.header_end;
+                }
                 if !out_content_len.is_null() {
                     *out_content_len = h.content_length.map(|n| n as i64).unwrap_or(-1);
                 }

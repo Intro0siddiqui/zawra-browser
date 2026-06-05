@@ -14,20 +14,20 @@ pub mod wpe_glue;
 pub mod ui;
 
 // Expose the real engines at crate root for direct use by other modules
-pub use lean_net;
 pub use browserdb;
+pub use lean_net;
 
 // JavaScriptCore zero-copy ArrayBuffer bridge (jsc_glue)
 pub mod zero_copy;
-
 
 // Mocking external dependencies that aren't available in this standalone environment
 pub mod javascriptcore {
     pub mod jsapi {
         pub enum JSContext {}
         pub enum JSObject {}
-        pub type JSExternalArrayBufferContentsDeleter = unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void);
-        
+        pub type JSExternalArrayBufferContentsDeleter =
+            unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void);
+
         pub unsafe fn JS_NewExternalArrayBuffer(
             _cx: *mut JSContext,
             _size: usize,
@@ -43,19 +43,31 @@ pub mod javascriptcore {
 pub mod net_traits {
     pub mod request {
         pub struct Request;
-        impl Request { pub fn url(&self) -> String { String::new() } }
+        impl Request {
+            pub fn url(&self) -> String {
+                String::new()
+            }
+        }
     }
     pub mod response {
         pub struct Response;
-        pub enum ResponseBody { Empty }
-        impl Response { pub fn new(_url: String, _body: ResponseBody) -> Self { Response } }
+        pub enum ResponseBody {
+            Empty,
+        }
+        impl Response {
+            pub fn new(_url: String, _body: ResponseBody) -> Self {
+                Response
+            }
+        }
     }
     pub enum NetworkError {}
 }
 
 pub mod storage_traits {
     pub mod indexeddb {
-        pub enum CreateObjectResult { ObjectStoreCreated }
+        pub enum CreateObjectResult {
+            ObjectStoreCreated,
+        }
         pub struct KeyPath;
         pub struct KeyRange {
             pub lower: Option<Key>,
@@ -64,11 +76,13 @@ pub mod storage_traits {
             pub upper_open: bool,
         }
         pub struct Key;
-        impl Key { pub fn encode(&self) -> Vec<u8> { vec![] } }
+        impl Key {
+            pub fn encode(&self) -> Vec<u8> {
+                vec![]
+            }
+        }
     }
 }
-
-
 
 pub mod malloc_size_of {
     pub trait MallocSizeOf {
@@ -83,7 +97,10 @@ pub mod tokio {
             pub struct Sender<T>(std::marker::PhantomData<T>);
             pub struct Receiver<T>(std::marker::PhantomData<T>);
             pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
-                (Sender(std::marker::PhantomData), Receiver(std::marker::PhantomData))
+                (
+                    Sender(std::marker::PhantomData),
+                    Receiver(std::marker::PhantomData),
+                )
             }
         }
     }

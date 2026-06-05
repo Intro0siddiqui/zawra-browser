@@ -91,16 +91,6 @@ extern "C" {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_CreateBootstrapRing(size: usize) -> u64 {
-    unsafe { __hajr_create_anonymous_ring(size) }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_MapBootstrapRing(id: u64) -> *mut std::ffi::c_void {
-    unsafe { __hajr_map_anonymous_ring(id) }
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn Zawra_Hajr_MapBootstrapRingWithSignal(
     id: u64,
     signal_fd: i32,
@@ -134,9 +124,6 @@ pub unsafe extern "C" fn Zawra_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_Ri
     
     let fd1 = unsafe { Zawra_Hajr_GetRingSignalFD(ring1) };
     let fd2 = unsafe { Zawra_Hajr_GetRingSignalFD(ring2) };
-    
-    // We don't need to keep the maps in Rust yet, they'll be re-mapped in WebKit.
-    // (In a real implementation we would cache them or avoid double mapping).
     
     Zawra_Hajr_RingPair {
         ring1_id: id1,

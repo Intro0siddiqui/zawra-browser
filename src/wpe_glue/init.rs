@@ -10,13 +10,13 @@
 //! 3. We create the global `NetEngine` and start its I/O poll thread.
 //! 4. We return NS_OK (0) if both succeed, NS_ERROR_FAILURE otherwise.
 
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
 
-use crate::wpe_glue::storage::Zawra_Storage_Init;
 use crate::wpe_glue::networking::init_net_engine;
+use crate::wpe_glue::storage::Zawra_Storage_Init;
 
-const NS_OK:            i32 = 0;
+const NS_OK: i32 = 0;
 const NS_ERROR_FAILURE: i32 = -2147467259i32;
 
 /// Initialise both the `z-net` engine and `BrowserDB`.
@@ -118,13 +118,13 @@ pub struct Zawra_Hajr_RingPair {
 pub unsafe extern "C" fn Zawra_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_RingPair {
     let id1 = unsafe { __hajr_create_anonymous_ring(size) };
     let id2 = unsafe { __hajr_create_anonymous_ring(size) };
-    
+
     let ring1 = unsafe { __hajr_map_anonymous_ring(id1) };
     let ring2 = unsafe { __hajr_map_anonymous_ring(id2) };
-    
+
     let fd1 = unsafe { Zawra_Hajr_GetRingSignalFD(ring1) };
     let fd2 = unsafe { Zawra_Hajr_GetRingSignalFD(ring2) };
-    
+
     Zawra_Hajr_RingPair {
         ring1_id: id1,
         ring2_id: id2,
@@ -143,11 +143,11 @@ pub unsafe extern "C" fn Zawra_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_Ri
 pub unsafe extern "C" fn Zawra_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void {
     // For now, we use a simple libc malloc or hajr equivalent if available.
     // In a real implementation, this would use Hajr's specific memory management.
-    // Given the context of patching WTF, we'll use libc::malloc as a placeholder 
+    // Given the context of patching WTF, we'll use libc::malloc as a placeholder
     // or call into Hajr's internal allocator if it were exposed.
-    // However, the task implies redirection to Hajr. 
+    // However, the task implies redirection to Hajr.
     // If Hajr isn't fully ready, we'll use libc::malloc.
-    libc::malloc(size)
+    unsafe { libc::malloc(size) }
 }
 
 /// Redirected Memory Protection for WTF.
@@ -157,12 +157,21 @@ pub unsafe extern "C" fn Zawra_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_vo
 /// # Safety
 /// This is an unsafe FFI function called by WebKit.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_MemProtect(ptr: *mut std::ffi::c_void, size: usize, read: bool, write: bool) -> i32 {
+pub unsafe extern "C" fn Zawra_Hajr_MemProtect(
+    ptr: *mut std::ffi::c_void,
+    size: usize,
+    read: bool,
+    write: bool,
+) -> i32 {
     let mut prot = libc::PROT_NONE;
-    if read { prot |= libc::PROT_READ; }
-    if write { prot |= libc::PROT_WRITE; }
-    
-    if libc::mprotect(ptr, size, prot) == 0 {
+    if read {
+        prot |= libc::PROT_READ;
+    }
+    if write {
+        prot |= libc::PROT_WRITE;
+    }
+
+    if unsafe { libc::mprotect(ptr, size, prot) } == 0 {
         0
     } else {
         -1

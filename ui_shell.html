@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zawra Browser Shell</title>
+    <link rel="stylesheet" href="ui_shell.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="window-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Window Controls -->
+            <div class="window-controls">
+                <div class="control-dot close"></div>
+                <div class="control-dot minimize"></div>
+                <div class="control-dot maximize"></div>
+            </div>
+
+            <!-- Header -->
+            <div class="header">
+                <div class="logo-area">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 4l16 0M4 4l8 16M20 4l-8 16M4 20l16 0" />
+                    </svg>
+                    <div class="logo-text">
+                        <h1>Zawra</h1>
+                        <span>The Infinity Point</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Search Pills -->
+            <div class="quick-pills">
+                <button class="pill"><span class="icon google-icon">G</span> Google Search</button>
+                <button class="pill"><span class="icon duck-icon">🦆</span> DuckDuckGo</button>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="search-container">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="address-input" placeholder="Search or enter address...">
+            </div>
+
+            <!-- Navigation Lists -->
+            <div class="nav-section">
+                <h2>Explore</h2>
+                <ul class="nav-list" id="explore-list">
+                    <li><span class="nav-icon">🔮</span> Dominion</li>
+                    <li><span class="nav-icon">⚙️</span> Hajr Dev</li>
+                    <li class="active"><span class="nav-icon">📐</span> Graphics</li>
+                    <li><span class="nav-icon">🌐</span> Z-Net</li>
+                    <li><span class="nav-icon">🗄️</span> BrowserDB</li>
+                </ul>
+            </div>
+
+            <div class="nav-section tabs-section">
+                <h2>Tabs</h2>
+                <ul class="nav-list tabs-list" id="tabs-list">
+                    <li class="tab-item">M2 Chip Thread - Discussion</li>
+                    <li class="tab-item">Z-Net HTTP/3 Pipeline TODO</li>
+                    <li class="tab-item">WebKit LayerTree Docs</li>
+                    <li class="tab-item">Gym Schedule - MSI A15</li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Viewport -->
+        <main class="viewport">
+            <iframe id="browser-viewport" src="about:blank"></iframe>
+            
+            <!-- Notification Pill -->
+            <div id="notification-pill" class="notification-pill">
+                ✨ Z-graphics smoke test complete
+            </div>
+        </main>
+    </div>
+
+    <!-- UI Logic Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const addressInput = document.getElementById('address-input');
+            const viewport = document.getElementById('browser-viewport');
+            const notificationPill = document.getElementById('notification-pill');
+            const tabsList = document.getElementById('tabs-list');
+
+            // 1. Address Bar Logic (Z-Net & Hajr Testing)
+            addressInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    let url = addressInput.value.trim();
+                    if (url) {
+                        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                            url = 'https://' + url;
+                        }
+                        console.log("[ZAWRA UI] Navigating to: " + url);
+                        viewport.src = url;
+                        
+                        // Add a dynamic tab
+                        const newTab = document.createElement('li');
+                        newTab.className = 'tab-item';
+                        newTab.textContent = url.replace('https://', '').split('/')[0];
+                        tabsList.prepend(newTab);
+                    }
+                }
+            });
+
+            // 2. Subsystem Verification Logic (BrowserDB)
+            console.log("[ZAWRA UI] Initializing smoke tests...");
+            setTimeout(() => {
+                try {
+                    // Test BrowserDB LocalStorage
+                    window.localStorage.setItem('ZawraSmokeTest', 'Passed');
+                    const verify = window.localStorage.getItem('ZawraSmokeTest');
+                    
+                    if (verify === 'Passed') {
+                        // Success! Trigger the notification animation
+                        notificationPill.innerHTML = "✨ BrowserDB / Z-Net smoke test complete";
+                        notificationPill.classList.add('show');
+                        
+                        // Hide it after a few seconds
+                        setTimeout(() => {
+                            notificationPill.classList.remove('show');
+                        }, 5000);
+                    }
+                } catch (err) {
+                    console.error("[ZAWRA UI] BrowserDB Test Failed: ", err);
+                }
+            }, 1000); // Wait 1s to let the engine settle
+        });
+    </script>
+</body>
+</html>

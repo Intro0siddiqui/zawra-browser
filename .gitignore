@@ -1,5 +1,8 @@
 /target
 .antigravitycli/
+./webkit/
+.kilo/
+*.png
 webkit_source.tar.xz
 dependencies/WebKit/
 *.log

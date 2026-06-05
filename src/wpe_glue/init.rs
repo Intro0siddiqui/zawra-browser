@@ -127,6 +127,8 @@ pub unsafe extern "C" fn Zawra_Hajr_GetRingSignalFD(ring_ptr: *mut std::ffi::c_v
     if ring_ptr.is_null() {
         return -1;
     }
+    // Struct layout remains stable across Linux/macOS ARM64/x86_64
+    // as all pointers and sizes are 8-byte aligned.
     let ptr = ring_ptr as *const u8;
     let fd_ptr = unsafe { ptr.add(48) as *const i32 };
     unsafe { *fd_ptr }

@@ -86,14 +86,8 @@ pub extern "C" fn Zawra_Hajr_SignalEventLoop() {
 extern "C" {
     fn __hajr_create_anonymous_ring(size: usize) -> u64;
     fn __hajr_map_anonymous_ring(id: u64) -> *mut std::ffi::c_void;
-    fn hajr_ring_map_with_signal(
-        buffer: *mut u8,
-        buffer_len: usize,
-        size: usize,
-        key_value: u32,
-        tier_value: u8,
-        signal_fd: i32,
-    ) -> *mut std::ffi::c_void;
+    fn __hajr_map_anonymous_ring_ex(id: u64, signal_fd: i32) -> *mut std::ffi::c_void;
+    fn hajr_ring_get_signal_fd(ring_ptr: *mut std::ffi::c_void) -> i32;
 }
 
 #[unsafe(no_mangle)]
@@ -111,14 +105,6 @@ pub unsafe extern "C" fn Zawra_Hajr_MapBootstrapRingWithSignal(
     id: u64,
     signal_fd: i32,
 ) -> *mut std::ffi::c_void {
-    // We first need to map the memory using the ID
-    // but __hajr_map_anonymous_ring already creates a C_HardenedRingBuffer.
-    // So we need to do it manually here or update the Zig FFI.
-    
-    // For now, let's just use the Zig function we just added.
-    // Wait, the Zig function expects the buffer pointer.
-    
-    // I'll update __hajr_map_anonymous_ring in Zig to take a signal_fd instead.
     unsafe { __hajr_map_anonymous_ring_ex(id, signal_fd) }
 }
 
@@ -127,11 +113,7 @@ pub unsafe extern "C" fn Zawra_Hajr_GetRingSignalFD(ring_ptr: *mut std::ffi::c_v
     if ring_ptr.is_null() {
         return -1;
     }
-    // Struct layout remains stable across Linux/macOS ARM64/x86_64
-    // as all pointers and sizes are 8-byte aligned.
-    let ptr = ring_ptr as *const u8;
-    let fd_ptr = unsafe { ptr.add(48) as *const i32 };
-    unsafe { *fd_ptr }
+    unsafe { hajr_ring_get_signal_fd(ring_ptr) }
 }
 
 #[repr(C)]

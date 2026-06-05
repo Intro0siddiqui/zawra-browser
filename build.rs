@@ -40,7 +40,11 @@ fn main() {
     // ── Locate libWPE (or WebKitWPE) ──────────────────────────────────────────
     let wpe_found = search_dirs.iter().find_map(|dir| {
         let candidate = dir.join("libWPEBackend-fdo.so");
-        if candidate.exists() { Some(dir.clone()) } else { None }
+        if candidate.exists() {
+            Some(dir.clone())
+        } else {
+            None
+        }
     });
 
     match wpe_found {

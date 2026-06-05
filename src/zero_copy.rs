@@ -1,4 +1,4 @@
-use crate::javascriptcore::jsapi::{JSContext, JSObject, JS_NewExternalArrayBuffer};
+use crate::javascriptcore::jsapi::{JS_NewExternalArrayBuffer, JSContext, JSObject};
 use std::ptr;
 
 /// A Rust function defined elsewhere that manages the lifecycle of BrowserDB pins.
@@ -18,7 +18,7 @@ unsafe extern "C" fn browserdb_buffer_deleter(
         // This ensures that the memory allocated by Rust's Box is freed
         // using Rust's allocator, not libc::free, preventing heap corruption.
         let blob_id_ptr = user_data as *mut u64;
-        
+
         // SAFETY: We previously allocated this as a Box<u64>
         let blob_id = unsafe { *Box::from_raw(blob_id_ptr) };
 

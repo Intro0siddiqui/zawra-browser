@@ -96,21 +96,55 @@ void Connection::readyReadHandler()
             if (res != 1 || msgInfoBytesRead == 0)
                 break;
 
+            if (msgInfoBytesRead != sizeof(msgInfo)) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - PARTIAL MESSAGE INFO READ\n");
+                break;
+            }
+
             uint32_t attachmentCount = 0;
             size_t countRead = 0;
-            hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&attachmentCount), sizeof(attachmentCount), &countRead);
+            res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&attachmentCount), sizeof(attachmentCount), &countRead);
+            if (res != 1 || countRead != sizeof(attachmentCount)) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - FAILED TO READ ATTACHMENT COUNT\n");
+                break;
+            }
 
-            Vector<int> fds;
+            if (attachmentCount > attachmentMaxAmount) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT COUNT %u EXCEEDS MAXIMUM %zu, POSSIBLE RCE ATTEMPT\n", attachmentCount, attachmentMaxAmount);
+                break;
+            }
+
+            Vector<Attachment> fds;
+            bool attachmentFail = false;
             for (uint32_t i = 0; i < attachmentCount; ++i) {
                 int32_t handle;
                 size_t handleRead = 0;
-                hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&handle), sizeof(handle), &handleRead);
-                fds.append(hajr_ipc_recv_fd(m_inboundRing, handle));
+                res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&handle), sizeof(handle), &handleRead);
+                if (res != 1 || handleRead != sizeof(handle)) {
+                    attachmentFail = true;
+                    break;
+                }
+                int fd = hajr_ipc_recv_fd(m_inboundRing, handle);
+                if (fd == -1) {
+                    attachmentFail = true;
+                    break;
+                }
+                fds.append(Attachment(fd, Attachment::Adopt));
+            }
+
+            if (attachmentFail) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED\n");
+                break;
             }
 
             uint8_t* payloadBuffer = static_cast<uint8_t*>(fastMalloc(msgInfo.bodySize()));
             size_t bodyBytesRead = 0;
-            hajr_ring_read(m_inboundRing, payloadBuffer, msgInfo.bodySize(), &bodyBytesRead);
+            res = hajr_ring_read(m_inboundRing, payloadBuffer, msgInfo.bodySize(), &bodyBytesRead);
+            if (res != 1 || bodyBytesRead != msgInfo.bodySize()) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - BODY READ FAILED\n");
+                fastFree(payloadBuffer);
+                break;
+            }
 
             auto decoder = Decoder::create(
                 payloadBuffer,

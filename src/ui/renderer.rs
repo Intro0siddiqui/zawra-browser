@@ -4,15 +4,15 @@
 //! native browser window widget. When WPE is not available (headless mode),
 //! this module provides a stub that logs rendered output.
 
-use std::ffi::{c_char, c_void, CString};
+use std::ffi::{CString, c_char, c_void};
 use std::sync::{Arc, Mutex};
 
 /// The dimensions of the render viewport.
 #[derive(Debug, Clone, Copy)]
 pub struct Viewport {
-    pub x:      i32,
-    pub y:      i32,
-    pub width:  u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
     pub height: u32,
 }
 
@@ -27,10 +27,10 @@ pub enum RendererState {
 
 /// Wraps WPE's embedding widget.
 pub struct RendererEmbed {
-    state:         Mutex<RendererState>,
-    viewport:      Mutex<Viewport>,
+    state: Mutex<RendererState>,
+    viewport: Mutex<Viewport>,
     /// Native WPE web browser handle
-    web_browser:   *mut c_void,
+    web_browser: *mut c_void,
     /// Native window handle used to host WPE's rendering
     parent_window: *mut c_void,
 }
@@ -43,9 +43,9 @@ impl RendererEmbed {
     /// Create a new renderer embed in the given native window.
     pub fn new(parent_window: *mut c_void, viewport: Viewport) -> Arc<Self> {
         Arc::new(RendererEmbed {
-            state:         Mutex::new(RendererState::Uninitialised),
-            viewport:      Mutex::new(viewport),
-            web_browser:   std::ptr::null_mut(),
+            state: Mutex::new(RendererState::Uninitialised),
+            viewport: Mutex::new(viewport),
+            web_browser: std::ptr::null_mut(),
             parent_window,
         })
     }
@@ -91,7 +91,7 @@ impl RendererEmbed {
     /// Resize the viewport (called when the window is resized).
     pub fn resize(&self, width: u32, height: u32) {
         if let Ok(mut vp) = self.viewport.lock() {
-            vp.width  = width;
+            vp.width = width;
             vp.height = height;
         }
         // nsIBaseWindow::SetSize(width, height, true)

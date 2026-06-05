@@ -214,6 +214,14 @@ pub extern "C" fn Zawra_ProcessShutdown() {
     eprintln!("[zawra-launcher] Process shutdown complete");
 }
 
+extern "C" {
+    fn hajr_spawn_compartment(
+        path: *const c_char,
+        argv: *const *const c_char,
+        out_socket: *mut c_int,
+    ) -> c_int;
+}
+
 /// Hajr-powered process launcher.
 /// Replaces GLib's GSubprocessLauncher to break the GLib dependency.
 ///
@@ -228,48 +236,5 @@ pub unsafe extern "C" fn Zawra_Hajr_SpawnProcess(
     if path.is_null() || argv.is_null() {
         return -1;
     }
-
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path).to_str() } {
-        Ok(s) => s,
-        Err(_) => return -1,
-    };
-
-    let mut command = Command::new(path_str);
-
-    // Skip argv[0] because it's the path itself
-    let mut i = 1;
-    loop {
-        let arg_ptr = unsafe { *argv.add(i) };
-        if arg_ptr.is_null() {
-            break;
-        }
-        let arg_str = match unsafe { std::ffi::CStr::from_ptr(arg_ptr).to_str() } {
-            Ok(s) => s,
-            Err(_) => return -1,
-        };
-        command.arg(arg_str);
-        i += 1;
-    }
-
-    // Preserve the socket FD if provided
-    if !out_socket.is_null() {
-        let fd = unsafe { *out_socket };
-        unsafe {
-            command.pre_exec(move || {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                if flags != -1 {
-                    libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
-                }
-                Ok(())
-            });
-        }
-    }
-
-    match command.spawn() {
-        Ok(child) => child.id() as c_int,
-        Err(e) => {
-            eprintln!("[zawra-hajr] Failed to spawn process {}: {}", path_str, e);
-            -1
-        }
-    }
+    unsafe { hajr_spawn_compartment(path, argv, out_socket) }
 }

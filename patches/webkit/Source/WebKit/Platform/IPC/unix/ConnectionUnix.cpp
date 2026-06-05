@@ -30,6 +30,8 @@ extern "C" {
     int32_t hajr_ipc_send_fd(C_HardenedRingBuffer*, int fd);
     int32_t hajr_ipc_recv_fd(C_HardenedRingBuffer*, int handle);
     void hajr_ipc_set_other_pidfd(int pidfd);
+    uint32_t hajr_ipc_message_checksum(const uint8_t* header, size_t header_len, const uint8_t* payload, size_t payload_len);
+    bool hajr_ipc_verify_checksum(const uint8_t* header, size_t header_len, const uint8_t* payload, size_t payload_len, uint32_t expected_checksum);
 }
 
 namespace IPC {
@@ -146,6 +148,31 @@ void Connection::readyReadHandler()
                 break;
             }
 
+            // Read and verify checksum
+            uint32_t receivedChecksum = 0;
+            size_t checksumRead = 0;
+            res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&receivedChecksum), sizeof(receivedChecksum), &checksumRead);
+            if (res != 1 || checksumRead != sizeof(receivedChecksum)) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - CHECKSUM READ FAILED\n");
+                fastFree(payloadBuffer);
+                break;
+            }
+
+            // Verify checksum over messageInfo + attachmentCount + payload
+            // Reconstruct the data for verification (simplified - in production, buffer during read)
+            uint32_t computedChecksum = hajr_ipc_message_checksum(
+                reinterpret_cast<const uint8_t*>(&msgInfo),
+                sizeof(msgInfo),
+                payloadBuffer,
+                msgInfo.bodySize()
+            );
+            
+            if (computedChecksum != receivedChecksum) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - CHECKSUM MISMATCH: expected 0x%08X, got 0x%08X, POSSIBLE CORRUPTION\n", receivedChecksum, computedChecksum);
+                fastFree(payloadBuffer);
+                break;
+            }
+
             auto decoder = Decoder::create(
                 payloadBuffer,
                 msgInfo.bodySize(),
@@ -195,6 +222,11 @@ void Connection::platformOpen()
             m_outboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
         }
         m_isHajrEnabled = (m_inboundRing && m_outboundRing);
+#if USE(GLIB)
+        if (m_isHajrEnabled) {
+            m_socket = adoptGRef(g_socket_new_from_fd(m_inboundRing->signal_fd, nullptr));
+        }
+#endif
     }
 
 #if USE(GLIB)
@@ -220,7 +252,8 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
         auto& attachments = outputMessage.attachments();
         uint32_t attachmentCount = attachments.size();
         
-        size_t total_size = sizeof(messageInfo) + sizeof(attachmentCount) + (attachmentCount * sizeof(int32_t)) + outputMessage.bodySize();
+        // Size: messageInfo + attachmentCount + handles + body + checksum
+        size_t total_size = sizeof(messageInfo) + sizeof(attachmentCount) + (attachmentCount * sizeof(int32_t)) + outputMessage.bodySize() + sizeof(uint32_t);
         Vector<uint8_t> payload(total_size);
         uint8_t* ptr = payload.data();
 
@@ -238,12 +271,17 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
 
         memcpy(ptr, outputMessage.body(), outputMessage.bodySize());
 
+        // Calculate checksum over msgInfo + body (core message integrity)
+        uint32_t checksum = hajr_ipc_message_checksum(
+            reinterpret_cast<const uint8_t*>(&messageInfo),
+            sizeof(messageInfo),
+            outputMessage.body(),
+            outputMessage.bodySize()
+        );
+        memcpy(ptr + outputMessage.bodySize(), &checksum, sizeof(checksum));
+
         if (hajr_ring_write(m_outboundRing, payload.data(), payload.size()) == 1) {
-            m_pendingRingMessages++;
-            if (m_pendingRingMessages >= m_ringBatchSize) {
-                hajr_ring_signal(m_outboundRing);
-                m_pendingRingMessages = 0;
-            }
+            hajr_ring_signal(m_outboundRing);
             return true;
         }
     }

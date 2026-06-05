@@ -109,7 +109,12 @@ void Connection::readyReadHandler()
                 break;
             }
 
-            Vector<int> fds;
+            if (attachmentCount > attachmentMaxAmount) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT COUNT %u EXCEEDS MAXIMUM %zu, POSSIBLE RCE ATTEMPT\n", attachmentCount, attachmentMaxAmount);
+                break;
+            }
+
+            Vector<Attachment> fds;
             bool attachmentFail = false;
             for (uint32_t i = 0; i < attachmentCount; ++i) {
                 int32_t handle;
@@ -124,12 +129,11 @@ void Connection::readyReadHandler()
                     attachmentFail = true;
                     break;
                 }
-                fds.append(fd);
+                fds.append(Attachment(fd, Attachment::Adopt));
             }
 
             if (attachmentFail) {
                 fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED\n");
-                for (int fd : fds) close(fd);
                 break;
             }
 
@@ -139,7 +143,6 @@ void Connection::readyReadHandler()
             if (res != 1 || bodyBytesRead != msgInfo.bodySize()) {
                 fprintf(stderr, "[ZAWRA] readyReadHandler - BODY READ FAILED\n");
                 fastFree(payloadBuffer);
-                for (int fd : fds) close(fd);
                 break;
             }
 

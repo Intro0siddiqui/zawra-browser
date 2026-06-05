@@ -44,7 +44,7 @@ NetworkProcess/glib/WebKitCachedResolver.cpp
 NetworkProcess/glib/WebKitOverridingResolver.cpp
 
 NetworkProcess/soup/NetworkDataTaskSoup.cpp
-NetworkProcess/znet/NetworkDataTaskZNet.cpp
+
 NetworkProcess/soup/NetworkProcessMainSoup.cpp
 NetworkProcess/soup/NetworkProcessSoup.cpp
 NetworkProcess/soup/NetworkSessionSoup.cpp

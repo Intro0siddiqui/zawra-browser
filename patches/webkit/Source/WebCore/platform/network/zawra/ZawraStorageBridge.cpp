@@ -6,10 +6,10 @@
 #include <wtf/ASCIICType.h>
 
 extern "C" {
-    int32_t Zawra_LocalStorage_Put(uint64_t hi, uint64_t lo, const char* key, const char* value);
-    int32_t Zawra_LocalStorage_Get(uint64_t hi, uint64_t lo, const char* key, char* out_buf, size_t out_buf_len);
+    int32_t Zawra_LocalStorage_SetItem(uint64_t hi, uint64_t lo, const char* key, const char* value);
+    int32_t Zawra_LocalStorage_GetItem(uint64_t hi, uint64_t lo, const char* key, char* out_buf, size_t out_buf_len);
     int32_t Zawra_LocalStorage_GetAll(char* out_buf, size_t out_buf_len);
-    int32_t Zawra_LocalStorage_Delete(uint64_t hi, uint64_t lo, const char* key);
+    int32_t Zawra_LocalStorage_RemoveItem(uint64_t hi, uint64_t lo, const char* key);
     int32_t Zawra_LocalStorage_Clear(uint64_t hi, uint64_t lo);
 
     void Zawra_Hash_String(const char* input, uint64_t* out_hi, uint64_t* out_lo);
@@ -108,7 +108,7 @@ void ZawraStorageBridge::storeDataWithTTL(const String& key, const String& value
 {
     uint64_t hi, lo;
     hashString(key, hi, lo);
-    Zawra_LocalStorage_Put(hi, lo, key.utf8().data(), value.utf8().data());
+    Zawra_LocalStorage_SetItem(hi, lo, key.utf8().data(), value.utf8().data());
 }
 
 String ZawraStorageBridge::getData(const String& key)
@@ -116,7 +116,7 @@ String ZawraStorageBridge::getData(const String& key)
     uint64_t hi, lo;
     hashString(key, hi, lo);
     char buf[4096];
-    if (Zawra_LocalStorage_Get(hi, lo, key.utf8().data(), buf, sizeof(buf)) == 0)
+    if (Zawra_LocalStorage_GetItem(hi, lo, key.utf8().data(), buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
 }
@@ -142,7 +142,7 @@ void ZawraStorageBridge::removeData(const String& key)
 {
     uint64_t hi, lo;
     hashString(key, hi, lo);
-    Zawra_LocalStorage_Delete(hi, lo, key.utf8().data());
+    Zawra_LocalStorage_RemoveItem(hi, lo, key.utf8().data());
 }
 
 void ZawraStorageBridge::clearData()

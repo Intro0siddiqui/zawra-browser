@@ -77,6 +77,7 @@ public:
     double zFar { 0 };
     RefPtr<BitmapTexture> currentSurface;
     const BitmapTextureGL::FilterInfo* filterInfo { nullptr };
+    ZawraGraphicsBridge zawraBridge;
 
 private:
     class SharedGLData : public RefCounted<SharedGLData> {
@@ -181,10 +182,6 @@ TextureMapperGL::TextureMapperGL()
 #if USE(TEXTURE_MAPPER_GL)
     m_texturePool = makeUnique<BitmapTexturePool>(m_contextAttributes);
 #endif
-
-    // Zawra Graphics Hook: Initialize the RHI and create the window surface.
-    // 800x600 is a placeholder; in a real port, we'd get the actual window size.
-    ZawraGraphicsBridge::initialize(nullptr, 800, 600);
 }
 
 ClipStack& TextureMapperGL::clipStack()
@@ -207,7 +204,8 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
 
     // Zawra Graphics Hook: Import FD as target FBO if this is the main surface
     if (!surface) {
-        int fd = ZawraGraphicsBridge::exportCompositorFD();
+        data().zawraBridge.initialize(nullptr, data().viewport[2], data().viewport[3]);
+        int fd = data().zawraBridge.exportCompositorFD();
         if (fd >= 0) {
             // TODO: EGLImage / IOSurface import logic using the DMA-BUF/Mach Port FD.
             // The resulting OpenGL texture will be bound to data().targetFrameBuffer.
@@ -240,8 +238,11 @@ void TextureMapperGL::endPainting()
     else
         glDisable(GL_DEPTH_TEST);
 
+    // Zawra Graphics Hook: Send compositor layer state to Z-Graphics before present
+    data().zawraBridge.renderLayer(this);
+
     // Zawra Graphics Hook: Present the composed frame
-    ZawraGraphicsBridge::presentFrame();
+    data().zawraBridge.presentFrame();
 }
 
 void TextureMapperGL::drawBorder(const Color& color, float width, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix)

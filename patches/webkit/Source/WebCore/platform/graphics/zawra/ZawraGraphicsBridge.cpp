@@ -16,15 +16,22 @@ namespace WebCore {
 
 bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
 {
-    if (!m_surfaceHandle) {
+    static bool s_initialized = false;
+    if (!s_initialized) {
         if (!ZawraGraphics_Initialize()) {
             return false;
         }
+        s_initialized = true;
+    }
+
+    if (m_width != width || m_height != height) {
         void* handle = ZawraGraphics_CreateSurface(windowHandle, width, height);
         if (!handle) {
             return false;
         }
         m_surfaceHandle = handle;
+        m_width = width;
+        m_height = height;
     }
     return true;
 }

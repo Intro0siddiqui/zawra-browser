@@ -25,7 +25,7 @@
 
 #include "config.h"
 #include "PageClientImpl.h"
-#include "../../../../WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h"
+
 
 #include "APIViewClient.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
@@ -61,7 +61,7 @@ struct wpe_view_backend* PageClientImpl::viewBackend()
 
 UnixFileDescriptor PageClientImpl::hostFileDescriptor()
 {
-    return UnixFileDescriptor { WebCore::ZawraGraphicsBridge::exportCompositorFD(), UnixFileDescriptor::Adopt };
+    return UnixFileDescriptor();
 }
 
 std::unique_ptr<DrawingAreaProxy> PageClientImpl::createDrawingAreaProxy()
@@ -260,8 +260,13 @@ Ref<WebContextMenuProxy> PageClientImpl::createContextMenuProxy(WebPageProxy& pa
 }
 #endif
 
-void PageClientImpl::enterAcceleratedCompositingMode(const LayerTreeContext&)
+void PageClientImpl::enterAcceleratedCompositingMode(const LayerTreeContext& context)
 {
+    if (context.surfaceFD) {
+        int fd = context.surfaceFD.value();
+        // TODO: Pass the extracted FD securely to the native window renderer.
+        // E.g., wpe_view_backend_exportable_fdo_... or similar
+    }
 }
 
 void PageClientImpl::exitAcceleratedCompositingMode()

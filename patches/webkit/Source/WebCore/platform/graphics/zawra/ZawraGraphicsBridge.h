@@ -19,6 +19,8 @@ public:
 
 private:
     void* m_surfaceHandle { nullptr };
+    int m_width { 0 };
+    int m_height { 0 };
 };
 
 } // namespace WebCore

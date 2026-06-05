@@ -74,6 +74,7 @@ platform/graphics/wpe/SystemFontDatabaseWPE.cpp
 
 platform/graphics/libwpe/PlatformDisplayLibWPE.cpp
 platform/graphics/zawra/ZawraGraphicsBridge.cpp
+platform/network/zawra/ZawraStorageBridge.cpp
 
 platform/graphics/opentype/OpenTypeVerticalData.cpp
 

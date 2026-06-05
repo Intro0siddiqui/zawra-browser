@@ -467,7 +467,7 @@ pub unsafe extern "C" fn Zawra_Cookie_DeleteForDomain(
 /// # Safety
 /// `key` and `value` must be valid NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Put(
+pub unsafe extern "C" fn Zawra_LocalStorage_SetItem(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -495,7 +495,7 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Put(
 /// # Safety
 /// `key`, `out_buf` must be valid; `out_buf_len` must be its capacity.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Get(
+pub unsafe extern "C" fn Zawra_LocalStorage_GetItem(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -532,7 +532,7 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Get(
     }
 }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Delete(
+pub unsafe extern "C" fn Zawra_LocalStorage_RemoveItem(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -544,6 +544,30 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Delete(
     match db().localstore().remove(origin_hash, &key_str) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_LocalStorage_GetAll(
+    out_buf:        *mut c_char,
+    out_buf_len:    usize,
+) -> i32 {
+    if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
+    match db().localstore().query().execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            let mut combined = String::new();
+            for e in entries {
+                combined.push_str(&format!("{}|{}\n", e.key, e.value));
+            }
+            let bytes = combined.as_bytes();
+            let copy_len = bytes.len().min(out_buf_len - 1);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr() as *const c_char, out_buf, copy_len);
+                *out_buf.add(copy_len) = 0;
+            }
+            NS_OK
+        }
     }
 }
 

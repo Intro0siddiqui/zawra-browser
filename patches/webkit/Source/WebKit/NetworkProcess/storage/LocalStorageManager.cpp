@@ -119,26 +119,22 @@ void LocalStorageManager::clearDataInMemory()
 
 void LocalStorageManager::clearDataOnDisk()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
+    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
         m_localStorageArea->clear();
 }
 
 void LocalStorageManager::close()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
-        downcast<SQLiteStorageArea>(*m_localStorageArea).close();
+    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
+        m_localStorageArea->clear();
 }
 
 void LocalStorageManager::handleLowMemoryWarning()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
-        downcast<SQLiteStorageArea>(*m_localStorageArea).handleLowMemoryWarning();
 }
 
 void LocalStorageManager::syncLocalStorage()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
-        downcast<SQLiteStorageArea>(*m_localStorageArea).commitTransactionIfNecessary();
 }
 
 void LocalStorageManager::connectionClosed(IPC::Connection::UniqueID connection)

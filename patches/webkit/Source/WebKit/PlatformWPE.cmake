@@ -404,9 +404,9 @@ list(APPEND WebKit_LIBRARIES
     ${GLIB_GMODULE_LIBRARIES}
     ${LIBSOUP_LIBRARIES}
     "${CMAKE_SOURCE_DIR}/../../dependencies/hajr/zig-out/lib/libhajr_ffi.so"
-    "${CMAKE_SOURCE_DIR}/../../dependencies/z-net/engine/target/release/libz_net_engine.so"
+    "${CMAKE_SOURCE_DIR}/../../target/release/libz_net_engine.a"
     "${CMAKE_SOURCE_DIR}/../../target/release/libzawra_browser.a"
-    "${CMAKE_SOURCE_DIR}/../../dependencies/Browser-db/bindings/target/release/libbrowserdb.so"
+    "${CMAKE_SOURCE_DIR}/../../target/release/libbrowserdb.so"
 )
 
 if (ENABLE_ACCESSIBILITY)

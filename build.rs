@@ -8,9 +8,11 @@
 //!     the glue layer without a full WPE install.
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(wpe_available)");
+
     // ── Re-run only when relevant files change ──────────────────────────────
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=WPE_PATH");

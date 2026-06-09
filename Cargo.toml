@@ -6,6 +6,15 @@ rust-version = "1.85" # Required for Edition 2024
 description = "Zawra — a next-generation browser powered by WPE, z-net, and BrowserDB"
 license = "MPL-2.0"
 
+[workspace]
+members = [
+    "tools/setup",
+    "dependencies/z-net/engine",
+    "dependencies/Browser-db/bindings",
+    "fuzz",
+]
+resolver = "2"
+
 [dependencies]
 dashmap = "6.0"
 libc    = "0.2"

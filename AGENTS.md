@@ -41,7 +41,13 @@ We do **not** use a Git submodule for the main WebKit source to avoid repository
 - **Setup Command**: 
   ```bash
   # Note: The custom setup tool overlays patches onto the WebKit source
-  ./webkit/scripts/thermal_build_control.sh
+  # THIS MUST BE RUN BEFORE COMPILING IF YOU MODIFIED ANY PATCH FILES!
+  # Run from the project root. The tool is CWD-independent — it anchors
+  # every path via env!("CARGO_MANIFEST_DIR"), so `cd tools/setup` is
+  # unnecessary and (historically) caused a path-resolution bug.
+  cargo run --release -p zawra-setup
+  # or, if the binary is already built:
+  ./target/release/zawra-setup
   ```
 
 ### 3. Git Workflow (PR-Based)
@@ -80,22 +86,71 @@ To maintain a stable `master` branch and ensure all code passes continuous integ
   ```bash
   git submodule update --init --recursive --depth 1
   ```
-- **Step 2: Commit submodule changes** (if any):
+- **Step 2: Compile Rust Subsystems** (Unified Workspace):
   ```bash
-  # BrowserDB, Z-Net, and Hajr are in the dependencies/ directory
-  git -C dependencies/Browser-db add -A && git -C dependencies/Browser-db commit -m "..."
-  git -C dependencies/z-net add -A && git -C dependencies/z-net commit -m "..."
-  git -C dependencies/hajr add -A && git -C dependencies/hajr commit -m "..."
+  # We use a unified Cargo Workspace. You can build everything from the root.
+  # This populates target/release/ with the three artifacts WebKit's link
+  # step needs:
+  #   - libzawra_browser.a   (the FFI bridge)
+  #   - libz_net_engine.a    (Z-Net networking engine)
+  #   - libbrowserdb.so      (BrowserDB storage engine)
+  cargo build --release
   ```
-- **Step 3: Compile Subsystems**:
+- **Step 3: Compile Zig Subsystems**:
   - Hajr: `cd dependencies/hajr && zig build`
-  - Z-Net: `cd dependencies/z-net/engine && cargo build --release`
-  - BrowserDB: `cd dependencies/Browser-db/bindings && cargo build --release`
 - **Step 4: Configure & Build WebKit**:
   ```bash
-  # Use the thermal controller for safe burst-mode compilation
-  ./thermal_build_control.sh
+  # IMPORTANT: If you edited any files in patches/webkit/, you MUST first run:
+  cargo run --release -p zawra-setup
+  # Then, use the thermal controller for safe burst-mode compilation:
+  ./scripts/thermal_build_control.sh
+  # NOTE: A full WebKit build runs for hours. If your shell enforces a
+  # command timeout, detach the script with setsid/nohup so the parent
+  # shell's signal does not kill the build:
+  #   setsid bash scripts/thermal_build_control.sh > /tmp/build.log 2>&1 < /dev/null &
   ```
+
+## Project Intelligence (Knowledge Graph)
+
+Zawra uses a **SQLite Knowledge Graph** and a unified CLI tool named **`zw`** to map the complex relationships between our custom patches and the massive WebKit source.
+
+### Mandatory Tool Usage for Agents
+
+**General Searching Rules:**
+- **ALWAYS** use `rg` (ripgrep) in place of `grep` for searching file contents.
+- **ALWAYS** use `fd` in place of `find` for finding files by name.
+
+For Zawra-specific project intelligence, agents **MUST** use the following `zw` commands instead of broad directory scans:
+
+1.  **`./zw find <term>`**: Locate patches or FFI symbols related to a feature. **DO NOT** use this to search for upstream WebKit C++ APIs (like `WTF::String` methods). `zw` maps integration boundaries, it does not index the massive upstream WebKit source tree.
+2.  **`./zw read <filename>`**: **CRITICAL.** Use this to read file contents. It will automatically detect if a Zawra patch exists for a WebKit file and output **both** the patch and the original side-by-side with clear headers.
+3.  **`./zw patches`**: List all files currently modified by Zawra.
+4.  **`./zw audit`**: **NEW.** Run a structural audit of the build graph. It detects **double-listed source files** (linker errors), orphaned patches (files not in the build), and Zig module collisions.
+5.  **`./zw update`**: Manually refresh the Knowledge Graph. (Note: Most queries now perform a **Smart Auto-Update**).
+
+### Smart Auto-Update
+The `zw` tool is now autonomous. It monitors the project's **Git HEAD** and **file modification times (mtime)**. 
+- If you pull a new commit or edit a source file, the next `./zw` command will automatically re-index the project in the background before showing results.
+- This ensures the Knowledge Graph is never stale, even if you forget to run `update`.
+
+### FFI & Subsystems
+We maintain language bridges between Rust, Zig, and C++. To find implementation details, query the `ffi_symbols` table via `./zw ffi`.
+
+## Advanced Tooling (LLVM-Based)
+Zawra leverages the LLVM toolchain for performance and accuracy in a multi-language environment.
+
+### 1. LLDB Debugging
+**Mandatory**: Use `lldb` for debugging instead of GDB.
+- **Why**: LLDB handles massive WebKit binaries significantly faster and is the native debugger for both Rust and Zig.
+- **Cross-Language**: LLDB provides superior support for inspecting objects across Rust/C++ and Zig/C++ boundaries.
+
+### 2. Compilation Database (`compile_commands.json`)
+We use a JSON compilation database to provide the LSP (`clangd`) and AI agents with precise compiler flags and include paths.
+- **Generation**: Always configure CMake with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
+- **Usage**: The root `.clangd` file is configured to skip background indexing for RAM safety, but it uses the compilation database to provide 100% accurate diagnostics for the specific files you open.
+
+### 3. clang-scan-deps
+Used for high-speed dependency analysis. In a 5GB codebase, traditional scanning is too slow. CMake and Ninja use `clang-scan-deps` automatically to manage the build graph.
 
 ## ⚠️ CRITICAL: Build Cache & Artifact Management ⚠️
 

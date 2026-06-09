@@ -9,10 +9,25 @@ extern "C" {
     void* ZawraGraphics_CreateSurface(void* window, unsigned int width, unsigned int height);
     void ZawraGraphics_SwapBuffers(void* handle);
     int ZawraGraphics_ExportSurfaceFD(void* handle);
+    void ZawraGraphics_DestroySurface(void* handle);
     bool ZawraGraphics_CompositorRenderLayer(void* state);
 }
 
 namespace WebCore {
+
+ZawraGraphicsBridge::~ZawraGraphicsBridge()
+{
+    if (m_surfaceHandle) {
+        ZawraGraphics_DestroySurface(m_surfaceHandle);
+        m_surfaceHandle = nullptr;
+    }
+}
+
+ZawraGraphicsBridge& ZawraGraphicsBridge::singleton()
+{
+    static NeverDestroyed<ZawraGraphicsBridge> bridge;
+    return bridge.get();
+}
 
 bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
 {

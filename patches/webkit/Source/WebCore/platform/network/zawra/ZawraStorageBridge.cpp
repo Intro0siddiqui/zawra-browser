@@ -20,6 +20,7 @@ extern "C" {
     int32_t Zawra_Bookmark_Delete(uint64_t hi, uint64_t lo);
     int32_t Zawra_Bookmark_GetAll(char* out_buf, size_t out_buf_len);
     int32_t Zawra_Cookie_DeleteForDomain(uint64_t hi, uint64_t lo);
+    int32_t Zawra_History_Increment(uint64_t hi, uint64_t lo, int64_t delta);
 }
 
 namespace WebCore {
@@ -43,7 +44,45 @@ void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
     String name = kv[0].trim(isASCIIWhitespace);
     String value = kv[1].trim(isASCIIWhitespace);
 
-    Zawra_Cookie_Put(hi, lo, name.utf8().data(), value.utf8().data(), 0, 0);
+    uint64_t expiry = 0;
+    uint8_t flags = 0;
+
+    for (size_t i = 1; i < parts.size(); ++i) {
+        auto attr = parts[i].trim(isASCIIWhitespace);
+        if (attr.isEmpty()) continue;
+
+        auto lowerAttr = attr.convertToASCIILowercase();
+        if (lowerAttr.startsWith("expires="_s)) {
+            auto val = attr.substring(8);
+            bool ok = false;
+            double ts = val.toDouble(&ok);
+            if (ok && ts > 0)
+                expiry = static_cast<uint64_t>(ts);
+        } else if (lowerAttr.startsWith("max-age="_s)) {
+            auto val = attr.substring(8);
+            bool ok = false;
+            double maxAge = val.toDouble(&ok);
+            if (ok && maxAge > 0)
+                expiry = static_cast<uint64_t>(WallTime::now().secondsSinceEpoch().value()) + static_cast<uint64_t>(maxAge);
+        } else if (lowerAttr.startsWith("path="_s)) {
+            // Path is informational for domain matching; not stored separately yet
+        } else if (lowerAttr.startsWith("domain="_s)) {
+            // Domain override handled elsewhere if needed
+        } else if (lowerAttr == "secure"_s) {
+            flags |= 0x01;
+        } else if (lowerAttr == "httponly"_s) {
+            flags |= 0x02;
+        } else if (lowerAttr.startsWith("samesite="_s)) {
+            auto val = attr.substring(9).convertToASCIILowercase();
+            if (val == "strict"_s)
+                flags |= 0x04;
+            else if (val == "lax"_s)
+                flags |= 0x08;
+            // "none" -> no flag
+        }
+    }
+
+    Zawra_Cookie_Put(hi, lo, name.utf8().data(), value.utf8().data(), expiry, flags);
 }
 
 String ZawraStorageBridge::getCookies(const URL& url)
@@ -101,7 +140,7 @@ void ZawraStorageBridge::incrementHistoryVisit(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
-    // Add Rust FFI call if needed
+    Zawra_History_Increment(hi, lo, 1);
 }
 
 void ZawraStorageBridge::storeDataWithTTL(const String& key, const String& value, uint64_t ttl)

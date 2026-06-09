@@ -29,6 +29,7 @@ GCGLContext GLContext::platformContext() const { return nullptr; }
 const char* GLContext::lastErrorString() { return "Zawra Graphics: Legacy EGL disabled"; }
 
 std::unique_ptr<GLContext> GLContext::create(GLNativeWindowType, PlatformDisplay&) { return nullptr; }
+void GLContext::swapBuffers() {}
 
 #endif // USE(EGL)
 

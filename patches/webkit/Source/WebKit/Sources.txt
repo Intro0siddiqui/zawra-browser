@@ -171,7 +171,6 @@ NetworkProcess/storage/IDBStorageConnectionToClient.cpp
 NetworkProcess/storage/IDBStorageManager.cpp
 NetworkProcess/storage/IDBStorageRegistry.cpp
 NetworkProcess/storage/LocalStorageManager.cpp
-NetworkProcess/storage/BrowserDBStorageArea.cpp
 NetworkProcess/storage/MemoryStorageArea.cpp
 NetworkProcess/storage/NetworkQuotaManager.cpp
 NetworkProcess/storage/NetworkStorageManager.cpp

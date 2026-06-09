@@ -28,7 +28,6 @@
 
 #include "MemoryStorageArea.h"
 #include "SQLiteStorageArea.h"
-#include "BrowserDBStorageArea.h"
 #include "StorageAreaRegistry.h"
 #include <WebCore/SecurityOriginData.h>
 #include <wtf/FileSystem.h>
@@ -180,7 +179,7 @@ StorageAreaIdentifier LocalStorageManager::connectToLocalStorageArea(IPC::Connec
 {
     if (!m_localStorageArea) {
         if (!m_path.isEmpty())
-            m_localStorageArea = BrowserDBStorageArea::create(localStorageQuotaInBytes, origin, m_path, WTFMove(workQueue));
+            m_localStorageArea = makeUnique<SQLiteStorageArea>(localStorageQuotaInBytes, origin, localStorageFilePath(m_path, origin), WTFMove(workQueue));
         else
             m_localStorageArea = makeUnique<MemoryStorageArea>(origin, StorageAreaBase::StorageType::Local);
 

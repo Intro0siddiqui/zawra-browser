@@ -83,7 +83,7 @@ pub extern "C" fn Zawra_Hajr_SignalEventLoop() {
     eprintln!("Hajr Wakeup Signal Sent");
 }
 
-extern "C" {
+unsafe extern "C" {
     fn __hajr_create_anonymous_ring(size: usize) -> u64;
     fn __hajr_map_anonymous_ring(id: u64) -> *mut std::ffi::c_void;
     fn __hajr_map_anonymous_ring_ex(id: u64, signal_fd: i32) -> *mut std::ffi::c_void;

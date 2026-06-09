@@ -3,6 +3,7 @@
 
 #include "Connection.h"
 #include "IPCUtilities.h"
+#include "ProcessExecutablePath.h"
 #include "ProcessProviderLibWPE.h"
 #include <glib.h>
 #include <wtf/FileSystem.h>
@@ -108,8 +109,34 @@ void ProcessLauncher::launchProcess()
     int serverSocket = ringPair.signal2_fd;
 
     RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket] {
-        didFinishLaunchingProcess(m_processID, serverSocket);
+        didFinishLaunchingProcess(m_processID, IPC::Connection::Identifier(serverSocket));
     });
+}
+
+void ProcessLauncher::terminateProcess()
+{
+    if (m_isLaunching) {
+        invalidate();
+        return;
+    }
+
+    if (!m_processID)
+        return;
+
+#if USE(LIBWPE) && !ENABLE(BUBBLEWRAP_SANDBOX)
+    if (ProcessProviderLibWPE::singleton().isEnabled())
+        ProcessProviderLibWPE::singleton().kill(m_processID);
+    else
+        kill(m_processID, SIGKILL);
+#else
+    kill(m_processID, SIGKILL);
+#endif
+
+    m_processID = 0;
+}
+
+void ProcessLauncher::platformInvalidate()
+{
 }
 
 } // namespace WebKit

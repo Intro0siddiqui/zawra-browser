@@ -28,6 +28,7 @@ pub mod javascriptcore {
         pub type JSExternalArrayBufferContentsDeleter =
             unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void);
 
+        #[allow(non_snake_case)]
         pub unsafe fn JS_NewExternalArrayBuffer(
             _cx: *mut JSContext,
             _size: usize,

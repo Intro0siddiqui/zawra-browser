@@ -22,6 +22,7 @@
 #include "config.h"
 #include "TextureMapperGL.h"
 #include "../zawra/ZawraGraphicsBridge.h"
+#include <unistd.h>
 
 #if USE(TEXTURE_MAPPER_GL)
 
@@ -184,7 +185,7 @@ TextureMapperGL::TextureMapperGL()
 
     // Zawra Graphics Hook: Initialize the RHI and create the window surface.
     // 800x600 is a placeholder; in a real port, we'd get the actual window size.
-    ZawraGraphicsBridge::initialize(nullptr, 800, 600);
+    ZawraGraphicsBridge::singleton().initialize(nullptr, 800, 600);
 }
 
 ClipStack& TextureMapperGL::clipStack()
@@ -207,11 +208,12 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
 
     // Zawra Graphics Hook: Import FD as target FBO if this is the main surface
     if (!surface) {
-        int fd = ZawraGraphicsBridge::exportCompositorFD();
+        int fd = ZawraGraphicsBridge::singleton().exportCompositorFD();
         if (fd >= 0) {
             // TODO: EGLImage / IOSurface import logic using the DMA-BUF/Mach Port FD.
             // The resulting OpenGL texture will be bound to data().targetFrameBuffer.
             // eglBindTexImage / glFramebufferTexture2D
+            close(fd);
         }
     }
 
@@ -241,7 +243,7 @@ void TextureMapperGL::endPainting()
         glDisable(GL_DEPTH_TEST);
 
     // Zawra Graphics Hook: Present the composed frame
-    ZawraGraphicsBridge::presentFrame();
+    ZawraGraphicsBridge::singleton().presentFrame();
 }
 
 void TextureMapperGL::drawBorder(const Color& color, float width, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix)

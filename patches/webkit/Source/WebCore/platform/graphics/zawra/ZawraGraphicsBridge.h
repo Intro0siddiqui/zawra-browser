@@ -2,6 +2,7 @@
 
 #if OS(LINUX) || OS(MAC_OS_X) || OS(WINDOWS)
 
+#include <wtf/NeverDestroyed.h>
 #include <wtf/Noncopyable.h>
 
 namespace WebCore {
@@ -9,8 +10,10 @@ namespace WebCore {
 class ZawraGraphicsBridge {
     WTF_MAKE_NONCOPYABLE(ZawraGraphicsBridge);
 public:
+    static ZawraGraphicsBridge& singleton();
+
     ZawraGraphicsBridge() = default;
-    ~ZawraGraphicsBridge() = default;
+    ~ZawraGraphicsBridge();
 
     bool initialize(void* windowHandle, int width, int height);
     int exportCompositorFD();

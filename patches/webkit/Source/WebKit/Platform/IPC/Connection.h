@@ -616,16 +616,12 @@ private:
     std::unique_ptr<UnixMessage> m_pendingOutputMessage;
 #if USE(GLIB)
     GRefPtr<GSocket> m_socket;
+    GRefPtr<GSocket> m_hajrSignalSocket;
     GSocketMonitor m_readSocketMonitor;
     GSocketMonitor m_writeSocketMonitor;
     C_HardenedRingBuffer* m_inboundRing { nullptr };
     C_HardenedRingBuffer* m_outboundRing { nullptr };
-    void* m_inboundMem { nullptr };
-    void* m_outboundMem { nullptr };
     bool m_isHajrEnabled { false };
-    uint32_t m_pendingRingMessages { 0 };
-    const uint32_t m_ringBatchSize { 16 };
-    C_HardenedRingBuffer* m_hajrRings { nullptr };
 #endif
 #if PLATFORM(PLAYSTATION)
     RefPtr<WTF::Thread> m_socketMonitor;

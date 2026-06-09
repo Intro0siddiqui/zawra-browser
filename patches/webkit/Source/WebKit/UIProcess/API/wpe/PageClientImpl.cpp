@@ -52,7 +52,11 @@ PageClientImpl::PageClientImpl(WKWPE::View& view)
 {
 }
 
-PageClientImpl::~PageClientImpl() = default;
+PageClientImpl::~PageClientImpl()
+{
+    fprintf(stderr, "[ZAWRA-DEBUG] PageClientImpl destructor called (this=%p, m_view=%p)\n", this, &m_view);
+    WTFReportBacktrace();
+}
 
 struct wpe_view_backend* PageClientImpl::viewBackend()
 {
@@ -61,7 +65,7 @@ struct wpe_view_backend* PageClientImpl::viewBackend()
 
 UnixFileDescriptor PageClientImpl::hostFileDescriptor()
 {
-    return UnixFileDescriptor { WebCore::ZawraGraphicsBridge::exportCompositorFD(), UnixFileDescriptor::Adopt };
+    return UnixFileDescriptor { WebCore::ZawraGraphicsBridge::singleton().exportCompositorFD(), UnixFileDescriptor::Adopt };
 }
 
 std::unique_ptr<DrawingAreaProxy> PageClientImpl::createDrawingAreaProxy()

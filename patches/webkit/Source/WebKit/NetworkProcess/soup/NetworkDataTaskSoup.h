@@ -185,8 +185,10 @@ private:
     State m_state { State::Suspended };
     WebCore::ContentSniffingPolicy m_shouldContentSniff;
     PreconnectOnly m_shouldPreconnectOnly { PreconnectOnly::No };
+    GRefPtr<SoupMessage> m_soupMessage;
     GRefPtr<GFile> m_file;
     GRefPtr<GInputStream> m_inputStream;
+    GRefPtr<SoupMultipartInputStream> m_multipartInputStream;
     GRefPtr<GCancellable> m_cancellable;
     GRefPtr<GAsyncResult> m_pendingResult;
     WebCore::ProtectionSpace m_protectionSpaceForPersistentStorage;

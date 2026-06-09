@@ -113,7 +113,11 @@ pub unsafe extern "C" fn Zawra_Cache_Put(
     let etag_str = if etag.is_null() { String::new() } else {
         unsafe { CStr::from_ptr(etag).to_string_lossy().into_owned() }
     };
-    let body = unsafe { std::slice::from_raw_parts(body_ptr, body_len).to_vec() };
+    let body = if body_ptr.is_null() || body_len == 0 {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(body_ptr, body_len).to_vec() }
+    };
 
     let entry = CacheEntry {
         url_hash,
@@ -148,12 +152,22 @@ pub unsafe extern "C" fn Zawra_Cache_Get(
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(entry)) => {
-            let mut body = entry.body.into_boxed_slice();
+            // Re-allocate into a Box<[u8]> whose capacity equals its length.
+            // We cannot simply `entry.body.into_boxed_slice()` because that
+            // preserves the original Vec's capacity, but the consumer
+            // (`Zawra_Free_Buffer` / `Zawra_JS_CreateCacheBuffer`) will
+            // deallocate using a length-sized `Layout`, which would not
+            // match a cap-sized original allocation — undefined behavior.
+            // The copy is cheap relative to the cost of an allocator abort
+            // and keeps the FFI's allocation type consistent end-to-end.
+            let len = entry.body.len();
+            let mut boxed: Box<[u8]> = vec![0u8; len].into_boxed_slice();
+            boxed.copy_from_slice(&entry.body);
             unsafe {
-                *out_len = body.len();
-                *out_ptr = body.as_mut_ptr();
+                *out_len = len;
+                *out_ptr = boxed.as_mut_ptr();
             }
-            std::mem::forget(body);
+            std::mem::forget(boxed);
             NS_OK
         }
     }
@@ -234,9 +248,13 @@ pub unsafe extern "C" fn Zawra_Storage_GetBlob(
                         Some(d) => d,
                         None => return NS_ERROR_FAILURE,
                     };
-                    let mut boxed = decoded.into_boxed_slice();
+                    // See Zawra_Cache_Get: re-allocate with cap == len so the
+                    // consumer's deallocation Layout is correct.
+                    let len = decoded.len();
+                    let mut boxed: Box<[u8]> = vec![0u8; len].into_boxed_slice();
+                    boxed.copy_from_slice(&decoded);
                     unsafe {
-                        *out_len = boxed.len();
+                        *out_len = len;
                         *out_ptr = boxed.as_mut_ptr();
                     }
                     std::mem::forget(boxed);
@@ -560,6 +578,49 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Clear(
     }
 }
 
+/// Read every localStorage entry across all origins into a flat
+/// `key|value\n` formatted NUL-terminated buffer. The C++ bridge
+/// (`ZawraStorageBridge::getAllData`) splits this buffer on `\n` and `|`
+/// to populate a `HashMap<String, String>`. We respect `out_buf_len - 1`
+/// as the hard byte cap and stop appending once the next entry would
+/// overflow it.
+///
+/// # Safety
+/// `out_buf` must be valid for `out_buf_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_LocalStorage_GetAll(
+    out_buf:     *mut c_char,
+    out_buf_len: usize,
+) -> i32 {
+    if out_buf.is_null() || out_buf_len == 0 {
+        return NS_ERROR_INVALID_ARG;
+    }
+
+    let entries = match db().localstore().query().execute() {
+        Ok(entries) => entries,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    let cap = out_buf_len - 1;
+    let mut written = 0usize;
+    let dst = out_buf as *mut u8;
+
+    for entry in &entries {
+        let line = format!("{}|{}\n", entry.key, entry.value);
+        let bytes = line.as_bytes();
+        if written + bytes.len() > cap {
+            break;
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst.add(written), bytes.len());
+        }
+        written += bytes.len();
+    }
+
+    unsafe { *out_buf.add(written) = 0; }
+    NS_OK
+}
+
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Navigation History
@@ -592,6 +653,27 @@ pub unsafe extern "C" fn Zawra_History_Put(
         visit_count: 1,
     };
     match db().history().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// History visit increment
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Increment the visit count for an existing history entry.
+///
+/// # Safety
+/// Caller must ensure hi/lo correspond to a valid hash pair.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_History_Increment(
+    url_hash_hi: u64,
+    url_hash_lo: u64,
+    delta:       i64,
+) -> i32 {
+    let url_hash = ((url_hash_hi as u128) << 64) | (url_hash_lo as u128);
+    match db().history().increment(url_hash, delta) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -667,12 +749,26 @@ pub unsafe extern "C" fn Zawra_Hash_String(
 /// Free a buffer previously returned by `Zawra_Cache_Get` or
 /// `Zawra_Storage_GetBlob`.
 ///
+/// The producers (see those functions) hand ownership of a `Box<[u8]>`
+/// to C++; this function must therefore reconstruct the same kind of
+/// allocation on the way back. Reconstructing as a `Vec<u8>` is undefined
+/// behavior because `Vec::from_raw_parts(ptr, len, len)` records a capacity
+/// of `len` while the underlying allocation was made by
+/// `Vec::into_boxed_slice()`, which preserves the original `Vec`'s capacity
+/// (which may exceed `len`). The allocator's `Layout` for dealloc would not
+/// match the original allocation.
+///
 /// # Safety
 /// `ptr` and `len` must match a previously returned buffer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Zawra_Free_Buffer(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
-        unsafe { let _ = Vec::from_raw_parts(ptr, len, len); }
+        unsafe {
+            // Reconstruct the Box<[u8]> that the producer leaked with
+            // `mem::forget(Box<[u8]>)`. Layout is preserved exactly.
+            let slice = std::ptr::slice_from_raw_parts_mut(ptr, len);
+            let _ = Box::from_raw(slice);
+        }
     }
 }
 

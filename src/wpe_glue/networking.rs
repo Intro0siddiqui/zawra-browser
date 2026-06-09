@@ -21,7 +21,7 @@ use std::thread;
 use lean_net::{
     BodyRingDescriptor, ConnectionHandle, NetEngineHandle, NetError, net_body_ring_register,
     net_body_ring_unregister, net_close, net_conn_bind_body_ring, net_connect, net_engine_create,
-    net_engine_destroy, net_poll, net_read, net_write,
+    net_poll, net_write,
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -58,7 +58,7 @@ pub unsafe fn init_net_engine() -> bool {
         return true;
     }
 
-    let handle = unsafe { net_engine_create() };
+    let handle = net_engine_create();
     if handle.is_null() {
         return false;
     }
@@ -74,7 +74,7 @@ pub unsafe fn init_net_engine() -> bool {
             loop {
                 if let Some(wrapper) = GLOBAL_NET_ENGINE.get() {
                     // Block up to 10 ms per cycle → CPU-friendly event loop
-                    unsafe { net_poll(wrapper.0, 10) };
+                    net_poll(wrapper.0, 10);
                 } else {
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
@@ -132,7 +132,7 @@ impl OwnedBodyRing {
         let id = alloc_ring_id();
         let desc_ptr = &*descriptor as *const BodyRingDescriptor as *mut BodyRingDescriptor;
 
-        let ret = unsafe { net_body_ring_register(global_engine(), id, desc_ptr) };
+        let ret = net_body_ring_register(global_engine(), id, desc_ptr);
         if ret != 0 {
             return None;
         }
@@ -147,8 +147,8 @@ impl OwnedBodyRing {
 
 impl Drop for OwnedBodyRing {
     fn drop(&mut self) {
-        unsafe { net_body_ring_unregister(global_engine(), self.id) };
         self.descriptor.is_closed.store(true, Ordering::Release);
+        net_body_ring_unregister(global_engine(), self.id);
     }
 }
 
@@ -408,14 +408,14 @@ impl ZNetChannel {
 
         let engine = global_engine();
         let host_c = CString::new(host).ok()?;
-        let conn = unsafe { net_connect(engine, host_c.as_ptr(), port) };
+        let conn = net_connect(engine, host_c.as_ptr(), port);
         if conn.is_null() {
             return None;
         }
 
         {
             let ring_guard = ring.lock().ok()?;
-            unsafe { net_conn_bind_body_ring(engine, conn, ring_guard.id) };
+            net_conn_bind_body_ring(engine, conn, ring_guard.id);
         }
 
         let channel = Box::new(ZNetChannel {
@@ -457,15 +457,13 @@ impl ZNetChannel {
         );
         let bytes = request.as_bytes();
         let mut written = 0usize;
-        let ret = unsafe {
-            net_write(
-                global_engine(),
-                self.conn_handle,
-                bytes.as_ptr(),
-                bytes.len(),
-                &mut written,
-            )
-        };
+        let ret = net_write(
+            global_engine(),
+            self.conn_handle,
+            bytes.as_ptr(),
+            bytes.len(),
+            &mut written,
+        );
         ret == NetError::None as i32
     }
 }
@@ -517,9 +515,7 @@ unsafe extern "C" fn chan_get_status(this: *mut c_void, status: *mut u32) -> u32
 unsafe extern "C" fn chan_cancel(this: *mut c_void, status: u32) -> u32 {
     let c = unsafe { ZNetChannel::from_ptr(this) };
     c.status.store(status as i32, Ordering::SeqCst);
-    unsafe {
-        net_close(global_engine(), c.conn_handle);
-    }
+    net_close(global_engine(), c.conn_handle);
     ns_result::NS_OK
 }
 unsafe extern "C" fn chan_nop(_this: *mut c_void) -> u32 {

@@ -71,10 +71,10 @@ platform/graphics/angle/PlatformDisplayANGLE.cpp @no-unify
 platform/graphics/wpe/SystemFontDatabaseWPE.cpp
 
 
-
 platform/graphics/libwpe/PlatformDisplayLibWPE.cpp
 platform/graphics/zawra/ZawraGraphicsBridge.cpp
 platform/graphics/zawra/ZawraLegacyStubs.cpp
+platform/network/zawra/ZawraStorageBridge.cpp
 
 platform/graphics/opentype/OpenTypeVerticalData.cpp
 

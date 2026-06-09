@@ -5,6 +5,7 @@
 #include "Encoder.h"
 #include "IPCUtilities.h"
 #include "UnixMessage.h"
+#include "SharedMemory.h"
 #include <errno.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -15,8 +16,25 @@
 #include <wtf/SafeStrerror.h>
 
 #if USE(GLIB)
+#include <gio/gio.h>
 #include <glib.h>
 #endif
+
+#if OS(DARWIN)
+#define MSG_NOSIGNAL 0
+#endif
+
+// Although it's available on Darwin, SOCK_SEQPACKET seems to work differently
+// than in traditional Unix so fallback to STREAM on that platform.
+#if defined(SOCK_SEQPACKET) && !OS(DARWIN)
+#define SOCKET_TYPE SOCK_SEQPACKET
+#else
+#if USE(GLIB)
+#define SOCKET_TYPE SOCK_STREAM
+#else
+#define SOCKET_TYPE SOCK_DGRAM
+#endif
+#endif // SOCK_SEQPACKET
 
 // Hajr FFI Declarations
 extern "C" {
@@ -27,6 +45,7 @@ extern "C" {
     int32_t hajr_ring_read(C_HardenedRingBuffer*, uint8_t* buf, size_t length, size_t* bytes_read);
     int32_t hajr_ring_signal(C_HardenedRingBuffer*);
     int32_t hajr_ring_wait(C_HardenedRingBuffer*);
+    int32_t hajr_ring_get_signal_fd(C_HardenedRingBuffer*);
     int32_t hajr_ipc_send_fd(C_HardenedRingBuffer*, int fd);
     int32_t hajr_ipc_recv_fd(C_HardenedRingBuffer*, int handle);
     void hajr_ipc_set_other_pidfd(int pidfd);
@@ -60,6 +79,15 @@ void Connection::platformInitialize(Identifier identifier)
     m_fileDescriptors.reserveInitialCapacity(attachmentMaxAmount);
 }
 
+bool Connection::platformPrepareForOpen()
+{
+    // The default inline implementation in Connection.cpp is gated by
+    // !USE(UNIX_DOMAIN_SOCKETS), so we must provide our own for Unix.
+    // Returning true defers all real work to platformOpen(), which is
+    // where Hajr bootstrap and the socket monitor start.
+    return true;
+}
+
 void Connection::platformInvalidate()
 {
     if (m_inboundRing) {
@@ -67,10 +95,6 @@ void Connection::platformInvalidate()
         m_inboundRing = nullptr;
     }
     if (m_outboundRing) {
-        if (m_pendingRingMessages > 0) {
-            hajr_ring_signal(m_outboundRing);
-            m_pendingRingMessages = 0;
-        }
         hajr_ring_free(m_outboundRing);
         m_outboundRing = nullptr;
     }
@@ -81,8 +105,78 @@ void Connection::platformInvalidate()
     m_readSocketMonitor.stop();
     m_writeSocketMonitor.stop();
 
+#if USE(GLIB)
+    m_hajrSignalSocket = nullptr;
+#endif
+
     m_socketDescriptor = -1;
     m_isConnected = false;
+}
+static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer, Vector<int>& fileDescriptors)
+{
+    struct msghdr message;
+    memset(&message, 0, sizeof(message));
+
+    struct iovec iov[1];
+    memset(&iov, 0, sizeof(iov));
+
+    message.msg_controllen = CMSG_SPACE(sizeof(int) * attachmentMaxAmount);
+    MallocPtr<char> attachmentDescriptorBuffer = MallocPtr<char>::malloc(sizeof(char) * message.msg_controllen);
+    memset(attachmentDescriptorBuffer.get(), 0, sizeof(char) * message.msg_controllen);
+    message.msg_control = attachmentDescriptorBuffer.get();
+
+    size_t previousBufferSize = buffer.size();
+    buffer.grow(buffer.capacity());
+    iov[0].iov_base = buffer.data() + previousBufferSize;
+    iov[0].iov_len = buffer.size() - previousBufferSize;
+
+    message.msg_iov = iov;
+    message.msg_iovlen = 1;
+
+    while (true) {
+        ssize_t bytesRead = recvmsg(socketDescriptor, &message, MSG_NOSIGNAL);
+
+        if (bytesRead < 0) {
+            if (errno == EINTR)
+                continue;
+
+            buffer.shrink(previousBufferSize);
+            return -1;
+        }
+
+        if (message.msg_flags & MSG_CTRUNC) {
+            // Control data has been discarded, which is expected by processMessage(), so consider this a read failure.
+            buffer.shrink(previousBufferSize);
+            return -1;
+        }
+
+        struct cmsghdr* controlMessage;
+        for (controlMessage = CMSG_FIRSTHDR(&message); controlMessage; controlMessage = CMSG_NXTHDR(&message, controlMessage)) {
+            if (controlMessage->cmsg_level == SOL_SOCKET && controlMessage->cmsg_type == SCM_RIGHTS) {
+                if (controlMessage->cmsg_len < CMSG_LEN(0) || controlMessage->cmsg_len > CMSG_LEN(sizeof(int) * attachmentMaxAmount)) {
+                    ASSERT_NOT_REACHED();
+                    break;
+                }
+                size_t previousFileDescriptorsSize = fileDescriptors.size();
+                size_t fileDescriptorsCount = (controlMessage->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+                fileDescriptors.grow(fileDescriptors.size() + fileDescriptorsCount);
+                memcpy(fileDescriptors.data() + previousFileDescriptorsSize, CMSG_DATA(controlMessage), sizeof(int) * fileDescriptorsCount);
+
+                for (size_t i = 0; i < fileDescriptorsCount; ++i) {
+                    if (!setCloseOnExec(fileDescriptors[previousFileDescriptorsSize + i])) {
+                        ASSERT_NOT_REACHED();
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        buffer.shrink(previousBufferSize + bytesRead);
+        return bytesRead;
+    }
+
+    return -1;
 }
 
 void Connection::readyReadHandler()
@@ -194,6 +288,100 @@ void Connection::readyReadHandler()
     }
 }
 
+bool Connection::processMessage()
+{
+    if (m_readBuffer.size() < sizeof(MessageInfo))
+        return false;
+
+    uint8_t* messageData = m_readBuffer.data();
+    MessageInfo messageInfo;
+    memcpy(static_cast<void*>(&messageInfo), messageData, sizeof(messageInfo));
+    messageData += sizeof(messageInfo);
+
+    if (messageInfo.attachmentCount() > attachmentMaxAmount || (!messageInfo.isBodyOutOfLine() && messageInfo.bodySize() > messageMaxSize)) {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+
+    size_t messageLength = sizeof(MessageInfo) + messageInfo.attachmentCount() * sizeof(AttachmentInfo) + (messageInfo.isBodyOutOfLine() ? 0 : messageInfo.bodySize());
+    if (m_readBuffer.size() < messageLength)
+        return false;
+
+    size_t attachmentFileDescriptorCount = 0;
+    size_t attachmentCount = messageInfo.attachmentCount();
+    Vector<AttachmentInfo> attachmentInfo(attachmentCount);
+
+    if (attachmentCount) {
+        memcpy(static_cast<void*>(attachmentInfo.data()), messageData, sizeof(AttachmentInfo) * attachmentCount);
+        messageData += sizeof(AttachmentInfo) * attachmentCount;
+
+        for (size_t i = 0; i < attachmentCount; ++i) {
+            if (!attachmentInfo[i].isNull())
+                attachmentFileDescriptorCount++;
+        }
+
+        if (messageInfo.isBodyOutOfLine())
+            attachmentCount--;
+    }
+
+    Vector<Attachment> attachments(attachmentCount);
+    RefPtr<WebKit::SharedMemory> oolMessageBody;
+
+    size_t fdIndex = 0;
+    for (size_t i = 0; i < attachmentCount; ++i) {
+        int fd = !attachmentInfo[i].isNull() ? m_fileDescriptors[fdIndex++] : -1;
+        attachments[attachmentCount - i - 1] = UnixFileDescriptor { fd, UnixFileDescriptor::Adopt };
+    }
+
+    if (messageInfo.isBodyOutOfLine()) {
+        ASSERT(messageInfo.bodySize());
+
+        if (attachmentInfo[attachmentCount].isNull()) {
+            ASSERT_NOT_REACHED();
+            return false;
+        }
+
+        WebKit::SharedMemory::Handle handle;
+        handle.m_size = messageInfo.bodySize();
+        handle.m_handle = UnixFileDescriptor { m_fileDescriptors[attachmentFileDescriptorCount - 1], UnixFileDescriptor::Adopt };
+
+        oolMessageBody = WebKit::SharedMemory::map(WTFMove(handle), WebKit::SharedMemory::Protection::ReadOnly);
+        if (!oolMessageBody) {
+            ASSERT_NOT_REACHED();
+            return false;
+        }
+    }
+
+    ASSERT(attachments.size() == (messageInfo.isBodyOutOfLine() ? messageInfo.attachmentCount() - 1 : messageInfo.attachmentCount()));
+
+    uint8_t* messageBody = messageData;
+    if (messageInfo.isBodyOutOfLine())
+        messageBody = reinterpret_cast<uint8_t*>(oolMessageBody->data());
+
+    auto decoder = Decoder::create(messageBody, messageInfo.bodySize(), WTFMove(attachments));
+    ASSERT(decoder);
+    if (!decoder)
+        return false;
+
+    processIncomingMessage(WTFMove(decoder));
+
+    if (m_readBuffer.size() > messageLength) {
+        memmove(m_readBuffer.data(), m_readBuffer.data() + messageLength, m_readBuffer.size() - messageLength);
+        m_readBuffer.shrink(m_readBuffer.size() - messageLength);
+    } else
+        m_readBuffer.shrink(0);
+
+    if (attachmentFileDescriptorCount) {
+        if (m_fileDescriptors.size() > attachmentFileDescriptorCount) {
+            memmove(m_fileDescriptors.data(), m_fileDescriptors.data() + attachmentFileDescriptorCount, (m_fileDescriptors.size() - attachmentFileDescriptorCount) * sizeof(int));
+            m_fileDescriptors.shrink(m_fileDescriptors.size() - attachmentFileDescriptorCount);
+        } else
+            m_fileDescriptors.shrink(0);
+    }
+
+    return true;
+}
+
 void Connection::platformOpen()
 {
     RefPtr<Connection> protectedThis(this);
@@ -224,20 +412,30 @@ void Connection::platformOpen()
         m_isHajrEnabled = (m_inboundRing && m_outboundRing);
 #if USE(GLIB)
         if (m_isHajrEnabled) {
-            m_socket = adoptGRef(g_socket_new_from_fd(m_inboundRing->signal_fd, nullptr));
+            // Wrap the hajr eventfd signal fd in a *separate* GSocket.
+            // We must NOT rewrap m_socket here: the GSocket created in
+            // platformInitialize() took ownership of m_socketDescriptor via
+            // g_socket_new_from_fd(), and overwriting m_socket would release
+            // the old GRefPtr, destroying the GSocket and silently closing
+            // the IPC socket fd that the legacy fallback path in
+            // readyReadHandler() may still try to read from.
+            m_hajrSignalSocket = adoptGRef(g_socket_new_from_fd(hajr_ring_get_signal_fd(m_inboundRing), nullptr));
         }
 #endif
     }
 
 #if USE(GLIB)
-    m_readSocketMonitor.start(m_socket.get(), static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR), m_connectionQueue->runLoop(), [protectedThis](GIOCondition condition) -> gboolean {
-        if (condition & (G_IO_HUP | G_IO_ERR)) {
-            protectedThis->connectionDidClose();
-            return G_SOURCE_REMOVE;
-        }
-        protectedThis->readyReadHandler();
-        return G_SOURCE_CONTINUE;
-    });
+    GSocket* monitorSocket = m_isHajrEnabled ? m_hajrSignalSocket.get() : m_socket.get();
+    if (monitorSocket) {
+        m_readSocketMonitor.start(monitorSocket, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR), m_connectionQueue->runLoop(), [protectedThis](GIOCondition condition) -> gboolean {
+            if (condition & (G_IO_HUP | G_IO_ERR)) {
+                protectedThis->connectionDidClose();
+                return G_SOURCE_REMOVE;
+            }
+            protectedThis->readyReadHandler();
+            return G_SOURCE_CONTINUE;
+        });
+    }
 #endif
 
     m_connectionQueue->dispatch([protectedThis] {
@@ -295,10 +493,37 @@ bool Connection::sendOutgoingMessage(UniqueRef<Encoder>&& encoder)
     UnixMessage outputMessage(encoder.get());
     return sendOutputMessage(outputMessage);
 }
+SocketPair createPlatformConnection(unsigned options)
+{
+    int sockets[2];
+    RELEASE_ASSERT(socketpair(AF_UNIX, SOCKET_TYPE, 0, sockets) != -1);
 
-// Stubs for missing pieces
-void Connection::willSendSyncMessage(OptionSet<SendSyncOption>) { }
-void Connection::didReceiveSyncReply(OptionSet<SendSyncOption>) { }
-std::optional<Connection::ConnectionIdentifierPair> Connection::createConnectionIdentifierPair() { return std::nullopt; }
+    if (options & SetCloexecOnServer) {
+        if (!setCloseOnExec(sockets[1]))
+            RELEASE_ASSERT_NOT_REACHED();
+    }
+
+    if (options & SetCloexecOnClient) {
+        if (!setCloseOnExec(sockets[0]))
+            RELEASE_ASSERT_NOT_REACHED();
+    }
+
+    SocketPair socketPair = { sockets[0], sockets[1] };
+    return socketPair;
+}
+
+void Connection::willSendSyncMessage(OptionSet<SendSyncOption>)
+{
+}
+
+void Connection::didReceiveSyncReply(OptionSet<SendSyncOption>)
+{
+}
+
+std::optional<Connection::ConnectionIdentifierPair> Connection::createConnectionIdentifierPair()
+{
+    SocketPair socketPair = createPlatformConnection();
+    return ConnectionIdentifierPair { Identifier { UnixFileDescriptor { socketPair.server,  UnixFileDescriptor::Adopt } }, UnixFileDescriptor { socketPair.client, UnixFileDescriptor::Adopt } };
+}
 
 } // namespace IPC

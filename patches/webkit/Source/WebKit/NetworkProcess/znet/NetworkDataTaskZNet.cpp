@@ -41,22 +41,22 @@ NetworkDataTaskZNet::~NetworkDataTaskZNet()
 
 void NetworkDataTaskZNet::cancel()
 {
-    m_isCancelled = true;
-    m_state = State::Canceling;
+    m_isCancelled.store(true, std::memory_order_release);
+    m_state.store(State::Canceling, std::memory_order_release);
     if (m_thread) {
         m_thread->waitForCompletion();
         m_thread = nullptr;
     }
-    m_state = State::Completed;
+    m_state.store(State::Completed, std::memory_order_release);
 }
 
 void NetworkDataTaskZNet::resume()
 {
     WTFLogAlways("NetworkDataTaskZNet::resume() called for %s", m_firstRequest.url().string().utf8().data());
-    if (m_state != State::Suspended)
+    if (m_state.load(std::memory_order_acquire) != State::Suspended)
         return;
 
-    m_state = State::Running;
+    m_state.store(State::Running, std::memory_order_release);
     m_thread = Thread::create("ZNetFetcher", [this, protectedThis = Ref { *this }] {
         startFetch();
     });
@@ -69,7 +69,7 @@ void NetworkDataTaskZNet::invalidateAndCancel()
 
 NetworkDataTask::State NetworkDataTaskZNet::state() const
 {
-    return m_state;
+    return m_state.load(std::memory_order_acquire);
 }
 
 void NetworkDataTaskZNet::startFetch()
@@ -87,11 +87,11 @@ void NetworkDataTaskZNet::startFetch()
     NetEngineHandle engine = net_engine_create();
     if (!engine) {
         RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
-            if (m_isCancelled) return;
+            if (m_isCancelled.load(std::memory_order_acquire)) return;
             if (client())
                 client()->didCompleteWithError(ResourceError(String(), 0, m_firstRequest.url(), "Failed to create net engine"_s));
         });
-        m_state = State::Completed;
+        m_state.store(State::Completed, std::memory_order_release);
         return;
     }
 
@@ -99,11 +99,11 @@ void NetworkDataTaskZNet::startFetch()
     if (!conn) {
         net_engine_destroy(engine);
         RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
-            if (m_isCancelled) return;
+            if (m_isCancelled.load(std::memory_order_acquire)) return;
             if (client())
                 client()->didCompleteWithError(ResourceError(String(), 0, m_firstRequest.url(), "Failed to connect to host"_s));
         });
-        m_state = State::Completed;
+        m_state.store(State::Completed, std::memory_order_release);
         return;
     }
 
@@ -120,17 +120,15 @@ void NetworkDataTaskZNet::startFetch()
     requestBuilder.append("\r\n");
 
     CString requestStr = requestBuilder.toString().utf8();
-    size_t written = 0;
-    while (!m_isCancelled) {
-        int32_t res = net_write(engine, conn, reinterpret_cast<const uint8_t*>(requestStr.data()), requestStr.length(), &written);
-        if (res == -5) { // WouldBlock
-            net_poll(engine, 10);
-            continue;
-        }
-        if (res == 0)
+    size_t totalWritten = 0;
+    while (totalWritten < requestStr.length() && !m_isCancelled.load(std::memory_order_acquire)) {
+        size_t written = 0;
+        int32_t res = net_write(engine, conn,
+            reinterpret_cast<const uint8_t*>(requestStr.data()) + totalWritten,
+            requestStr.length() - totalWritten, &written);
+        if (res != 0)
             break;
-        
-        break;
+        totalWritten += written;
     }
 
     // 3. Read loop
@@ -138,13 +136,9 @@ void NetworkDataTaskZNet::startFetch()
     uint8_t buffer[8192];
     size_t headerEnd = WTF::notFound;
 
-    while (!m_isCancelled) {
+    while (!m_isCancelled.load(std::memory_order_acquire)) {
         size_t bytesRead = 0;
         int32_t res = net_read(engine, conn, buffer, sizeof(buffer), &bytesRead);
-        if (res == -5) { // WouldBlock
-            net_poll(engine, 10);
-            continue;
-        }
         if (res != 0 || bytesRead == 0) {
             break; // EOF or error
         }
@@ -191,7 +185,7 @@ void NetworkDataTaskZNet::startFetch()
 
                     RunLoop::main().dispatch([this, protectedThis = Ref { *this }, rawResponse = response.release()] {
                         std::unique_ptr<ResourceResponse> response(rawResponse);
-                        if (m_isCancelled) return;
+                        if (m_isCancelled.load(std::memory_order_acquire)) return;
                         didReceiveResponse(WTFMove(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, [](WebCore::PolicyAction) {});
                     });
                 }
@@ -200,7 +194,7 @@ void NetworkDataTaskZNet::startFetch()
                 if (responseData.size() > headerEnd) {
                     auto bodyData = SharedBuffer::create(responseData.data() + headerEnd, responseData.size() - headerEnd);
                     RunLoop::main().dispatch([this, protectedThis = Ref { *this }, bodyData = WTFMove(bodyData)] {
-                        if (m_isCancelled) return;
+                        if (m_isCancelled.load(std::memory_order_acquire)) return;
                         if (client())
                             client()->didReceiveData(bodyData);
                     });
@@ -210,7 +204,7 @@ void NetworkDataTaskZNet::startFetch()
             // Streaming body data
             auto bodyData = SharedBuffer::create(buffer, bytesRead);
             RunLoop::main().dispatch([this, protectedThis = Ref { *this }, bodyData = WTFMove(bodyData)] {
-                if (m_isCancelled) return;
+                if (m_isCancelled.load(std::memory_order_acquire)) return;
                 if (client())
                     client()->didReceiveData(bodyData);
             });
@@ -221,8 +215,8 @@ void NetworkDataTaskZNet::startFetch()
     net_engine_destroy(engine);
 
     RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
-        if (m_isCancelled) return;
-        m_state = State::Completed;
+        if (m_isCancelled.load(std::memory_order_acquire)) return;
+        m_state.store(State::Completed, std::memory_order_release);
         if (client())
             client()->didCompleteWithError(ResourceError());
     });

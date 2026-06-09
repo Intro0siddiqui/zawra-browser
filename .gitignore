@@ -1,19 +1,19 @@
-/target
-.antigravitycli/
-./webkit/
-.kilo/
-*.png
-webkit_source.tar.xz
-dependencies/WebKit/
+# Build Artifacts & Large Directories
+/target/
+/webkit/
+/webkit/**
+/zig-out/
+/.zig-cache/
+**/.zig-cache/
+**/target/
+
+# Local & Temporary Files
 *.log
+*.png
+.antigravitycli/
+.kilo/
 scratch/
 
-# Zawra Build Artifacts
-webkit/build/
-target/
-.zig-cache/
-**/target/
-**/.zig-cache/
-*.log
+# WebKit Specific
 webkit_source.tar.xz
-webkit/source/
+dependencies/WebKit/

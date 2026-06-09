@@ -4,7 +4,7 @@
 //! native browser window widget. When WPE is not available (headless mode),
 //! this module provides a stub that logs rendered output.
 
-use std::ffi::{CString, c_char, c_void};
+use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 
 /// The dimensions of the render viewport.
@@ -30,8 +30,10 @@ pub struct RendererEmbed {
     state: Mutex<RendererState>,
     viewport: Mutex<Viewport>,
     /// Native WPE web browser handle
+    #[allow(dead_code)]
     web_browser: *mut c_void,
     /// Native window handle used to host WPE's rendering
+    #[allow(dead_code)]
     parent_window: *mut c_void,
 }
 

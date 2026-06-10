@@ -1,6 +1,7 @@
 use crate::javascriptcore::jsapi::{JS_NewExternalArrayBuffer, JSContext, JSObject};
+use std::ptr;
 
-// A Rust function defined elsewhere that manages the lifecycle of BrowserDB pins.
+/// A Rust function defined elsewhere that manages the lifecycle of BrowserDB pins.
 unsafe extern "Rust" {
     fn release_browserdb_pin(blob_id: u64);
 }

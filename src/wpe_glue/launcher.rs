@@ -14,6 +14,8 @@
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::path::PathBuf;
 use std::ptr::null_mut;
+use std::process::Command;
+use std::os::unix::process::CommandExt;
 
 // ── nsresult ─────────────────────────────────────────────────────────────────
 const NS_OK:              i32 = 0;
@@ -29,7 +31,7 @@ unsafe extern "C" {
 // ── WPE function types (resolved via dlopen at runtime) ────────────────
 
 /// Signature of WPE's entry point.
-type WpeMainFn = unsafe extern "C" fn(argc: c_int, argv: *mut *mut c_char, app_data: *const c_void) -> c_int;
+type WpeMainFn = unsafe extern "C" fn(argc: c_int, argv: *mut *mut c_char, appData: *const c_void) -> c_int;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Dynamic linker wrapper

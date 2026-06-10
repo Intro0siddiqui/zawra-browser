@@ -145,15 +145,8 @@ pub unsafe extern "C" fn Zawra_JS_CreateCacheBuffer(
     let ret = unsafe { Zawra_Cache_Get(url_hash_hi, url_hash_lo, &mut out_ptr, &mut out_len) };
     if ret != 0 || out_ptr.is_null() { return null_mut(); }
 
-    // Reconstruct the Box<[u8]> that Zawra_Cache_Get leaked (see storage.rs).
-    // Must reconstruct as the same kind of allocation — Box<[u8]>, not
-    // Vec<u8> — to keep the allocator Layout consistent. create_zero_copy_buffer
-    // takes a Vec<u8> by value but only reads its length and pointer, so it
-    // is safe to pass it a Vec that wraps a Box<[u8]>'s data.
-    let data = unsafe {
-        let slice = std::ptr::slice_from_raw_parts_mut(out_ptr, out_len);
-        Box::from_raw(slice).into_vec()
-    };
+    // Reconstruct the Vec<u8> from the heap pointer (was allocated by storage.rs)
+    let data = unsafe { Vec::from_raw_parts(out_ptr, out_len, out_len) };
 
     // Use a hash of the URL as the blob_id
     let blob_id = ((url_hash_hi as u128) << 64 | url_hash_lo as u128) as u64;

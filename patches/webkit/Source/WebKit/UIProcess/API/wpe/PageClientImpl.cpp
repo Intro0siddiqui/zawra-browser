@@ -52,11 +52,7 @@ PageClientImpl::PageClientImpl(WKWPE::View& view)
 {
 }
 
-PageClientImpl::~PageClientImpl()
-{
-    fprintf(stderr, "[ZAWRA-DEBUG] PageClientImpl destructor called (this=%p, m_view=%p)\n", this, &m_view);
-    WTFReportBacktrace();
-}
+PageClientImpl::~PageClientImpl() = default;
 
 struct wpe_view_backend* PageClientImpl::viewBackend()
 {

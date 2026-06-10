@@ -23,7 +23,11 @@
 use std::ffi::{c_char, c_void};
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use crate::wpe_glue::networking::ns_result;
+use crate::wpe_glue::networking::{
+    Zawra_Net_CreateChannel,
+    ZNetChannel,
+    ns_result,
+};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // nsIFactory vtable
@@ -53,17 +57,14 @@ pub struct ZNetFactory {
 unsafe impl Send for ZNetFactory {}
 unsafe impl Sync for ZNetFactory {}
 
-#[allow(dead_code)]
 unsafe extern "C" fn factory_query_interface(
     _this: *mut c_void, _iid: *const u8, _out: *mut *mut c_void,
 ) -> u32 { ns_result::NS_ERROR_NOT_IMPLEMENTED }
 
-#[allow(dead_code)]
 unsafe extern "C" fn factory_add_ref(this: *mut c_void) -> u32 {
     let f = unsafe { &*(this as *const ZNetFactory) };
     f.ref_count.fetch_add(1, Ordering::SeqCst) as u32
 }
-#[allow(dead_code)]
 unsafe extern "C" fn factory_release(this: *mut c_void) -> u32 {
     let f = unsafe { &*(this as *const ZNetFactory) };
     (f.ref_count.fetch_sub(1, Ordering::SeqCst) - 1).max(0) as u32
@@ -73,7 +74,6 @@ unsafe extern "C" fn factory_release(this: *mut c_void) -> u32 {
 ///
 /// We ignore `aOuter` (aggregation) and `aIID`; we return a new `ZNetChannel`
 /// stub that WPE will `QueryInterface` for `nsIProtocolHandler`.
-#[allow(dead_code)]
 unsafe extern "C" fn factory_create_instance(
     _this: *mut c_void,
     _outer: *mut c_void,
@@ -86,12 +86,10 @@ unsafe extern "C" fn factory_create_instance(
     unsafe { *result = _this; }
     ns_result::NS_OK
 }
-#[allow(dead_code)]
 unsafe extern "C" fn factory_lock_factory(_this: *mut c_void, _lock: bool) -> u32 {
     ns_result::NS_OK
 }
 
-#[allow(dead_code)]
 static ZNET_FACTORY_VTABLE: NsIFactoryVtable = NsIFactoryVtable {
     query_interface: factory_query_interface,
     add_ref:         factory_add_ref,
@@ -101,13 +99,11 @@ static ZNET_FACTORY_VTABLE: NsIFactoryVtable = NsIFactoryVtable {
 };
 
 // Static factory singletons for http and https
-#[allow(dead_code)]
 static HTTP_FACTORY: ZNetFactory = ZNetFactory {
     vtable:    &ZNET_FACTORY_VTABLE,
     ref_count: AtomicI32::new(1),
     scheme:    b"http\0",
 };
-#[allow(dead_code)]
 static HTTPS_FACTORY: ZNetFactory = ZNetFactory {
     vtable:    &ZNET_FACTORY_VTABLE,
     ref_count: AtomicI32::new(1),
@@ -243,7 +239,6 @@ static HTTPS_HANDLER: ZNetProtocolHandler = ZNetProtocolHandler {
 
 /// Partial vtable for nsIComponentRegistrar (only the method we call).
 #[repr(C)]
-#[allow(dead_code)]
 struct NsIComponentRegistrarVtable {
     _qi:             unsafe extern "C" fn(*mut c_void, *const u8, *mut *mut c_void) -> u32,
     _add_ref:        unsafe extern "C" fn(*mut c_void) -> u32,
@@ -262,9 +257,7 @@ struct NsIComponentRegistrarVtable {
 /// These match the exact values used by WPE's built-in handlers:
 /// `{4f47e42e-4d23-4dd3-bfda-eb29255e9ea3}` — NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http"
 /// `{dccbe7e4-7750-466b-a557-5ea36c8ff24e}` — NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "https"
-#[allow(dead_code)]
 const HTTP_CID:  [u8; 16] = [0x4f,0x47,0xe4,0x2e, 0x4d,0x23, 0x4d,0xd3, 0xbf,0xda, 0xeb,0x29,0x25,0x5e,0x9e,0xa3];
-#[allow(dead_code)]
 const HTTPS_CID: [u8; 16] = [0xdc,0xcb,0xe7,0xe4, 0x77,0x50, 0x46,0x6b, 0xa5,0x57, 0x5e,0xa3,0x6c,0x8f,0xf2,0x4e];
 
 // WPE runtime C API (available when linked against libWPE)

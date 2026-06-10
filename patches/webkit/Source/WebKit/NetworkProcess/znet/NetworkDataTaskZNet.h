@@ -1,7 +1,6 @@
 #pragma once
 
 #include "NetworkDataTask.h"
-#include <atomic>
 #include <wtf/RunLoop.h>
 #include <wtf/Threading.h>
 
@@ -26,14 +25,9 @@ private:
 
     void startFetch();
 
-    // m_state and m_isCancelled are touched concurrently from the main thread
-    // (cancel / resume / state()) and from the worker thread spawned in
-    // resume() (startFetch). They must be std::atomic to avoid a C++ data
-    // race / undefined behavior. NetworkDataTask::State is a trivially
-    // copyable enum class, so std::atomic<State> is well-defined.
-    std::atomic<State> m_state { State::Suspended };
+    State m_state { State::Suspended };
     RefPtr<Thread> m_thread;
-    std::atomic<bool> m_isCancelled { false };
+    bool m_isCancelled { false };
 };
 
 } // namespace WebKit

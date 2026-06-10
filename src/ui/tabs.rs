@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use browserdb::BrowserDB;
+
 /// A unique tab identifier.
 pub type TabId = u64;
 
@@ -27,7 +29,6 @@ pub struct Tab {
     /// Each tab gets its own BrowserDB container for isolated storage.
     pub container_id: String,
     /// WPE content process handle (opaque). NULL in headless mode.
-    #[allow(dead_code)]
     content_proc: *mut std::ffi::c_void,
 }
 

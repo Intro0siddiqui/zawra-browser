@@ -17,11 +17,15 @@ public:
 
     bool initialize(void* windowHandle, int width, int height);
     int exportCompositorFD();
+    int compositorWidth() const { return m_compositorWidth; }
+    int compositorHeight() const { return m_compositorHeight; }
     void presentFrame();
     void renderLayer(void* state);
 
 private:
     void* m_surfaceHandle { nullptr };
+    int m_compositorWidth { 0 };
+    int m_compositorHeight { 0 };
 };
 
 } // namespace WebCore

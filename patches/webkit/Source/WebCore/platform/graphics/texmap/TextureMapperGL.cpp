@@ -22,7 +22,17 @@
 #include "config.h"
 #include "TextureMapperGL.h"
 #include "../zawra/ZawraGraphicsBridge.h"
+#include "PlatformDisplay.h"
 #include <unistd.h>
+
+#if USE(LIBEPOXY)
+#include "EpoxyEGL.h"
+#else
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#endif
 
 #if USE(TEXTURE_MAPPER_GL)
 
@@ -206,13 +216,73 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
     m_clipStack.reset(IntRect(0, 0, data().viewport[2], data().viewport[3]), flags & PaintingMirrored ? ClipStack::YAxisMode::Default : ClipStack::YAxisMode::Inverted);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &data().targetFrameBuffer);
 
-    // Zawra Graphics Hook: Import FD as target FBO if this is the main surface
+    // Zawra Graphics Hook: Import DMA-BUF FD as EGLImage, then create an FBO from it
+    // so WebKit's TextureMapper draws directly into the z-graphics RHI surface.
     if (!surface) {
         int fd = ZawraGraphicsBridge::singleton().exportCompositorFD();
         if (fd >= 0) {
-            // TODO: EGLImage / IOSurface import logic using the DMA-BUF/Mach Port FD.
-            // The resulting OpenGL texture will be bound to data().targetFrameBuffer.
-            // eglBindTexImage / glFramebufferTexture2D
+            auto& platformDisplay = PlatformDisplay::sharedDisplay();
+            EGLDisplay eglDisplay = platformDisplay.eglDisplay();
+            if (eglDisplay != EGL_NO_DISPLAY && platformDisplay.eglExtensions().EXT_image_dma_buf_import) {
+                int width = ZawraGraphicsBridge::singleton().compositorWidth();
+                int height = ZawraGraphicsBridge::singleton().compositorHeight();
+
+#ifndef EGL_LINUX_DMA_BUF_EXT
+#define EGL_LINUX_DMA_BUF_EXT          0x3270
+#endif
+#ifndef EGL_LINUX_DRM_FOURCC_EXT
+#define EGL_LINUX_DRM_FOURCC_EXT       0x3271
+#endif
+#ifndef EGL_DMA_BUF_PLANE0_FD_EXT
+#define EGL_DMA_BUF_PLANE0_FD_EXT      0x3272
+#endif
+#ifndef EGL_DMA_BUF_PLANE0_OFFSET_EXT
+#define EGL_DMA_BUF_PLANE0_OFFSET_EXT  0x3273
+#endif
+#ifndef EGL_DMA_BUF_PLANE0_PITCH_EXT
+#define EGL_DMA_BUF_PLANE0_PITCH_EXT   0x3274
+#endif
+
+                // DRM_FORMAT_ARGB8888 = fourcc_code('A', 'R', '2', '4') = 0x34325241
+                // This assumes z-graphics exports BGRA8_UNORM. Adjust if needed.
+                const uint32_t drmFormat = 0x34325241;
+                int stride = width * 4;
+
+                Vector<EGLAttrib> attribs;
+                attribs.append(EGL_WIDTH); attribs.append(width);
+                attribs.append(EGL_HEIGHT); attribs.append(height);
+                attribs.append(EGL_LINUX_DRM_FOURCC_EXT); attribs.append(static_cast<EGLAttrib>(drmFormat));
+                attribs.append(EGL_DMA_BUF_PLANE0_FD_EXT); attribs.append(static_cast<EGLAttrib>(fd));
+                attribs.append(EGL_DMA_BUF_PLANE0_OFFSET_EXT); attribs.append(0);
+                attribs.append(EGL_DMA_BUF_PLANE0_PITCH_EXT); attribs.append(static_cast<EGLAttrib>(stride));
+                attribs.append(EGL_NONE);
+
+                EGLImage image = platformDisplay.createEGLImage(
+                    EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+
+                if (image != EGL_NO_IMAGE) {
+                    GLuint texture = 0;
+                    glGenTextures(1, &texture);
+                    glBindTexture(GL_TEXTURE_2D, texture);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                    auto* imageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+                        eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+                    if (imageTargetTexture2DOES)
+                        imageTargetTexture2DOES(GL_TEXTURE_2D, image);
+
+                    GLuint fbo = 0;
+                    glGenFramebuffers(1, &fbo);
+                    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+                    glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
+
+                    data().targetFrameBuffer = fbo;
+                }
+            }
             close(fd);
         }
     }

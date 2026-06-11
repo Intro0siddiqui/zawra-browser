@@ -40,6 +40,8 @@ bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
             return false;
         }
         m_surfaceHandle = handle;
+        m_compositorWidth = width;
+        m_compositorHeight = height;
     }
     return true;
 }

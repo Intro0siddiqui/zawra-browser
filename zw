@@ -1,0 +1,11 @@
+#!/bin/bash
+# Zawra Unified CLI
+# This script sits in the root to make crawler tools easier to type.
+
+CMD_PATH="$(dirname "$0")/tools/crawler/query.py"
+
+if [ "$1" == "update" ]; then
+    "$(dirname "$0")/tools/crawler/inventory_crawler.py"
+else
+    "$CMD_PATH" "$@"
+fi

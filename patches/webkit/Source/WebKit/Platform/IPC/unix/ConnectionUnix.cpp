@@ -72,6 +72,17 @@ private:
 void Connection::platformInitialize(Identifier identifier)
 {
     m_socketDescriptor = identifier.handle;
+
+    // Save per-connection Hajr info from the Identifier so platformOpen()
+    // can use it instead of global env vars (which get overwritten when
+    // multiple children are launched).
+    m_hasHajrInfo = identifier.hasHajrInfo;
+    m_hajrRing1 = identifier.hajrRing1;
+    m_hajrRing2 = identifier.hajrRing2;
+    m_hajrSig1 = identifier.hajrSig1;
+    m_hajrSig2 = identifier.hajrSig2;
+    m_hajrPidfd = identifier.hajrPidfd;
+
 #if USE(GLIB)
     m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
 #endif
@@ -387,20 +398,48 @@ void Connection::platformOpen()
     RefPtr<Connection> protectedThis(this);
     m_isConnected = true;
 
-    const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
-    const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
-    const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
-    const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
-    const char* parentPidFDStr = getenv("ZAWRA_HAJR_PARENT_PIDFD");
+    fprintf(stderr, "[ZAWRA-DEBUG] Connection::platformOpen: m_isServer=%d, m_socketDescriptor=%d\n", m_isServer, m_socketDescriptor);
 
-    if (ring1Str && ring2Str && sig1Str && sig2Str) {
-        uint64_t ring1 = strtoull(ring1Str, nullptr, 10);
-        uint64_t ring2 = strtoull(ring2Str, nullptr, 10);
-        int sig1 = atoi(sig1Str);
-        int sig2 = atoi(sig2Str);
+    // Prefer per-connection Hajr info from the Identifier (set by parent).
+    // Fall back to env vars for child processes (which inherit env at fork).
+    uint64_t ring1 = 0, ring2 = 0;
+    int sig1 = -1, sig2 = -1, pidfd = -1;
+    bool haveHajrInfo = false;
 
-        if (parentPidFDStr && !m_isServer)
-            hajr_ipc_set_other_pidfd(atoi(parentPidFDStr));
+    if (m_hasHajrInfo) {
+        ring1 = m_hajrRing1;
+        ring2 = m_hajrRing2;
+        sig1 = m_hajrSig1;
+        sig2 = m_hajrSig2;
+        pidfd = m_hajrPidfd;
+        haveHajrInfo = true;
+        fprintf(stderr, "[ZAWRA-DEBUG] platformOpen: using Identifier Hajr info: ring1=%llu ring2=%llu sig1=%d sig2=%d pidfd=%d\n",
+            (unsigned long long)ring1, (unsigned long long)ring2, sig1, sig2, pidfd);
+    } else {
+        const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
+        const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
+        const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
+        const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
+        const char* parentPidFDStr = getenv("ZAWRA_HAJR_PARENT_PIDFD");
+
+        fprintf(stderr, "[ZAWRA-DEBUG] platformOpen: env vars: ring1=%s ring2=%s sig1=%s sig2=%s pidfd=%s\n",
+            ring1Str ? ring1Str : "NULL", ring2Str ? ring2Str : "NULL",
+            sig1Str ? sig1Str : "NULL", sig2Str ? sig2Str : "NULL",
+            parentPidFDStr ? parentPidFDStr : "NULL");
+
+        if (ring1Str && ring2Str && sig1Str && sig2Str) {
+            ring1 = strtoull(ring1Str, nullptr, 10);
+            ring2 = strtoull(ring2Str, nullptr, 10);
+            sig1 = atoi(sig1Str);
+            sig2 = atoi(sig2Str);
+            pidfd = parentPidFDStr ? atoi(parentPidFDStr) : -1;
+            haveHajrInfo = true;
+        }
+    }
+
+    if (haveHajrInfo) {
+        if (pidfd != -1 && !m_isServer)
+            hajr_ipc_set_other_pidfd(pidfd);
 
         if (m_isServer) {
             m_inboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
@@ -410,6 +449,8 @@ void Connection::platformOpen()
             m_outboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
         }
         m_isHajrEnabled = (m_inboundRing && m_outboundRing);
+        fprintf(stderr, "[ZAWRA-DEBUG] platformOpen: m_isHajrEnabled=%d, inbound=%p, outbound=%p\n",
+            m_isHajrEnabled, (void*)m_inboundRing, (void*)m_outboundRing);
 #if USE(GLIB)
         if (m_isHajrEnabled) {
             // Wrap the hajr eventfd signal fd in a *separate* GSocket.

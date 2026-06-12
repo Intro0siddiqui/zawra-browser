@@ -108,8 +108,17 @@ void ProcessLauncher::launchProcess()
     // UIProcess connection handle is signal2_fd
     int serverSocket = ringPair.signal2_fd;
 
-    RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket] {
-        didFinishLaunchingProcess(m_processID, IPC::Connection::Identifier(serverSocket));
+    RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket, ringPair, parentPidFD] {
+        IPC::Connection::Identifier identifier(serverSocket);
+        // Populate Hajr ring bootstrap info so the parent's platformOpen()
+        // uses the correct ring pair per-connection (not global env vars).
+        identifier.hasHajrInfo = true;
+        identifier.hajrRing1 = ringPair.ring1_id;
+        identifier.hajrRing2 = ringPair.ring2_id;
+        identifier.hajrSig1 = ringPair.signal1_fd;
+        identifier.hajrSig2 = ringPair.signal2_fd;
+        identifier.hajrPidfd = parentPidFD;
+        didFinishLaunchingProcess(m_processID, WTFMove(identifier));
     });
 }
 

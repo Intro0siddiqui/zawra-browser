@@ -48,8 +48,32 @@ unsafe impl Sync for SendSyncEngineHandle {}
 static GLOBAL_NET_ENGINE: OnceLock<SendSyncEngineHandle> = OnceLock::new();
 static NET_ENGINE_STARTED: AtomicBool = AtomicBool::new(false);
 
-/// Initialise the global z-net engine and spawn a background poll thread.
+static NET_POLL_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
+
+fn ensure_net_poll_thread() {
+    if NET_POLL_THREAD_STARTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    // Background thread: continuously poll the engine for I/O events.
+    thread::Builder::new()
+        .name("zawra-net-poll".into())
+        .spawn(move || {
+            loop {
+                if let Some(wrapper) = GLOBAL_NET_ENGINE.get() {
+                    // Block up to 10 ms per cycle → CPU-friendly event loop
+                    unsafe { net_poll(wrapper.0, 10) };
+                } else {
+                    thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        })
+        .expect("failed to spawn zawra-net-poll thread");
+}
+
+/// Initialise the global z-net engine.
 /// Called once from `Zawra_Init_Subsystems`.
+/// The poll thread is spawned lazily on first use to avoid pthread_create
+/// failures in forked child processes.
 ///
 /// # Safety
 /// Must be called before any networking operation.
@@ -67,26 +91,13 @@ pub unsafe fn init_net_engine() -> bool {
     let _ = GLOBAL_NET_ENGINE.set(SendSyncEngineHandle(handle));
     NET_ENGINE_STARTED.store(true, Ordering::SeqCst);
 
-    // Background thread: continuously poll the engine for I/O events.
-    thread::Builder::new()
-        .name("zawra-net-poll".into())
-        .spawn(move || {
-            loop {
-                if let Some(wrapper) = GLOBAL_NET_ENGINE.get() {
-                    // Block up to 10 ms per cycle → CPU-friendly event loop
-                    unsafe { net_poll(wrapper.0, 10) };
-                } else {
-                    thread::sleep(std::time::Duration::from_millis(10));
-                }
-            }
-        })
-        .expect("failed to spawn zawra-net-poll thread");
-
     true
 }
 
 /// Return the global engine handle. Panics if `init_net_engine` was not called.
+/// Lazily spawns the poll thread on first use.
 pub fn global_engine() -> NetEngineHandle {
+    ensure_net_poll_thread();
     GLOBAL_NET_ENGINE
         .get()
         .expect("z-net engine not initialised – call Zawra_Init_Subsystems first")

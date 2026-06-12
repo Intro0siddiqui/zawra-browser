@@ -266,6 +266,17 @@ public:
         }
         operator bool() const { return handle != -1; }
         int handle { -1 };
+
+        // Hajr ring bootstrap info. The parent populates these so that
+        // platformOpen() uses the correct ring pair per-connection instead
+        // of reading global env vars (which get overwritten when multiple
+        // children are launched sequentially).
+        bool hasHajrInfo { false };
+        uint64_t hajrRing1 { 0 };
+        uint64_t hajrRing2 { 0 };
+        int hajrSig1 { -1 };
+        int hajrSig2 { -1 };
+        int hajrPidfd { -1 };
 #elif OS(WINDOWS)
         explicit Identifier(Handle&& handle)
             : Identifier(handle.handle.leak())
@@ -622,6 +633,14 @@ private:
     C_HardenedRingBuffer* m_inboundRing { nullptr };
     C_HardenedRingBuffer* m_outboundRing { nullptr };
     bool m_isHajrEnabled { false };
+    // Stored from Connection::Identifier so platformOpen() can use per-connection
+    // Hajr params instead of global env vars (which get overwritten between launches).
+    bool m_hasHajrInfo { false };
+    uint64_t m_hajrRing1 { 0 };
+    uint64_t m_hajrRing2 { 0 };
+    int m_hajrSig1 { -1 };
+    int m_hajrSig2 { -1 };
+    int m_hajrPidfd { -1 };
 #endif
 #if PLATFORM(PLAYSTATION)
     RefPtr<WTF::Thread> m_socketMonitor;

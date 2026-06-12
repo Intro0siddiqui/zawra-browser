@@ -1,11 +1,13 @@
 #!/bin/bash
 # Zawra Unified CLI
-# This script sits in the root to make crawler tools easier to type.
 
-CMD_PATH="$(dirname "$0")/tools/crawler/query.py"
+# Resolve the absolute path of this script, even if it's a symlink
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" &> /dev/null && pwd )"
+CMD_PATH="${SCRIPT_DIR}/tools/crawler/query.py"
 
 if [ "$1" == "update" ]; then
-    "$(dirname "$0")/tools/crawler/inventory_crawler.py"
+    "${SCRIPT_DIR}/tools/crawler/inventory_crawler.py"
 else
     "$CMD_PATH" "$@"
 fi
+

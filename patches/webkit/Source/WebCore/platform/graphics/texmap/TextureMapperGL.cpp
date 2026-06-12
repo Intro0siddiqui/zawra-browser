@@ -24,6 +24,12 @@
 #include "../zawra/ZawraGraphicsBridge.h"
 #include "PlatformDisplay.h"
 #include <unistd.h>
+#include <sys/syscall.h>
+
+#define ZLOG(msg, ...) do { \
+    fprintf(stderr, "[ZAWRA-BRIDGE pid=%d tid=%d] " msg "\n", getpid(), (int)syscall(SYS_gettid), ##__VA_ARGS__); \
+    fflush(stderr); \
+} while(0)
 
 #if USE(LIBEPOXY)
 #include "EpoxyEGL.h"
@@ -185,17 +191,22 @@ Ref<TextureMapperShaderProgram> TextureMapperGLData::getShaderProgram(TextureMap
 TextureMapperGL::TextureMapperGL()
     : m_contextAttributes(TextureMapperContextAttributes::get())
 {
-    void* platformContext = GLContext::current()->platformContext();
-    ASSERT(platformContext);
-
-    m_data = new TextureMapperGLData(platformContext);
+    ZLOG("TextureMapperGL constructor start");
+    GLContext* ctx = GLContext::current();
+    ZLOG("GLContext::current()=%p", ctx);
+    if (ctx) {
+        void* platformContext = ctx->platformContext();
+        ZLOG("platformContext=%p", platformContext);
+        m_data = new TextureMapperGLData(platformContext);
+    } else {
+        ZLOG("WARNING: GLContext::current() is NULL, using nullptr");
+        m_data = new TextureMapperGLData(nullptr);
+    }
 #if USE(TEXTURE_MAPPER_GL)
     m_texturePool = makeUnique<BitmapTexturePool>(m_contextAttributes);
 #endif
 
-    // Zawra Graphics Hook: Initialize the RHI and create the window surface.
-    // 800x600 is a placeholder; in a real port, we'd get the actual window size.
-    ZawraGraphicsBridge::singleton().initialize(nullptr, 800, 600);
+    ZLOG("TextureMapperGL constructor done (bridge init deferred to beginPainting)");
 }
 
 ClipStack& TextureMapperGL::clipStack()
@@ -216,16 +227,43 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
     m_clipStack.reset(IntRect(0, 0, data().viewport[2], data().viewport[3]), flags & PaintingMirrored ? ClipStack::YAxisMode::Default : ClipStack::YAxisMode::Inverted);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &data().targetFrameBuffer);
 
+    ZLOG("beginPainting: surface=%p, viewport=%dx%d, defaultFBO=%d",
+        surface, data().viewport[2], data().viewport[3], data().targetFrameBuffer);
+
+    // Lazy-init: ensure z-graphics bridge is initialized on first use
+    static bool bridgeInitialized = false;
+    if (!bridgeInitialized) {
+        ZLOG("Lazy-init: initializing z-graphics bridge");
+        bool ok = ZawraGraphicsBridge::singleton().initialize(nullptr, data().viewport[2], data().viewport[3]);
+        ZLOG("Lazy-init: bridge returned %s", ok ? "true" : "false");
+        bridgeInitialized = true;
+    }
+
     // Zawra Graphics Hook: Import DMA-BUF FD as EGLImage, then create an FBO from it
     // so WebKit's TextureMapper draws directly into the z-graphics RHI surface.
     if (!surface) {
         int fd = ZawraGraphicsBridge::singleton().exportCompositorFD();
+        fprintf(stderr, "[ZAWRA-BRIDGE] exportCompositorFD returned fd=%d\n", fd);
+        fflush(stderr);
         if (fd >= 0) {
+            struct stat st;
+            if (fstat(fd, &st) == 0)
+                fprintf(stderr, "[ZAWRA-BRIDGE] fd valid, st.st_size=%ld, st.st_mode=%o\n", st.st_size, st.st_mode);
+            else
+                fprintf(stderr, "[ZAWRA-BRIDGE] fd fstat failed, errno=%d (%s)\n", errno, strerror(errno));
+
             auto& platformDisplay = PlatformDisplay::sharedDisplay();
             EGLDisplay eglDisplay = platformDisplay.eglDisplay();
+            fprintf(stderr, "[ZAWRA-BRIDGE] eglDisplay=%p, EGL_NO_DISPLAY=%p\n", eglDisplay, EGL_NO_DISPLAY);
+            fprintf(stderr, "[ZAWRA-BRIDGE] EXT_image_dma_buf_import=%d\n", platformDisplay.eglExtensions().EXT_image_dma_buf_import);
+            fprintf(stderr, "[ZAWRA-BRIDGE] current EGL context=%p\n", eglGetCurrentContext());
+            fprintf(stderr, "[ZAWRA-BRIDGE] current EGL display=%p\n", eglGetCurrentDisplay());
+            fflush(stderr);
+
             if (eglDisplay != EGL_NO_DISPLAY && platformDisplay.eglExtensions().EXT_image_dma_buf_import) {
                 int width = ZawraGraphicsBridge::singleton().compositorWidth();
                 int height = ZawraGraphicsBridge::singleton().compositorHeight();
+                fprintf(stderr, "[ZAWRA-BRIDGE] compositor size=%dx%d\n", width, height);
 
 #ifndef EGL_LINUX_DMA_BUF_EXT
 #define EGL_LINUX_DMA_BUF_EXT          0x3270
@@ -243,10 +281,14 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
 #define EGL_DMA_BUF_PLANE0_PITCH_EXT   0x3274
 #endif
 
-                // DRM_FORMAT_ARGB8888 = fourcc_code('A', 'R', '2', '4') = 0x34325241
-                // This assumes z-graphics exports BGRA8_UNORM. Adjust if needed.
-                const uint32_t drmFormat = 0x34325241;
+                // DRM_FORMAT_RGBA8888 = fourcc_code('R','G','B','A') = 0x41424752
+                // z-graphics uses VK_FORMAT_R8G8B8A8_UNORM: memory layout R,G,B,A
+                // DRM_FORMAT_RGBA8888 describes exactly this memory layout.
+                const uint32_t drmFormat = 0x41424752;
                 int stride = width * 4;
+
+                fprintf(stderr, "[ZAWRA-BRIDGE] Creating EGLImage: drmFormat=0x%08x, stride=%d, size=%dx%d\n",
+                    drmFormat, stride, width, height);
 
                 Vector<EGLAttrib> attribs;
                 attribs.append(EGL_WIDTH); attribs.append(width);
@@ -260,6 +302,9 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
                 EGLImage image = platformDisplay.createEGLImage(
                     EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
 
+                EGLint eglErr = eglGetError();
+                fprintf(stderr, "[ZAWRA-BRIDGE] createEGLImage result=%p, EGL error=0x%04x\n", image, eglErr);
+
                 if (image != EGL_NO_IMAGE) {
                     GLuint texture = 0;
                     glGenTextures(1, &texture);
@@ -271,28 +316,45 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
 
                     auto* imageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
                         eglGetProcAddress("glEGLImageTargetTexture2DOES"));
-                    if (imageTargetTexture2DOES)
+                    if (imageTargetTexture2DOES) {
                         imageTargetTexture2DOES(GL_TEXTURE_2D, image);
+                        fprintf(stderr, "[ZAWRA-BRIDGE] glEGLImageTargetTexture2DOES OK, GL error=0x%04x\n", glGetError());
+                    } else {
+                        fprintf(stderr, "[ZAWRA-BRIDGE] WARNING: glEGLImageTargetTexture2DOES not found!\n");
+                    }
 
                     GLuint fbo = 0;
                     glGenFramebuffers(1, &fbo);
                     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
                     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
-                    glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
+                    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+                    fprintf(stderr, "[ZAWRA-BRIDGE] FBO created=%d, status=0x%04x (want 0x8CD5=COMPLETE), GL error=0x%04x\n",
+                        fbo, fboStatus, glGetError());
 
+                    // Restore original FBO, then replace the saved value
+                    glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
                     data().targetFrameBuffer = fbo;
+                } else {
+                    fprintf(stderr, "[ZAWRA-BRIDGE] FAILED to create EGLImage! GL error=0x%04x\n", glGetError());
                 }
+            } else {
+                fprintf(stderr, "[ZAWRA-BRIDGE] EGL display not ready or dma_buf_import not supported\n");
             }
             close(fd);
+        } else {
+            fprintf(stderr, "[ZAWRA-BRIDGE] exportCompositorFD FAILED (returned -1)\n");
         }
     }
 
     data().PaintFlags = flags;
     bindSurface(surface);
+    fprintf(stderr, "[ZAWRA-BRIDGE] beginPainting done: targetFBO=%d\n", data().targetFrameBuffer);
 }
 
 void TextureMapperGL::endPainting()
 {
+    fprintf(stderr, "[ZAWRA-BRIDGE] endPainting: targetFBO=%d, glError=0x%04x\n",
+        data().targetFrameBuffer, glGetError());
     glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
     if (data().didModifyStencil) {
         glClearStencil(1);
@@ -313,7 +375,9 @@ void TextureMapperGL::endPainting()
         glDisable(GL_DEPTH_TEST);
 
     // Zawra Graphics Hook: Present the composed frame
+    fprintf(stderr, "[ZAWRA-BRIDGE] calling presentFrame()\n");
     ZawraGraphicsBridge::singleton().presentFrame();
+    fprintf(stderr, "[ZAWRA-BRIDGE] presentFrame done, glError=0x%04x\n", glGetError());
 }
 
 void TextureMapperGL::drawBorder(const Color& color, float width, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix)

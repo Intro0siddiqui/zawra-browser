@@ -17,3 +17,6 @@ scratch/
 # WebKit Specific
 webkit_source.tar.xz
 dependencies/WebKit/
+
+# Crawler Database
+zawra_inventory.db*

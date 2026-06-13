@@ -127,6 +127,10 @@ For Zawra-specific project intelligence, agents **MUST** use the following `zw` 
 3.  **`./zw patches`**: List all files currently modified by Zawra.
 4.  **`./zw audit`**: **NEW.** Run a structural audit of the build graph. It detects **double-listed source files** (linker errors), orphaned patches (files not in the build), and Zig module collisions.
 5.  **`./zw update`**: Manually refresh the Knowledge Graph. (Note: Most queries now perform a **Smart Auto-Update**).
+6.  **`./zw stubs`**: List detected stubs, empty function placeholders, or unimplemented code blocks.
+    * **Scope**: Only scans C++ WebKit patches (`patches/webkit/`) and Zawra Rust glue code (`src/`). It does not search dependencies.
+    * **Purpose**: Only for getting a fast, high-level overview of potential stubs.
+    * **Limitations**: Uses simple regex patterns and heuristics. It is not an AST parser; it can produce false positives on valid helper functions that return `false`/`-1` in $\le 3$ lines, and might miss stubs written with complex multi-line formatting.
 
 ### Smart Auto-Update
 The `zw` tool is now autonomous. It monitors the project's **Git HEAD** and **file modification times (mtime)**. 
@@ -143,6 +147,10 @@ Zawra leverages the LLVM toolchain for performance and accuracy in a multi-langu
 **Mandatory**: Use `lldb` for debugging instead of GDB.
 - **Why**: LLDB handles massive WebKit binaries significantly faster and is the native debugger for both Rust and Zig.
 - **Cross-Language**: LLDB provides superior support for inspecting objects across Rust/C++ and Zig/C++ boundaries.
+- **Symbol Resolution (Avoid GNU addr2line)**: Never use legacy GNU `addr2line` for mapping program counter addresses to source lines on debug WebKit builds (which consumes massive RAM and runs single-threaded endlessly). **ALWAYS** use `llvm-symbolizer` instead, e.g.:
+  ```bash
+  llvm-symbolizer -C -f -e /path/to/libWPEWebKit.so <address>
+  ```
 
 ### 2. Compilation Database (`compile_commands.json`)
 We use a JSON compilation database to provide the LSP (`clangd`) and AI agents with precise compiler flags and include paths.

@@ -94,12 +94,7 @@ public:
     explicit ProcessThrottlerTimedActivity(Seconds timeout, ActivityVariant&& = nullptr);
     ~ProcessThrottlerTimedActivity()
     {
-        fprintf(stderr, "[ZAWRA-DEBUG] ProcessThrottlerTimedActivity destructor (this=%p, timer=%p)\n", this, &m_timer);
         m_timer.stop();
-        // Overwrite timer with empty one WITHOUT destroying old one first.
-        // This leaks the corrupted CallableWrapper but avoids the crash in ~Function().
-        new (&m_timer) RunLoop::Timer(RunLoop::main(), []{});
-        fprintf(stderr, "[ZAWRA-DEBUG] ProcessThrottlerTimedActivity timer function replaced\n");
     }
     ProcessThrottlerTimedActivity& operator=(ActivityVariant&&);
     const ActivityVariant& activity() const { return m_activity; }

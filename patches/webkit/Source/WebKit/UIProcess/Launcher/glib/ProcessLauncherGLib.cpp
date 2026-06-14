@@ -45,6 +45,7 @@ static bool isSandboxEnabled(const ProcessLauncher::LaunchOptions& launchOptions
 }
 
 #include <sys/syscall.h>
+#include <sys/prctl.h>
 
 #ifndef __NR_pidfd_open
 #define __NR_pidfd_open 434
@@ -102,13 +103,25 @@ void ProcessLauncher::launchProcess()
 
     m_processID = Zawra_Hajr_SpawnProcess(realExecutablePath.data(), const_cast<const char**>(argv), &webkitSocketFD);
 
+    if (parentPidFD != -1)
+        close(parentPidFD);
+
+    int childPidFD = -1;
+#if OS(LINUX)
+#ifndef PR_SET_PTRACER_ANY
+#define PR_SET_PTRACER_ANY ((unsigned long)-1)
+#endif
+        prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+        childPidFD = syscall(__NR_pidfd_open, m_processID, 0);
+#endif
+
     if (m_processID <= -1)
         g_error("Unable to spawn a new child process via Hajr");
 
     // UIProcess connection handle is signal2_fd
     int serverSocket = ringPair.signal2_fd;
 
-    RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket, ringPair, parentPidFD] {
+    RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket, ringPair, childPidFD] {
         IPC::Connection::Identifier identifier(serverSocket);
         // Populate Hajr ring bootstrap info so the parent's platformOpen()
         // uses the correct ring pair per-connection (not global env vars).
@@ -117,9 +130,10 @@ void ProcessLauncher::launchProcess()
         identifier.hajrRing2 = ringPair.ring2_id;
         identifier.hajrSig1 = ringPair.signal1_fd;
         identifier.hajrSig2 = ringPair.signal2_fd;
-        identifier.hajrPidfd = parentPidFD;
+        identifier.hajrPidfd = childPidFD;
         didFinishLaunchingProcess(m_processID, WTFMove(identifier));
     });
+    fprintf(stderr, "[CRASH-V2] launchProcess: dispatch complete, returning\n");
 }
 
 void ProcessLauncher::terminateProcess()

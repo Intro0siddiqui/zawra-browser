@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 #include <wtf/Assertions.h>
 #include <wtf/FastMalloc.h>
 #include <wtf/SafeStrerror.h>
@@ -71,8 +72,6 @@ private:
 
 void Connection::platformInitialize(Identifier identifier)
 {
-    m_socketDescriptor = identifier.handle;
-
     // Save per-connection Hajr info from the Identifier so platformOpen()
     // can use it instead of global env vars (which get overwritten when
     // multiple children are launched).
@@ -83,9 +82,20 @@ void Connection::platformInitialize(Identifier identifier)
     m_hajrSig2 = identifier.hajrSig2;
     m_hajrPidfd = identifier.hajrPidfd;
 
+    if (m_hasHajrInfo) {
+        // When Hajr is enabled, identifier.handle IS the eventfd (signal2_fd),
+        // NOT a socket. Do NOT wrap it in a GSocket — g_socket_new_from_fd
+        // takes ownership and its lifecycle management would close the
+        // eventfd, colliding with the ring buffer's signal_fd and causing
+        // EBADF in hajr_ring_wait (busy-spin / compositor stall).
+        m_socketDescriptor = -1;
+    } else {
+        m_socketDescriptor = identifier.handle;
 #if USE(GLIB)
-    m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
+        m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
 #endif
+    }
+
     m_readBuffer.reserveInitialCapacity(messageMaxSize);
     m_fileDescriptors.reserveInitialCapacity(attachmentMaxAmount);
 }
@@ -117,7 +127,11 @@ void Connection::platformInvalidate()
     m_writeSocketMonitor.stop();
 
 #if USE(GLIB)
-    m_hajrSignalSocket = nullptr;
+    if (m_hajrSignalSource) {
+        g_source_destroy(m_hajrSignalSource);
+        g_source_unref(m_hajrSignalSource);
+        m_hajrSignalSource = nullptr;
+    }
 #endif
 
     m_socketDescriptor = -1;
@@ -236,6 +250,11 @@ void Connection::readyReadHandler()
                     attachmentFail = true;
                     break;
                 }
+                if (!setCloseOnExec(fd)) {
+                    close(fd);
+                    attachmentFail = true;
+                    break;
+                }
                 fds.append(Attachment(fd, Attachment::Adopt));
             }
 
@@ -288,13 +307,19 @@ void Connection::readyReadHandler()
             if (decoder)
                 processIncomingMessage(WTFMove(decoder));
         }
+        return;
     }
 
     // Legacy fallback or signals that didn't go through the ring
     while (true) {
         ssize_t bytesRead = readBytesFromSocket(m_socketDescriptor, m_readBuffer, m_fileDescriptors);
-        if (bytesRead <= 0)
+        if (bytesRead <= 0) {
+            if (bytesRead == 0 || (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+                connectionDidClose();
+                return;
+            }
             break;
+        }
         while (processMessage()) { }
     }
 }
@@ -393,6 +418,36 @@ bool Connection::processMessage()
     return true;
 }
 
+#if USE(GLIB)
+struct HajrSource {
+    GSource source;
+    GPollFD pollFd;
+};
+
+static GSourceFuncs s_hajrSourceFuncs = {
+    // prepare
+    [](GSource* source, gint* timeout) -> gboolean {
+        *timeout = -1;
+        return FALSE;
+    },
+    // check
+    [](GSource* source) -> gboolean {
+        auto* hajrSource = reinterpret_cast<HajrSource*>(source);
+        return (hajrSource->pollFd.revents & (G_IO_IN | G_IO_HUP | G_IO_ERR)) != 0;
+    },
+    // dispatch
+    [](GSource* source, GSourceFunc callback, gpointer user_data) -> gboolean {
+        if (!callback)
+            return G_SOURCE_REMOVE;
+        return callback(user_data);
+    },
+    // finalize
+    nullptr,
+    nullptr,
+    nullptr
+};
+#endif
+
 void Connection::platformOpen()
 {
     RefPtr<Connection> protectedThis(this);
@@ -438,7 +493,31 @@ void Connection::platformOpen()
     }
 
     if (haveHajrInfo) {
-        if (pidfd != -1 && !m_isServer)
+        // When Hajr is enabled, the "socket" descriptor is actually an
+        // eventfd used for ring buffer signaling. If platformInitialize()
+        // wrapped it in a GSocket (child-side fallback path reading from
+        // env vars), release it now to prevent GSocket lifecycle from
+        // closing the eventfd that the ring buffer depends on.
+#if USE(GLIB)
+        if (m_socket && m_socketDescriptor != -1) {
+            int sockFd = g_socket_get_fd(m_socket.get());
+            if (sockFd == sig1 || sockFd == sig2) {
+                m_socket = nullptr;
+                m_socketDescriptor = -1;
+            }
+        }
+#endif
+
+        if (!m_isServer) {
+            int parentPidfd = syscall(434, getppid(), 0);
+            if (parentPidfd != -1) {
+                pidfd = parentPidfd;
+                fprintf(stderr, "[ZAWRA-DEBUG] Dynamically opened parent pidfd=%d for ppid=%d\n", pidfd, getppid());
+            } else {
+                fprintf(stderr, "[ZAWRA-ERROR] Failed to dynamically open parent pidfd: errno=%d\n", errno);
+            }
+        }
+        if (pidfd != -1)
             hajr_ipc_set_other_pidfd(pidfd);
 
         if (m_isServer) {
@@ -453,20 +532,33 @@ void Connection::platformOpen()
             m_isHajrEnabled, (void*)m_inboundRing, (void*)m_outboundRing);
 #if USE(GLIB)
         if (m_isHajrEnabled) {
-            // Wrap the hajr eventfd signal fd in a *separate* GSocket.
-            // We must NOT rewrap m_socket here: the GSocket created in
-            // platformInitialize() took ownership of m_socketDescriptor via
-            // g_socket_new_from_fd(), and overwriting m_socket would release
-            // the old GRefPtr, destroying the GSocket and silently closing
-            // the IPC socket fd that the legacy fallback path in
-            // readyReadHandler() may still try to read from.
-            m_hajrSignalSocket = adoptGRef(g_socket_new_from_fd(hajr_ring_get_signal_fd(m_inboundRing), nullptr));
+            int hajrFd = hajr_ring_get_signal_fd(m_inboundRing);
+            m_hajrSignalSource = g_source_new(&s_hajrSourceFuncs, sizeof(HajrSource));
+            auto* hajrSource = reinterpret_cast<HajrSource*>(m_hajrSignalSource);
+            hajrSource->pollFd.fd = hajrFd;
+            hajrSource->pollFd.events = static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR);
+            hajrSource->pollFd.revents = 0;
+            g_source_add_poll(m_hajrSignalSource, &hajrSource->pollFd);
+            this->ref();
+            g_source_set_callback(m_hajrSignalSource, [](gpointer data) -> gboolean {
+                auto* connection = static_cast<Connection*>(data);
+                connection->readyReadHandler();
+                return G_SOURCE_CONTINUE;
+            }, this, [](gpointer data) {
+                static_cast<Connection*>(data)->deref();
+            });
+#if USE(GLIB_EVENT_LOOP)
+            g_source_attach(m_hajrSignalSource, m_connectionQueue->runLoop().mainContext());
+#else
+            g_source_attach(m_hajrSignalSource, nullptr);
+#endif
+            fprintf(stderr, "[CRASH-V2] platformOpen: AFTER g_source_attach, returning\n");
         }
 #endif
     }
 
 #if USE(GLIB)
-    GSocket* monitorSocket = m_isHajrEnabled ? m_hajrSignalSocket.get() : m_socket.get();
+    GSocket* monitorSocket = m_isHajrEnabled ? nullptr : m_socket.get();
     if (monitorSocket) {
         m_readSocketMonitor.start(monitorSocket, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR), m_connectionQueue->runLoop(), [protectedThis](GIOCondition condition) -> gboolean {
             if (condition & (G_IO_HUP | G_IO_ERR)) {
@@ -482,16 +574,20 @@ void Connection::platformOpen()
     m_connectionQueue->dispatch([protectedThis] {
         protectedThis->readyReadHandler();
     });
+
+    fprintf(stderr, "[CRASH-V2] platformOpen: DONE, m_isHajrEnabled=%d\n", m_isHajrEnabled);
 }
 
 bool Connection::sendOutputMessage(UnixMessage& outputMessage)
 {
+    fprintf(stderr, "[CRASH-V2] sendOutputMessage: called, m_isHajrEnabled=%d\n", m_isHajrEnabled);
     if (m_isHajrEnabled && m_outboundRing) {
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: entering hajr block\n");
         auto& messageInfo = outputMessage.messageInfo();
         auto& attachments = outputMessage.attachments();
         uint32_t attachmentCount = attachments.size();
         
-        // Size: messageInfo + attachmentCount + handles + body + checksum
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: size calculated\n");
         size_t total_size = sizeof(messageInfo) + sizeof(attachmentCount) + (attachmentCount * sizeof(int32_t)) + outputMessage.bodySize() + sizeof(uint32_t);
         Vector<uint8_t> payload(total_size);
         uint8_t* ptr = payload.data();
@@ -502,14 +598,17 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
         memcpy(ptr, &attachmentCount, sizeof(attachmentCount));
         ptr += sizeof(attachmentCount);
 
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: copying %u attachments\n", attachmentCount);
         for (auto& attachment : attachments) {
             int32_t handle = hajr_ipc_send_fd(m_outboundRing, attachment.value());
             memcpy(ptr, &handle, sizeof(handle));
             ptr += sizeof(handle);
         }
 
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: copying body (size=%zu)\n", outputMessage.bodySize());
         memcpy(ptr, outputMessage.body(), outputMessage.bodySize());
 
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: calculating checksum\n");
         // Calculate checksum over msgInfo + body (core message integrity)
         uint32_t checksum = hajr_ipc_message_checksum(
             reinterpret_cast<const uint8_t*>(&messageInfo),
@@ -519,11 +618,16 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
         );
         memcpy(ptr + outputMessage.bodySize(), &checksum, sizeof(checksum));
 
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: writing to ring\n");
         if (hajr_ring_write(m_outboundRing, payload.data(), payload.size()) == 1) {
+            fprintf(stderr, "[CRASH-V2] sendOutputMessage: signaling ring\n");
             hajr_ring_signal(m_outboundRing);
+            fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning true\n");
             return true;
         }
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: ring write failed\n");
     }
+    fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning false\n");
     return false; 
 }
 
@@ -531,7 +635,33 @@ bool Connection::platformCanSendOutgoingMessages() const { return !m_pendingOutp
 
 bool Connection::sendOutgoingMessage(UniqueRef<Encoder>&& encoder)
 {
+    fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: called\n");
     UnixMessage outputMessage(encoder.get());
+    if (outputMessage.attachments().size() > (attachmentMaxAmount - 1)) {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+
+    fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: checking size inline\n");
+    size_t messageSizeWithBodyInline = sizeof(MessageInfo) + (outputMessage.attachments().size() * sizeof(AttachmentInfo)) + outputMessage.bodySize();
+    if (messageSizeWithBodyInline > messageMaxSize && outputMessage.bodySize()) {
+        fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: handling large message (size=%zu, max=%zu)\n", messageSizeWithBodyInline, static_cast<size_t>(messageMaxSize));
+        RefPtr<WebKit::SharedMemory> oolMessageBody = WebKit::SharedMemory::allocate(outputMessage.bodySize());
+        if (!oolMessageBody)
+            return false;
+
+        auto handle = oolMessageBody->createHandle(WebKit::SharedMemory::Protection::ReadOnly);
+        if (!handle)
+            return false;
+
+        outputMessage.messageInfo().setBodyOutOfLine();
+
+        memcpy(oolMessageBody->data(), outputMessage.body(), outputMessage.bodySize());
+
+        outputMessage.appendAttachment(handle->releaseHandle());
+    }
+
+    fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: calling sendOutputMessage\n");
     return sendOutputMessage(outputMessage);
 }
 SocketPair createPlatformConnection(unsigned options)

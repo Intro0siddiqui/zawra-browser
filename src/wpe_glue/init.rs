@@ -63,6 +63,17 @@ pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i
         return NS_ERROR_FAILURE;
     }
     eprintln!("[zawra] z-net engine started (poll thread spawned)");
+
+    // ── 4. Init z-graphics engine ───────────────────────────────────────────
+    unsafe extern "C" {
+        fn ZawraGraphics_Initialize() -> bool;
+    }
+    if !unsafe { ZawraGraphics_Initialize() } {
+        eprintln!("[zawra] z-graphics engine init failed");
+        return NS_ERROR_FAILURE;
+    }
+    eprintln!("[zawra] z-graphics engine initialised");
+
     eprintln!("[zawra] Zawra_Init_Subsystems: all subsystems ready");
     NS_OK
 }
@@ -73,14 +84,6 @@ pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i
 #[unsafe(no_mangle)]
 pub extern "C" fn Zawra_Shutdown_Subsystems() {
     eprintln!("[zawra] Shutdown requested — subsystems will be released at process exit");
-}
-
-/// Signals the generic event loop to wake up using Hajr primitives.
-///
-/// Currently a stub that logs the signal.
-#[unsafe(no_mangle)]
-pub extern "C" fn Zawra_Hajr_SignalEventLoop() {
-    eprintln!("Hajr Wakeup Signal Sent");
 }
 
 unsafe extern "C" {

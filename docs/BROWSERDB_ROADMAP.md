@@ -14,22 +14,22 @@ The following storage subsystems have been successfully routed to BrowserDB:
 
 ### B. Cookies
 - **Implementation**: Interception integration within `Source/WebCore/platform/network/soup/NetworkStorageSessionSoup.cpp` (using WebKit's Soup network backend).
-- **Status**: Active (partial). Only `setCookiesFromDOM` and `cookiesForSession` are intercepted; many cookie mutation paths (`deleteCookie`, `deleteAllCookies`, `replaceCookies`, `setCookie`) still bypass BrowserDB and go directly to SoupCookieJar.
+- **Status**: Complete. 6 cookie paths wired via `ZawraStorageBridge`, fully routed to BrowserDB.
 
 ### C. Navigation History & Bookmarks
 - **Implementation**: Customized storage layer routing to BrowserDB storage files instead of standard WebKit history databases.
 - **Status**: Active. History recording is wired via `ZawraStorageBridge::recordHistory()` called from `PageClientImpl::didCommitLoadForMainFrame()` (`Source/WebKit/UIProcess/API/wpe/PageClientImpl.cpp`). Bookmarks are wired via keyboard shortcuts in `PageClientImpl::doneWithKeyEvent()`: Ctrl+D adds a bookmark for the current page, Ctrl+Shift+D removes it, Ctrl+B dumps all bookmarks to the debug log.
 
 ### D. Cache API (NetworkCache::Storage)
-- **Implementation**: Interception via `NetworkCacheStorage.cpp` override in `Source/WebKit/NetworkProcess/cache/`, backed by `ZawraCacheBridge.h/cpp` which routes to BrowserDB's binary store via `Z_CacheStore_Store`/`Z_CacheStore_Retrieve` FFI functions.
-- **Status**: Active. HTTP cache entries are stored and retrieved from BrowserDB instead of the default WPE cache directory.
+- **Implementation**: Interception via `NetworkCacheStorage.cpp` override in `Source/WebKit/NetworkProcess/cache/`, backed by `ZawraCacheBridge.h/cpp` which routes to BrowserDB's binary store via `Z_CacheStore_Store`/`Z_CacheStore_Retrieve`/`Z_CacheStore_Delete`/`Z_CacheStore_Clear` FFI functions. Covers both HTTP NetworkCache and Service Worker Cache API (both use `NetworkCache::Storage`).
+- **Status**: Complete.
 
 ### E. IndexedDB
 - **Implementation**: Blob storage via `Z_Storage_PutBlob`/`Z_Storage_GetBlob`/`Z_Storage_DeleteBlob` FFI functions in `src/wpe_glue/storage.rs`. Binary key-value store (cursors) via `Z_IDBStore_Put`/`Z_IDBStore_Get`/`Z_IDBStore_Delete`/`Z_IDBStore_ScanPrefix`/`Z_IDBStore_Clear`.
 - **Status**: Active. Blob read/write and cursor stubs implemented. `Z_Storage_DeleteBlob` is no longer a no-op — it properly removes entries via `db().localstore().remove()`.
 
 ### F. IconDatabase
-- **Status**: Skipped. `ENABLE_ICONDATABASE` is not compiled in WPE WebKit, so no interception is needed.
+- **Status**: N/A. `ENABLE_ICONDATABASE` is not compiled in WPE WebKit, so no interception is needed or possible.
 
 ---
 
@@ -63,13 +63,13 @@ To achieve full isolation and deprecate legacy storage systems, the following ph
 - **Objective**: Implement a custom `BrowserDBIDBBackingStore` class to route object stores, transactions, and cursors directly to Rust, avoiding the default SQLite engine.
 - **Status**: Completed. Blob storage (`Z_Storage_PutBlob`/`GetBlob`/`DeleteBlob`) and binary key-value store with cursor scanning (`Z_IDBStore_*` functions) are implemented in the Rust FFI layer. WebKit blob operations are routed through the bridge. Cursor iteration stub completes the IndexedDB interception.
 
-### Stage 2: IconDatabase Bypass (Skipped)
+### Stage 2: IconDatabase Bypass (N/A)
 - **Objective**: Prevent the creation of standard SQLite databases for favicons by routing them into BrowserDB.
-- **Status**: Skipped — `ENABLE_ICONDATABASE` is not compiled in WPE WebKit, so this is not needed.
+- **Status**: N/A — `ENABLE_ICONDATABASE` is not compiled in WPE WebKit, so this is not needed.
 
-### Stage 3: Service Worker Cache API Integration (Completed)
-- **Objective**: Route standard web Cache API storage requests through Z-Net/BrowserDB ring buffers.
-- **Status**: Completed. `NetworkCacheStorage.cpp` and `ZawraCacheBridge.h/cpp` intercept cache read/write/delete operations at the storage layer, routing them to BrowserDB's binary store via `Z_CacheStore_*` FFI functions.
+### Stage 3: Cache API Integration (Completed)
+- **Objective**: Route standard web Cache API and HTTP NetworkCache storage requests through BrowserDB's binary store.
+- **Status**: Completed. `NetworkCacheStorage.cpp` and `ZawraCacheBridge.h/cpp` intercept cache read/write/delete/clear operations at the storage layer. A single interception point covers both HTTP NetworkCache and Service Worker Cache API (both use `NetworkCache::Storage`).
 
 ### Stage 4: History Recording & Bookmarks (Completed)
 - **Objective**: Wire BrowserDB history and bookmark storage to real call sites in the UI layer.

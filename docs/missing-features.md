@@ -1,7 +1,17 @@
 # Zawra Browser — Remaining Issues
 
 > Generated: 2026-06-18 (verified by sub-agent audit)
-> Total: **37 unresolved issues** (5 BrowserDB bugs fixed)
+> Total: **32 unresolved issues** (5 BrowserDB bugs resolved this session: Cookie wiring, History/bookmarks, IndexedDB backing store, Z_IDBStore cursor stubs, Cache API wrapper)
+
+---
+
+## RESOLVED
+
+- Cookie wiring — 6 cookie paths fully wired via ZawraStorageBridge
+- History/bookmarks — recordHistory() wired in PageClientImpl
+- IndexedDB backing store — 17 working methods + cursor stubs completed
+- Z_IDBStore cursor stubs — getAllRecords, getIndexRecord, openCursor, iterateCursor, getCount(index)
+- Cache API wrapper — 4 FFI functions + C++ bridge intercepting NetworkCache::Storage (`NetworkCacheStorage.cpp` + `ZawraCacheBridge.h/cpp`); covers both HTTP NetworkCache and Service Worker Cache API
 
 ---
 

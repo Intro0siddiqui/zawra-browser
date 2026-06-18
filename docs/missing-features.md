@@ -8,6 +8,7 @@
 ## RESOLVED
 
 - Cookie wiring — 6 cookie paths fully wired via ZawraStorageBridge
+- localStorage replacement — SQLiteStorageArea replaced with BrowserDBStorageArea (BrowserDBStorageArea.h/cpp, LocalStorageManager updated)
 - History/bookmarks — recordHistory() wired in PageClientImpl
 - IndexedDB backing store — 17 working methods + cursor stubs completed
 - Z_IDBStore cursor stubs — getAllRecords, getIndexRecord, openCursor, iterateCursor, getCount(index)
@@ -23,7 +24,7 @@
 - `JavaScriptCore_INSTALLED_HEADERS` expands to nothing in `PlatformWPE.cmake:573`
 - `webkitwpe-fake-api-headers` target exists at `PlatformWPE.cmake:251`
 - `NetworkStorageSessionSoup.cpp` has 3 `RELEASE_ASSERT_NOT_REACHED()` paths (lines 111, 139, 297)
-- `SQLiteStorageArea.cpp:63` has `ASSERT_NOT_REACHED()` in `sqlStatement()`
+- `SQLiteStorageArea.cpp:63` has `ASSERT_NOT_REACHED()` in `sqlStatement()` — RESOLVED (replaced with BrowserDBStorageArea)
 - 12 `[ZAWRA-DEBUG]` fprintf statements left in production patches
 
 ---

@@ -426,20 +426,30 @@ pub unsafe extern "C" fn Z_Cookie_Get(
     }
 }
 
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Cookie_GetForDomain(
     domain_hash_hi: u64,
     domain_hash_lo: u64,
+    path:           *const c_char,
     out_buf:        *mut c_char,
     out_buf_len:    usize,
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
     let domain_hash = ((domain_hash_hi as u128) << 64) | (domain_hash_lo as u128);
+    let path_str = if path.is_null() { String::new() } else {
+        unsafe { CStr::from_ptr(path).to_string_lossy().into_owned() }
+    };
     match db().cookies().get_by_domain(domain_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
-            if entries.is_empty() { return NS_ERROR_NOT_FOUND; }
-            let combined: String = entries.iter()
+            let filtered: Vec<&CookieEntry> = if path_str.is_empty() {
+                entries.iter().collect()
+            } else {
+                entries.iter().filter(|e| {
+                    e.path.is_empty() || e.path == "/" || path_str.starts_with(&e.path)
+                }).collect()
+            };
+            if filtered.is_empty() { return NS_ERROR_NOT_FOUND; }
+            let combined: String = filtered.iter()
                 .map(|e| format!("{}={}", e.name, e.value))
                 .collect::<Vec<_>>()
                 .join("; ");
@@ -516,11 +526,14 @@ pub unsafe extern "C" fn Z_Cookie_DeleteAll() -> i32 {
 /// `out_buf` must be valid and `out_buf_len` must be its capacity.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_LocalStorage_GetAll(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
     out_buf:        *mut c_char,
     out_buf_len:    usize,
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
-    match db().localstore().get_by_origin(0) {
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    match db().localstore().get_by_origin(origin_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let mut combined = String::new();

@@ -8,13 +8,13 @@
 extern "C" {
     int32_t Z_LocalStorage_Put(uint64_t hi, uint64_t lo, const char* key, const char* value);
     int32_t Z_LocalStorage_Get(uint64_t hi, uint64_t lo, const char* key, char* out_buf, size_t out_buf_len);
-    int32_t Z_LocalStorage_GetAll(char* out_buf, size_t out_buf_len);
+    int32_t Z_LocalStorage_GetAll(uint64_t origin_hash_hi, uint64_t origin_hash_lo, char* out_buf, size_t out_buf_len);
     int32_t Z_LocalStorage_Delete(uint64_t hi, uint64_t lo, const char* key);
     int32_t Z_LocalStorage_Clear(uint64_t hi, uint64_t lo);
 
     void Z_Hash_String(const char* input, uint64_t* out_hi, uint64_t* out_lo);
     int32_t Z_Cookie_Put(uint64_t hi, uint64_t lo, const char* name, const char* value, const char* path, const char* domain, uint64_t expiry, uint8_t flags);
-    int32_t Z_Cookie_GetForDomain(uint64_t hi, uint64_t lo, char* out_buf, size_t out_buf_len);
+    int32_t Z_Cookie_GetForDomain(uint64_t hi, uint64_t lo, const char* path, char* out_buf, size_t out_buf_len);
     int32_t Z_History_Put(uint64_t hi, uint64_t lo, const char* url, const char* title, uint64_t timestamp);
     int32_t Z_Bookmark_Put(uint64_t hi, uint64_t lo, const char* url, const char* title, const char* folder);
     int32_t Z_Bookmark_Delete(uint64_t hi, uint64_t lo);
@@ -102,7 +102,7 @@ String ZawraStorageBridge::getCookies(const URL& url)
     hashString(url.host().toString(), hi, lo);
 
     char buf[4096];
-    if (Z_Cookie_GetForDomain(hi, lo, buf, sizeof(buf)) == 0)
+    if (Z_Cookie_GetForDomain(hi, lo, url.path().utf8().data(), buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     
     return String();
@@ -166,28 +166,25 @@ void ZawraStorageBridge::incrementHistoryVisit(const URL& url)
     Z_History_Increment(hi, lo, 1);
 }
 
-void ZawraStorageBridge::storeDataWithTTL(const String& key, const String& value, uint64_t ttl)
+void ZawraStorageBridge::storeDataWithTTL(uint64_t originHashHi, uint64_t originHashLo, const String& key, const String& value, uint64_t ttl)
 {
-    uint64_t hi, lo;
-    hashString(key, hi, lo);
-    Z_LocalStorage_Put(hi, lo, key.utf8().data(), value.utf8().data());
+    (void)ttl;
+    Z_LocalStorage_Put(originHashHi, originHashLo, key.utf8().data(), value.utf8().data());
 }
 
-String ZawraStorageBridge::getData(const String& key)
+String ZawraStorageBridge::getData(uint64_t originHashHi, uint64_t originHashLo, const String& key)
 {
-    uint64_t hi, lo;
-    hashString(key, hi, lo);
     char buf[4096];
-    if (Z_LocalStorage_Get(hi, lo, key.utf8().data(), buf, sizeof(buf)) == 0)
+    if (Z_LocalStorage_Get(originHashHi, originHashLo, key.utf8().data(), buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
 }
 
-HashMap<String, String> ZawraStorageBridge::getAllData()
+HashMap<String, String> ZawraStorageBridge::getAllData(uint64_t originHashHi, uint64_t originHashLo)
 {
     HashMap<String, String> items;
     char buf[16384];
-    if (Z_LocalStorage_GetAll(buf, sizeof(buf)) == 0) {
+    if (Z_LocalStorage_GetAll(originHashHi, originHashLo, buf, sizeof(buf)) == 0) {
         String allData = String::fromUTF8(buf);
         auto lines = allData.split('\n');
         for (auto& line : lines) {
@@ -200,27 +197,14 @@ HashMap<String, String> ZawraStorageBridge::getAllData()
     return items;
 }
 
-void ZawraStorageBridge::removeData(const String& key)
+void ZawraStorageBridge::removeData(uint64_t originHashHi, uint64_t originHashLo, const String& key)
 {
-    uint64_t hi, lo;
-    hashString(key, hi, lo);
-    Z_LocalStorage_Delete(hi, lo, key.utf8().data());
+    Z_LocalStorage_Delete(originHashHi, originHashLo, key.utf8().data());
 }
 
-void ZawraStorageBridge::clearData(const String& urlString)
+void ZawraStorageBridge::clearData(uint64_t originHashHi, uint64_t originHashLo)
 {
-    // Clear all local storage items for the given URL's origin.
-    // SQLiteStorageArea::clear() is per-origin — the urlString represents
-    // the page URL (or a blank string if unavailable).
-    if (urlString.isEmpty()) {
-        // No origin context — fall back to wiping all local storage.
-        // TODO(#3): Once Zawra_LocalStorage_ClearAll is available, call it here instead of wipe.
-        Z_Storage_Wipe();
-        return;
-    }
-    uint64_t hi, lo;
-    hashString(urlString, hi, lo);
-    Z_LocalStorage_Clear(hi, lo);
+    Z_LocalStorage_Clear(originHashHi, originHashLo);
 }
 
 } // namespace WebCore

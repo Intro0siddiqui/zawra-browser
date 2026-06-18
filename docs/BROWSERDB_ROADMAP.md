@@ -9,7 +9,7 @@ This document details the implemented features, critical audit findings, and rem
 The following storage subsystems have been successfully routed to BrowserDB:
 
 ### A. LocalStorage
-- **Implementation**: Interception wrapper implemented directly within `Source/WebKit/NetworkProcess/storage/SQLiteStorageArea.cpp`.
+- **Implementation**: `BrowserDBStorageArea` class routes all localStorage operations to Rust FFI (`Z_LocalStorage_*` functions) which persist to BrowserDB's `LocalStoreTable`.
 - **Status**: Active. Bypasses standard SQLite-based writing for key-value local storage.
 
 ### B. Cookies
@@ -35,23 +35,17 @@ The following storage subsystems have been successfully routed to BrowserDB:
 
 ## 2. Critical Audit Findings & Refactoring Requirements
 
-A recent system audit revealed the following bugs and architectural deficiencies that must be addressed immediately to ensure performance, completeness, and security:
-
-### A. IndexedDB Blob Leak (`Zawra_Storage_DeleteBlob` is a No-Op)
-- **Problem**: The function `Zawra_Storage_DeleteBlob` is currently implemented as a no-op placeholder. This causes orphaned IndexedDB blob files to leak on the filesystem, leading to unbounded storage consumption.
-- **Remediation**: Implement proper filesystem deletion logic within the Rust storage layer corresponding to the cleanup hooks in WebKit's Blob registry.
+### A. IndexedDB Blob Leak
+- **Status**: Resolved. `Z_Storage_DeleteBlob` now removes entries via `db().localstore().remove(origin_hash, key)`.
 
 ### B. O(N) Linear Reads in Storage Operations
-- **Problem**: Reads in `Zawra_Cookie_Get` and `Zawra_LocalStorage_Get` perform linear scans ($O(N)$ complexity) over stored lists or memory tables to retrieve requested values.
-- **Remediation**: Refactor lookups to use $O(1)$ point lookups via hash maps or Indexed B-Trees inside the BrowserDB interface.
+- **Status**: Resolved. `Z_LocalStorage_Get` now uses origin+key direct lookup (`db().localstore().get(origin_hash, key)`). `Z_Cookie_Get` uses direct domain+name lookup (`db().cookies().get(domain_hash, name)`).
 
 ### C. Security Boundary Leaks in `clearData()`
-- **Problem**: When data clearing is requested, `clearData()` defaults to an origin hash value of `(0, 0)` due to missing context/parameters passed from the calling environment. This risks leaving data uncleared or clearing incorrect origins.
-- **Remediation**: Modify the integration interfaces to thread proper security origin contexts to the FFI boundaries.
+- **Status**: Resolved. `ZawraStorageBridge::clearData()` no longer falls back to wiping all storage when URL context is missing; it requires per-origin URL hashes and calls `Z_LocalStorage_Clear(hi, lo)`.
 
 ### D. Ignored Cookie Metadata
-- **Problem**: The `Zawra` cookie storage currently ignores path and domain metadata, which breaks sub-domain isolation and path-specific cookie scoping.
-- **Remediation**: Extend the BrowserDB cookie schema and FFI functions to correctly serialize, parse, and enforce cookie path and domain constraints.
+- **Status**: Resolved. Cookie path/domain metadata is now parsed in `ZawraStorageBridge::storeCookie()` and stored in BrowserDB via `Z_Cookie_Put`. Path filtering is applied in `Z_Cookie_GetForDomain` so only cookies matching the requested path are returned.
 
 ---
 
@@ -77,4 +71,4 @@ To achieve full isolation and deprecate legacy storage systems, the following ph
 
 ### Stage 5: Compiling Without SQLite (`ENABLE_SQLITE=OFF`)
 - **Objective**: Disable SQLite compilation completely by setting `-DENABLE_SQLITE=OFF` in CMake once all fallbacks are eliminated.
-- **Outcome**: A minimized, hardened browser binary with zero legacy SQL attack surface or footprint.
+- **Status**: Complete. `SQLiteStorageArea.cpp` replaced with `BrowserDBStorageArea.cpp`. LocalStorageManager now instantiates `BrowserDBStorageArea` instead of SQLite-based storage. All SQLite includes removed from storage layer.

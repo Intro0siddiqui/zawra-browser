@@ -906,6 +906,111 @@ pub unsafe extern "C" fn Z_Free_Buffer(ptr: *mut u8, len: usize) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NetworkCache KV Store (via BinaryStore with 0xCA namespace)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const CACHE_NAMESPACE: u8 = 0xCA;
+
+fn cache_key(hash: &[u8]) -> Vec<u8> {
+    let mut key = Vec::with_capacity(1 + hash.len());
+    key.push(CACHE_NAMESPACE);
+    key.extend_from_slice(hash);
+    key
+}
+
+/// Store a cache record by SHA1 hash.
+///
+/// # Safety
+/// `hash_ptr`/`data_ptr` must point to `hash_len`/`data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_CacheStore_Store(
+    hash_ptr: *const u8,
+    hash_len: usize,
+    data_ptr: *const u8,
+    data_len: usize,
+) -> i32 {
+    if hash_ptr.is_null() || data_ptr.is_null() || hash_len != 20 {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let hash = unsafe { std::slice::from_raw_parts(hash_ptr, hash_len) };
+    let data = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
+    let key = cache_key(hash);
+    match db().binarystore().put(key, data.to_vec()) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve a cache record by SHA1 hash.
+///
+/// On success writes a heap-allocated buffer to `*out_ptr`/`*out_len`.
+/// Free with `Z_Free_Buffer`.
+///
+/// # Safety
+/// `out_ptr`/`out_len` must be valid non-null pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_CacheStore_Retrieve(
+    hash_ptr: *const u8,
+    hash_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if hash_ptr.is_null() || out_ptr.is_null() || out_len.is_null() || hash_len != 20 {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let hash = unsafe { std::slice::from_raw_parts(hash_ptr, hash_len) };
+    let key = cache_key(hash);
+    match db().binarystore().get(&key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => NS_ERROR_NOT_FOUND,
+        Ok(Some(value)) => {
+            let mut boxed = value.into_boxed_slice();
+            unsafe {
+                *out_len = boxed.len();
+                *out_ptr = boxed.as_mut_ptr();
+            }
+            std::mem::forget(boxed);
+            NS_OK
+        }
+    }
+}
+
+/// Delete a cache record by SHA1 hash.
+///
+/// # Safety
+/// `hash_ptr` must point to `hash_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_CacheStore_Delete(
+    hash_ptr: *const u8,
+    hash_len: usize,
+) -> i32 {
+    if hash_ptr.is_null() || hash_len != 20 {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let hash = unsafe { std::slice::from_raw_parts(hash_ptr, hash_len) };
+    let key = cache_key(hash);
+    match db().binarystore().delete(&key) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Clear all cache entries.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_CacheStore_Clear() -> i32 {
+    let prefix = [CACHE_NAMESPACE];
+    match db().binarystore().scan_prefix(&prefix) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for (key, _) in &entries {
+                let _ = db().binarystore().delete(key);
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

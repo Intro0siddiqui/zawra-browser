@@ -211,8 +211,38 @@ WebCore::IntRect PageClientImpl::rootViewToAccessibilityScreen(const WebCore::In
     return rootViewToScreen(rect);    
 }
 
-void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent&, bool)
+void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool)
 {
+    // Ctrl+D: Bookmark current page
+    if (event.controlKey() && (event.key() == "d"_s || event.key() == "D"_s) && !event.shiftKey()) {
+        auto& page = m_view.page();
+        String urlString = page.currentURL();
+        if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
+            WebCore::URL pageURL({ }, urlString);
+            String title = page.pageLoadState().title();
+            WebCore::ZawraStorageBridge::addBookmark(pageURL, title, "Default"_s);
+        }
+        return;
+    }
+    // Ctrl+Shift+D: Remove bookmark for current page
+    if (event.controlKey() && event.shiftKey() && (event.key() == "d"_s || event.key() == "D"_s)) {
+        auto& page = m_view.page();
+        String urlString = page.currentURL();
+        if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
+            WebCore::URL pageURL({ }, urlString);
+            WebCore::ZawraStorageBridge::removeBookmark(pageURL);
+        }
+        return;
+    }
+    // Ctrl+B: Get all bookmarks (debug log)
+    if (event.controlKey() && (event.key() == "b"_s || event.key() == "B"_s) && !event.shiftKey()) {
+        String bookmarks = WebCore::ZawraStorageBridge::getBookmarks();
+        if (!bookmarks.isEmpty())
+            WTFLogAlways("[Bookmarks] %s\n", bookmarks.utf8().data());
+        else
+            WTFLogAlways("[Bookmarks] No bookmarks\n");
+        return;
+    }
 }
 
 #if ENABLE(TOUCH_EVENTS)
@@ -328,12 +358,10 @@ void PageClientImpl::didFirstVisuallyNonEmptyLayoutForMainFrame()
 
 void PageClientImpl::didFinishNavigation(API::Navigation*)
 {
-    // TODO: Wire bookmark UI actions here — call addBookmark/removeBookmark/getBookmarks
-    // from ZawraStorageBridge when the user triggers bookmark management via the UI.
-    // Example:
-    //   WebCore::ZawraStorageBridge::addBookmark(pageURL, title, "Default"_s);
-    //   WebCore::ZawraStorageBridge::removeBookmark(pageURL);
-    //   String bookmarks = WebCore::ZawraStorageBridge::getBookmarks();
+    // Bookmarks are wired via keyboard shortcuts in doneWithKeyEvent:
+    //   Ctrl+D          → addBookmark for current page
+    //   Ctrl+Shift+D    → removeBookmark for current page
+    //   Ctrl+B          → dump all bookmarks to debug log
 }
 
 void PageClientImpl::didFailNavigation(API::Navigation*)

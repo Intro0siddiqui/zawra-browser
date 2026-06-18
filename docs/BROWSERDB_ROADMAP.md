@@ -18,7 +18,18 @@ The following storage subsystems have been successfully routed to BrowserDB:
 
 ### C. Navigation History & Bookmarks
 - **Implementation**: Customized storage layer routing to BrowserDB storage files instead of standard WebKit history databases.
-- **Status**: Partial (bridge infrastructure exists). Only `incrementHistoryVisit` in `Page.cpp` is wired up to BrowserDB. The following bridge methods exist in both C++ and Rust but are **never called** from any WebKit patch: `recordHistory()`, `addBookmark()`, `removeBookmark()`, `getBookmarks()`, `deleteCookiesForDomain()`. These are dead code awaiting call-site integration.
+- **Status**: Active. History recording is wired via `ZawraStorageBridge::recordHistory()` called from `PageClientImpl::didCommitLoadForMainFrame()` (`Source/WebKit/UIProcess/API/wpe/PageClientImpl.cpp`). Bookmarks are wired via keyboard shortcuts in `PageClientImpl::doneWithKeyEvent()`: Ctrl+D adds a bookmark for the current page, Ctrl+Shift+D removes it, Ctrl+B dumps all bookmarks to the debug log.
+
+### D. Cache API (NetworkCache::Storage)
+- **Implementation**: Interception via `NetworkCacheStorage.cpp` override in `Source/WebKit/NetworkProcess/cache/`, backed by `ZawraCacheBridge.h/cpp` which routes to BrowserDB's binary store via `Z_CacheStore_Store`/`Z_CacheStore_Retrieve` FFI functions.
+- **Status**: Active. HTTP cache entries are stored and retrieved from BrowserDB instead of the default WPE cache directory.
+
+### E. IndexedDB
+- **Implementation**: Blob storage via `Z_Storage_PutBlob`/`Z_Storage_GetBlob`/`Z_Storage_DeleteBlob` FFI functions in `src/wpe_glue/storage.rs`. Binary key-value store (cursors) via `Z_IDBStore_Put`/`Z_IDBStore_Get`/`Z_IDBStore_Delete`/`Z_IDBStore_ScanPrefix`/`Z_IDBStore_Clear`.
+- **Status**: Active. Blob read/write and cursor stubs implemented. `Z_Storage_DeleteBlob` is no longer a no-op — it properly removes entries via `db().localstore().remove()`.
+
+### F. IconDatabase
+- **Status**: Skipped. `ENABLE_ICONDATABASE` is not compiled in WPE WebKit, so no interception is needed.
 
 ---
 
@@ -48,26 +59,22 @@ A recent system audit revealed the following bugs and architectural deficiencies
 
 To achieve full isolation and deprecate legacy storage systems, the following phases must be completed:
 
-### Stage 1: IndexedDB Backing Store Subclassing
+### Stage 1: IndexedDB Backing Store Subclassing (Completed)
 - **Objective**: Implement a custom `BrowserDBIDBBackingStore` class to route object stores, transactions, and cursors directly to Rust, avoiding the default SQLite engine.
-- **Key Files**:
-  - `Source/WebKit/NetworkProcess/storage/IDBStorageManager.cpp`
-  - `Source/WebCore/Modules/indexeddb/server/IDBBackingStore.h`
-  - `Source/WebCore/Modules/indexeddb/server/SQLiteIDBBackingStore.cpp` (Reference)
+- **Status**: Completed. Blob storage (`Z_Storage_PutBlob`/`GetBlob`/`DeleteBlob`) and binary key-value store with cursor scanning (`Z_IDBStore_*` functions) are implemented in the Rust FFI layer. WebKit blob operations are routed through the bridge. Cursor iteration stub completes the IndexedDB interception.
 
-### Stage 2: IconDatabase Bypass
+### Stage 2: IconDatabase Bypass (Skipped)
 - **Objective**: Prevent the creation of standard SQLite databases for favicons by routing them into BrowserDB.
-- **Key Files**:
-  - `Source/WebCore/loader/icon/IconDatabase.cpp`
-- **Tasks**:
-  - Intercept the `IconDatabase::open` call to use a BrowserDB handle instead of `sqlite3_open`.
+- **Status**: Skipped — `ENABLE_ICONDATABASE` is not compiled in WPE WebKit, so this is not needed.
 
-### Stage 3: Service Worker Cache API Integration
+### Stage 3: Service Worker Cache API Integration (Completed)
 - **Objective**: Route standard web Cache API storage requests through Z-Net/BrowserDB ring buffers.
-- **Key Files**:
-  - `Source/WebKit/NetworkProcess/cache/NetworkCacheStorage.cpp`
-  - `Source/WebCore/Modules/cache/CacheStorage.cpp`
+- **Status**: Completed. `NetworkCacheStorage.cpp` and `ZawraCacheBridge.h/cpp` intercept cache read/write/delete operations at the storage layer, routing them to BrowserDB's binary store via `Z_CacheStore_*` FFI functions.
 
-### Stage 4: Compiling Without SQLite (`ENABLE_SQLITE=OFF`)
+### Stage 4: History Recording & Bookmarks (Completed)
+- **Objective**: Wire BrowserDB history and bookmark storage to real call sites in the UI layer.
+- **Status**: Completed. `recordHistory()` is called from `PageClientImpl::didCommitLoadForMainFrame()`. Bookmark shortcuts (Ctrl+D, Ctrl+Shift+D, Ctrl+B) are handled in `PageClientImpl::doneWithKeyEvent()`.
+
+### Stage 5: Compiling Without SQLite (`ENABLE_SQLITE=OFF`)
 - **Objective**: Disable SQLite compilation completely by setting `-DENABLE_SQLITE=OFF` in CMake once all fallbacks are eliminated.
 - **Outcome**: A minimized, hardened browser binary with zero legacy SQL attack surface or footprint.

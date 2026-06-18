@@ -11,8 +11,11 @@
 #include "IDBSerialization.h"
 #include "IDBValue.h"
 #include "IndexKey.h"
+#include "IndexedDB.h"
 #include "Logging.h"
 #include "ThreadSafeDataBuffer.h"
+#include <algorithm>
+#include <tuple>
 
 extern "C" {
     int32_t Z_IDBStore_Put(const uint8_t* key, size_t key_len, const uint8_t* value, size_t value_len);
@@ -746,16 +749,202 @@ IDBError Z_IDBStore::getRecord(const IDBResourceIdentifier&, uint64_t objectStor
     return IDBError { };
 }
 
-IDBError Z_IDBStore::getAllRecords(const IDBResourceIdentifier&, const IDBGetAllRecordsData&, IDBGetAllResult&)
+static bool keyMatchesRange(const IDBKeyData& key, const IDBKeyRangeData& range)
 {
-    LOG(IndexedDB, "Z_IDBStore::getAllRecords");
-    return IDBError { IDBDatabaseException::ConstraintError, "not implemented"_s };
+    if (range.isExactlyOneKey())
+        return key.compare(range.lowerKey) == 0;
+    return range.containsKey(key);
 }
 
-IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t, uint64_t, IndexedDB::IndexRecordType, const IDBKeyRangeData&, IDBGetResult&)
+IDBError Z_IDBStore::getAllRecords(const IDBResourceIdentifier&, const IDBGetAllRecordsData& data, IDBGetAllResult& outValue)
+{
+    LOG(IndexedDB, "Z_IDBStore::getAllRecords");
+
+    auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(data.objectStoreIdentifier) : nullptr;
+    outValue = IDBGetAllResult(data.getAllType, objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+
+    if (data.indexIdentifier)
+        return getAllRecordsForIndex(data, outValue);
+    return getAllRecordsForObjectStore(data, outValue);
+}
+
+IDBError Z_IDBStore::getAllRecordsForObjectStore(const IDBGetAllRecordsData& data, IDBGetAllResult& outValue)
+{
+    uint8_t scanBuf[65536];
+    auto recPrefix = makeKeyWithOS(0x03, data.objectStoreIdentifier);
+    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        return IDBError { };
+
+    const uint8_t* sdata = scanBuf;
+    const uint8_t* send = scanBuf + sizeof(scanBuf);
+
+    while (sdata + 4 <= send) {
+        uint32_t klen = readU32(sdata, send);
+        if (!klen || sdata + klen > send)
+            break;
+
+        const uint8_t* storedFullKey = sdata;
+        size_t storedFullKeyLen = klen;
+        sdata += klen;
+
+        if (sdata + 4 > send)
+            break;
+        uint32_t vlen = readU32(sdata, send);
+        const uint8_t* vdata = sdata;
+        sdata += vlen;
+
+        size_t keyDataOffset = recPrefix.size();
+        size_t keyDataLen = storedFullKeyLen > keyDataOffset ? storedFullKeyLen - keyDataOffset : 0;
+        if (!keyDataLen)
+            continue;
+
+        IDBKeyData storedKey;
+        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, storedKey))
+            continue;
+
+        if (!keyMatchesRange(storedKey, data.keyRangeData))
+            continue;
+
+        if (data.getAllType == IndexedDB::GetAllType::Keys) {
+            outValue.addKey(IDBKeyData(storedKey));
+        } else {
+            const uint8_t* valEnd = vdata + vlen;
+            const uint8_t* valData = vdata;
+            uint32_t dataSize = readU32(valData, valEnd);
+            if (dataSize && valData + dataSize <= valEnd) {
+                Vector<uint8_t> dataCopy(valData, dataSize);
+                auto buffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
+                outValue.addValue(IDBValue(buffer));
+            }
+        }
+
+        if (data.count && ((data.getAllType == IndexedDB::GetAllType::Keys) ? outValue.keys().size() : outValue.values().size()) >= *data.count)
+            break;
+    }
+
+    return IDBError { };
+}
+
+IDBError Z_IDBStore::getAllRecordsForIndex(const IDBGetAllRecordsData& data, IDBGetAllResult& outValue)
+{
+    uint8_t scanBuf[65536];
+    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, data.objectStoreIdentifier, data.indexIdentifier);
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        return IDBError { };
+
+    const uint8_t* sdata = scanBuf;
+    const uint8_t* send = scanBuf + sizeof(scanBuf);
+
+    while (sdata + 4 <= send) {
+        uint32_t klen = readU32(sdata, send);
+        if (!klen || sdata + klen > send)
+            break;
+
+        const uint8_t* storedFullKey = sdata;
+        size_t storedFullKeyLen = klen;
+        sdata += klen;
+
+        if (sdata + 4 > send)
+            break;
+        uint32_t vlen = readU32(sdata, send);
+        const uint8_t* vdata = sdata;
+        sdata += vlen;
+
+        size_t keyDataOffset = idxRecPrefix.size();
+        size_t keyDataLen = storedFullKeyLen > keyDataOffset ? storedFullKeyLen - keyDataOffset : 0;
+        if (!keyDataLen)
+            continue;
+
+        IDBKeyData indexKey;
+        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, indexKey))
+            continue;
+
+        if (!keyMatchesRange(indexKey, data.keyRangeData))
+            continue;
+
+        const uint8_t* valEnd = vdata + vlen;
+        const uint8_t* valData = vdata;
+        uint32_t pkSize = readU32(valData, valEnd);
+        IDBKeyData primaryKey;
+        if (!pkSize || !deserializeIDBKeyData(valData, pkSize, primaryKey))
+            continue;
+
+        if (data.getAllType == IndexedDB::GetAllType::Keys) {
+            outValue.addKey(WTFMove(primaryKey));
+        } else {
+            ThreadSafeDataBuffer valueBuffer;
+            getObjectStoreValue(data.objectStoreIdentifier, primaryKey, valueBuffer);
+            outValue.addValue(IDBValue(valueBuffer));
+        }
+
+        if (data.count && ((data.getAllType == IndexedDB::GetAllType::Keys) ? outValue.keys().size() : outValue.values().size()) >= *data.count)
+            break;
+    }
+
+    return IDBError { };
+}
+
+IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, IndexedDB::IndexRecordType recordType, const IDBKeyRangeData& range, IDBGetResult& outValue)
 {
     LOG(IndexedDB, "Z_IDBStore::getIndexRecord");
-    return IDBError { IDBDatabaseException::ConstraintError, "not implemented"_s };
+
+    auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier) : nullptr;
+
+    uint8_t scanBuf[65536];
+    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        return IDBError { };
+
+    const uint8_t* sdata = scanBuf;
+    const uint8_t* send = scanBuf + sizeof(scanBuf);
+
+    while (sdata + 4 <= send) {
+        uint32_t klen = readU32(sdata, send);
+        if (!klen || sdata + klen > send)
+            break;
+
+        const uint8_t* storedFullKey = sdata;
+        size_t storedFullKeyLen = klen;
+        sdata += klen;
+
+        if (sdata + 4 > send)
+            break;
+        uint32_t vlen = readU32(sdata, send);
+        const uint8_t* vdata = sdata;
+        sdata += vlen;
+
+        size_t keyDataOffset = idxRecPrefix.size();
+        size_t keyDataLen = storedFullKeyLen > keyDataOffset ? storedFullKeyLen - keyDataOffset : 0;
+        if (!keyDataLen)
+            continue;
+
+        IDBKeyData indexKey;
+        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, indexKey))
+            continue;
+
+        if (!keyMatchesRange(indexKey, range))
+            continue;
+
+        const uint8_t* valEnd = vdata + vlen;
+        const uint8_t* valData = vdata;
+        uint32_t pkSize = readU32(valData, valEnd);
+        IDBKeyData primaryKey;
+        if (!pkSize || !deserializeIDBKeyData(valData, pkSize, primaryKey))
+            continue;
+
+        if (recordType == IndexedDB::IndexRecordType::Key) {
+            outValue = IDBGetResult(primaryKey);
+            return IDBError { };
+        }
+
+        ThreadSafeDataBuffer valueBuffer;
+        getObjectStoreValue(objectStoreIdentifier, primaryKey, valueBuffer);
+        outValue = IDBGetResult(indexKey, primaryKey, IDBValue(valueBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        return IDBError { };
+    }
+
+    outValue = IDBGetResult();
+    return IDBError { };
 }
 
 IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const IDBKeyRangeData& range, uint64_t& outCount)
@@ -765,7 +954,42 @@ IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStore
     outCount = 0;
 
     if (indexIdentifier) {
-        return IDBError { IDBDatabaseException::ConstraintError, "not implemented"_s };
+        uint8_t scanBuf[65536];
+        auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
+        if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+            return IDBError { };
+
+        const uint8_t* sdata = scanBuf;
+        const uint8_t* send = scanBuf + sizeof(scanBuf);
+        while (sdata + 4 <= send) {
+            uint32_t klen = readU32(sdata, send);
+            if (!klen || sdata + klen > send)
+                break;
+
+            const uint8_t* storedFullKey = sdata;
+            size_t storedFullKeyLen = klen;
+            sdata += klen;
+
+            if (sdata + 4 > send)
+                break;
+            uint32_t vlen = readU32(sdata, send);
+            sdata += vlen;
+
+            size_t keyDataOffset = idxRecPrefix.size();
+            size_t keyDataLen = storedFullKeyLen > keyDataOffset ? storedFullKeyLen - keyDataOffset : 0;
+            if (!keyDataLen)
+                continue;
+
+            IDBKeyData storedKey;
+            if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, storedKey))
+                continue;
+
+            if (!keyMatchesRange(storedKey, range))
+                continue;
+
+            outCount++;
+        }
+        return IDBError { };
     }
 
     if (!range.isExactlyOneKey()) {
@@ -885,16 +1109,332 @@ IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&,
     return IDBError { };
 }
 
-IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInfo&, IDBGetResult&)
-{
-    LOG(IndexedDB, "Z_IDBStore::openCursor");
-    return IDBError { IDBDatabaseException::ConstraintError, "not implemented"_s };
+namespace {
+
+struct ZCursorState {
+    IDBCursorInfo info;
+    Vector<IDBKeyData> keys;
+    Vector<IDBKeyData> primaryKeys;
+    Vector<ThreadSafeDataBuffer> values;
+    int64_t currentIndex { -1 };
+    bool done { false };
+};
+
 }
 
-IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResourceIdentifier&, const IDBIterateCursorData&, IDBGetResult&)
+IDBError Z_IDBStore::getObjectStoreValue(uint64_t objectStoreIdentifier, const IDBKeyData& primaryKey, ThreadSafeDataBuffer& outBuffer)
+{
+    auto pkBuffer = serializeIDBKeyData(primaryKey);
+    if (!pkBuffer)
+        return IDBError { UnknownError };
+
+    auto pkSpan = pkBuffer->dataAsSpanForContiguousData();
+    Vector<uint8_t> recFullKey;
+    writeU64(recFullKey, m_databaseID);
+    recFullKey.append(0x03);
+    writeU64(recFullKey, objectStoreIdentifier);
+    recFullKey.append(pkSpan.data(), pkSpan.size());
+
+    uint8_t* recOutPtr = nullptr;
+    size_t recOutLen = 0;
+    IDBError error;
+    if (Z_IDBStore_Get(recFullKey.data(), recFullKey.size(), &recOutPtr, &recOutLen) == 0 && recOutPtr && recOutLen > 0) {
+        const uint8_t* rdata = recOutPtr;
+        const uint8_t* rend = recOutPtr + recOutLen;
+        uint32_t recDataSize = readU32(rdata, rend);
+        if (recDataSize && rdata + recDataSize <= rend) {
+            Vector<uint8_t> dataCopy(rdata, recDataSize);
+            outBuffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
+        }
+        Z_Free_Buffer(recOutPtr, recOutLen);
+    } else if (recOutPtr) {
+        Z_Free_Buffer(recOutPtr, recOutLen);
+    }
+
+    return IDBError { };
+}
+
+static void buildCursorRecords(Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>& records, Vector<IDBKeyData>& keys, Vector<IDBKeyData>& primaryKeys, Vector<ThreadSafeDataBuffer>& values)
+{
+    for (auto& rec : records) {
+        keys.append(WTFMove(std::get<0>(rec)));
+        primaryKeys.append(WTFMove(std::get<1>(rec)));
+        values.append(WTFMove(std::get<2>(rec)));
+    }
+}
+
+IDBError Z_IDBStore::scanObjectStoreRecords(uint64_t objectStoreIdentifier, const IDBKeyRangeData& range, Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>& outRecords)
+{
+    uint8_t scanBuf[65536];
+    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
+    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        return IDBError { };
+
+    const uint8_t* sdata = scanBuf;
+    const uint8_t* send = scanBuf + sizeof(scanBuf);
+
+    while (sdata + 4 <= send) {
+        uint32_t klen = readU32(sdata, send);
+        if (!klen || sdata + klen > send)
+            break;
+
+        const uint8_t* storedFullKey = sdata;
+        size_t storedFullKeyLen = klen;
+        sdata += klen;
+
+        if (sdata + 4 > send)
+            break;
+        uint32_t vlen = readU32(sdata, send);
+        const uint8_t* vdata = sdata;
+        sdata += vlen;
+
+        size_t keyDataOffset = recPrefix.size();
+        size_t keyDataLen = storedFullKeyLen > keyDataOffset ? storedFullKeyLen - keyDataOffset : 0;
+        if (!keyDataLen)
+            continue;
+
+        IDBKeyData storedKey;
+        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, storedKey))
+            continue;
+
+        if (!keyMatchesRange(storedKey, range))
+            continue;
+
+        const uint8_t* valEnd = vdata + vlen;
+        const uint8_t* valData = vdata;
+        uint32_t dataSize = readU32(valData, valEnd);
+        ThreadSafeDataBuffer valueBuffer;
+        if (dataSize && valData + dataSize <= valEnd) {
+            Vector<uint8_t> dataCopy(valData, dataSize);
+            valueBuffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
+        }
+
+        outRecords.append({ IDBKeyData(storedKey), IDBKeyData(storedKey), valueBuffer });
+    }
+
+    return IDBError { };
+}
+
+IDBError Z_IDBStore::scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const IDBKeyRangeData& range, Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>& outRecords)
+{
+    uint8_t scanBuf[65536];
+    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        return IDBError { };
+
+    const uint8_t* sdata = scanBuf;
+    const uint8_t* send = scanBuf + sizeof(scanBuf);
+
+    while (sdata + 4 <= send) {
+        uint32_t klen = readU32(sdata, send);
+        if (!klen || sdata + klen > send)
+            break;
+
+        const uint8_t* storedFullKey = sdata;
+        size_t storedFullKeyLen = klen;
+        sdata += klen;
+
+        if (sdata + 4 > send)
+            break;
+        uint32_t vlen = readU32(sdata, send);
+        const uint8_t* vdata = sdata;
+        sdata += vlen;
+
+        size_t keyDataOffset = idxRecPrefix.size();
+        size_t keyDataLen = storedFullKeyLen > keyDataOffset ? storedFullKeyLen - keyDataOffset : 0;
+        if (!keyDataLen)
+            continue;
+
+        IDBKeyData indexKey;
+        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, indexKey))
+            continue;
+
+        if (!keyMatchesRange(indexKey, range))
+            continue;
+
+        const uint8_t* valEnd = vdata + vlen;
+        const uint8_t* valData = vdata;
+        uint32_t pkSize = readU32(valData, valEnd);
+        IDBKeyData primaryKey;
+        if (!pkSize || !deserializeIDBKeyData(valData, pkSize, primaryKey))
+            continue;
+
+        ThreadSafeDataBuffer valueBuffer;
+        outRecords.append({ WTFMove(indexKey), WTFMove(primaryKey), valueBuffer });
+    }
+
+    return IDBError { };
+}
+
+IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInfo& info, IDBGetResult& outResult)
+{
+    LOG(IndexedDB, "Z_IDBStore::openCursor");
+
+    auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(info.objectStoreIdentifier()) : nullptr;
+
+    auto cursorState = makeUnique<ZCursorState>();
+    cursorState->info = info;
+
+    Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>> records;
+    IDBError error;
+    if (info.cursorSource() == IndexedDB::CursorSource::Index) {
+        error = scanIndexRecords(info.objectStoreIdentifier(), info.sourceIdentifier(), info.range(), records);
+        if (!error.isNull())
+            return error;
+    } else {
+        error = scanObjectStoreRecords(info.sourceIdentifier(), info.range(), records);
+        if (!error.isNull())
+            return error;
+    }
+
+    bool isForward = info.cursorDirection() == IndexedDB::CursorDirection::Next || info.cursorDirection() == IndexedDB::CursorDirection::Nextunique;
+
+    std::sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
+        return std::get<0>(a).compare(std::get<0>(b)) < 0;
+    });
+
+    if (!isForward)
+        std::reverse(records.begin(), records.end());
+
+    buildCursorRecords(records, cursorState->keys, cursorState->primaryKeys, cursorState->values);
+
+    if (cursorState->keys.isEmpty()) {
+        cursorState->done = true;
+        m_cursors.set(info.identifier(), WTFMove(cursorState));
+        outResult = IDBGetResult();
+        return IDBError { };
+    }
+
+    cursorState->currentIndex = isForward ? 0 : static_cast<int64_t>(cursorState->keys.size()) - 1;
+
+    if (info.cursorType() == IndexedDB::CursorType::KeyOnly) {
+        outResult = IDBGetResult(cursorState->keys[cursorState->currentIndex], cursorState->primaryKeys[cursorState->currentIndex]);
+    } else {
+        if (cursorState->values[cursorState->currentIndex].data()) {
+            outResult = IDBGetResult(cursorState->keys[cursorState->currentIndex], cursorState->primaryKeys[cursorState->currentIndex], IDBValue(cursorState->values[cursorState->currentIndex]), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        } else if (info.cursorSource() == IndexedDB::CursorSource::Index) {
+            ThreadSafeDataBuffer valueBuffer;
+            getObjectStoreValue(info.objectStoreIdentifier(), cursorState->primaryKeys[cursorState->currentIndex], valueBuffer);
+            cursorState->values[cursorState->currentIndex] = valueBuffer;
+            outResult = IDBGetResult(cursorState->keys[cursorState->currentIndex], cursorState->primaryKeys[cursorState->currentIndex], IDBValue(valueBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        } else {
+            outResult = IDBGetResult(cursorState->keys[cursorState->currentIndex], cursorState->primaryKeys[cursorState->currentIndex], IDBValue(ThreadSafeDataBuffer()), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        }
+    }
+
+    m_cursors.set(info.identifier(), WTFMove(cursorState));
+    return IDBError { };
+}
+
+IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResourceIdentifier& cursorIdentifier, const IDBIterateCursorData& data, IDBGetResult& outResult)
 {
     LOG(IndexedDB, "Z_IDBStore::iterateCursor");
-    return IDBError { IDBDatabaseException::ConstraintError, "not implemented"_s };
+
+    auto cursorIt = m_cursors.find(cursorIdentifier);
+    if (cursorIt == m_cursors.end())
+        return IDBError { UnknownError, "Cursor not found"_s };
+
+    auto& cursor = *cursorIt->value;
+    auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(cursor.info.objectStoreIdentifier()) : nullptr;
+
+    if (cursor.done) {
+        outResult = IDBGetResult();
+        return IDBError { };
+    }
+
+    bool isForward = cursor.info.cursorDirection() == IndexedDB::CursorDirection::Next || cursor.info.cursorDirection() == IndexedDB::CursorDirection::Nextunique;
+    bool isUnique = cursor.info.cursorDirection() == IndexedDB::CursorDirection::Nextunique || cursor.info.cursorDirection() == IndexedDB::CursorDirection::Prevunique;
+
+    uint64_t advanceCount = data.count ? data.count : 1;
+
+    auto advanceOne = [&]() -> bool {
+        for (uint64_t step = 0; step < advanceCount; ++step) {
+            if (isForward)
+                ++cursor.currentIndex;
+            else
+                --cursor.currentIndex;
+
+            if (cursor.currentIndex < 0 || cursor.currentIndex >= static_cast<int64_t>(cursor.keys.size())) {
+                cursor.done = true;
+                return false;
+            }
+
+            if (isUnique) {
+                while (cursor.currentIndex >= 0 && cursor.currentIndex < static_cast<int64_t>(cursor.keys.size())) {
+                    bool duplicate = false;
+                    if (isForward && cursor.currentIndex > 0)
+                        duplicate = cursor.keys[cursor.currentIndex].compare(cursor.keys[cursor.currentIndex - 1]) == 0;
+                    else if (!isForward && cursor.currentIndex + 1 < static_cast<int64_t>(cursor.keys.size()))
+                        duplicate = cursor.keys[cursor.currentIndex].compare(cursor.keys[cursor.currentIndex + 1]) == 0;
+
+                    if (!duplicate)
+                        break;
+
+                    if (isForward)
+                        ++cursor.currentIndex;
+                    else
+                        --cursor.currentIndex;
+                }
+
+                if (cursor.currentIndex < 0 || cursor.currentIndex >= static_cast<int64_t>(cursor.keys.size())) {
+                    cursor.done = true;
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+
+    if (!advanceOne())
+        return IDBError { };
+
+    if (!data.keyData.isNull()) {
+        while (!cursor.done) {
+            int cmp = cursor.keys[cursor.currentIndex].compare(data.keyData);
+            if ((isForward && cmp >= 0) || (!isForward && cmp <= 0))
+                break;
+
+            if (!advanceOne())
+                break;
+        }
+    }
+
+    if (data.primaryKeyData.isValid() && !cursor.done) {
+        while (!cursor.done) {
+            auto& currentKey = cursor.keys[cursor.currentIndex];
+            if (currentKey.compare(data.keyData) != 0)
+                break;
+            int cmp = cursor.primaryKeys[cursor.currentIndex].compare(data.primaryKeyData);
+            if ((isForward && cmp >= 0) || (!isForward && cmp <= 0))
+                break;
+
+            if (!advanceOne())
+                break;
+        }
+    }
+
+    if (cursor.done) {
+        outResult = IDBGetResult();
+        return IDBError { };
+    }
+
+    if (cursor.info.cursorType() == IndexedDB::CursorType::KeyOnly) {
+        outResult = IDBGetResult(cursor.keys[cursor.currentIndex], cursor.primaryKeys[cursor.currentIndex]);
+    } else {
+        auto& valBuffer = cursor.values[cursor.currentIndex];
+        if (valBuffer.data()) {
+            outResult = IDBGetResult(cursor.keys[cursor.currentIndex], cursor.primaryKeys[cursor.currentIndex], IDBValue(valBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        } else if (cursor.info.cursorSource() == IndexedDB::CursorSource::Index) {
+            ThreadSafeDataBuffer valueBuffer;
+            getObjectStoreValue(cursor.info.objectStoreIdentifier(), cursor.primaryKeys[cursor.currentIndex], valueBuffer);
+            cursor.values[cursor.currentIndex] = valueBuffer;
+            outResult = IDBGetResult(cursor.keys[cursor.currentIndex], cursor.primaryKeys[cursor.currentIndex], IDBValue(valueBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        } else {
+            outResult = IDBGetResult(cursor.keys[cursor.currentIndex], cursor.primaryKeys[cursor.currentIndex], IDBValue(ThreadSafeDataBuffer()), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
+        }
+    }
+
+    return IDBError { };
 }
 
 IDBObjectStoreInfo* Z_IDBStore::infoForObjectStore(uint64_t objectStoreIdentifier)

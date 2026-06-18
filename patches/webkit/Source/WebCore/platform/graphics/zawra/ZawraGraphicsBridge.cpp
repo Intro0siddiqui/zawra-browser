@@ -14,18 +14,18 @@
 
 extern "C" {
     // Declarations for Zig FFI functions from z-graphics
-    bool ZawraGraphics_Initialize();
-    void* ZawraGraphics_CreateWindow(unsigned int width, unsigned int height);
-    void* ZawraGraphics_CreateSurface(void* window, unsigned int width, unsigned int height);
-    void ZawraGraphics_SwapBuffers(void* handle);
-    int ZawraGraphics_ExportSurfaceFD(void* handle);
-    void ZawraGraphics_DestroySurface(void* handle);
+    bool Z_Graphics_Initialize();
+    void* Z_Graphics_CreateWindow(unsigned int width, unsigned int height);
+    void* Z_Graphics_CreateSurface(void* window, unsigned int width, unsigned int height);
+    void Z_Graphics_SwapBuffers(void* handle);
+    int Z_Graphics_ExportSurfaceFD(void* handle);
+    void Z_Graphics_DestroySurface(void* handle);
 
     // Compositor FFI functions
-    void* ZawraGraphics_CompositorInitialize(void* surface, unsigned int width, unsigned int height);
-    bool ZawraGraphics_CompositorRenderLayer(void* state);
-    void ZawraGraphics_CompositorDestroy(void* state);
-    bool ZawraGraphics_CompositorResize(void* state, unsigned int width, unsigned int height);
+    void* Z_Graphics_CompositorInitialize(void* surface, unsigned int width, unsigned int height);
+    bool Z_Graphics_CompositorRenderLayer(void* state);
+    void Z_Graphics_CompositorDestroy(void* state);
+    bool Z_Graphics_CompositorResize(void* state, unsigned int width, unsigned int height);
 }
 
 namespace WebCore {

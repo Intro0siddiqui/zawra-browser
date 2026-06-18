@@ -9,6 +9,8 @@
 namespace WebCore {
 namespace IDBServer {
 
+struct ZCursorState;
+
 class Z_IDBStore final : public IDBBackingStore {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -66,10 +68,17 @@ private:
     static uint64_t readU64(const uint8_t*& data, const uint8_t* end);
     static uint32_t readU32(const uint8_t*& data, const uint8_t* end);
 
+    IDBError getAllRecordsForObjectStore(const IDBGetAllRecordsData&, IDBGetAllResult&);
+    IDBError getAllRecordsForIndex(const IDBGetAllRecordsData&, IDBGetAllResult&);
+    IDBError scanObjectStoreRecords(uint64_t objectStoreIdentifier, const IDBKeyRangeData&, Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>&);
+    IDBError scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const IDBKeyRangeData&, Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>&);
+    IDBError getObjectStoreValue(uint64_t objectStoreIdentifier, const IDBKeyData& primaryKey, ThreadSafeDataBuffer& outBuffer);
+
     IDBDatabaseIdentifier m_identifier;
     uint64_t m_databaseID { 0 };
     std::unique_ptr<IDBDatabaseInfo> m_databaseInfo;
     HashMap<uint64_t, IDBObjectStoreInfo> m_objectStoreInfoCache;
+    HashMap<IDBResourceIdentifier, std::unique_ptr<ZCursorState>> m_cursors;
 };
 
 } // namespace IDBServer

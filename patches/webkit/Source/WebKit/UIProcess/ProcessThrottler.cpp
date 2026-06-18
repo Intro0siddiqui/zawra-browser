@@ -63,9 +63,7 @@ ProcessThrottler::ProcessThrottler(ProcessThrottlerClient& process, bool shouldT
 
 ProcessThrottler::~ProcessThrottler()
 {
-    fprintf(stderr, "[ZAWRA-DEBUG] ProcessThrottler destructor (this=%p)\n", this);
     invalidateAllActivities();
-    fprintf(stderr, "[ZAWRA-DEBUG] ProcessThrottler destructor END (this=%p)\n", this);
 }
 
 bool ProcessThrottler::addActivity(Activity& activity)

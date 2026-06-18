@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.85" # Required for Edition 2024
 description = "Zawra — a next-generation browser powered by WPE, z-net, and BrowserDB"
 license = "MPL-2.0"
+autobins = false
 
 [workspace]
 members = [
@@ -28,9 +29,6 @@ name = "zawra_browser"
 path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
 
-[[bin]]
-name = "zawra"
-path = "src/bin/zawra.rs"
 
 [dev-dependencies]
 # No extra deps needed — tests use only the library

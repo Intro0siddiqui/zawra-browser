@@ -230,17 +230,19 @@ void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
     ZLOG("beginPainting: surface=%p, viewport=%dx%d, defaultFBO=%d",
         surface, data().viewport[2], data().viewport[3], data().targetFrameBuffer);
 
-    // Lazy-init: ensure z-graphics bridge is initialized on first use
-    static bool bridgeInitialized = false;
-    if (!bridgeInitialized) {
-        ZLOG("Lazy-init: initializing z-graphics bridge");
-        bool ok = ZawraGraphicsBridge::singleton().initialize(nullptr, data().viewport[2], data().viewport[3]);
-        ZLOG("Lazy-init: bridge returned %s", ok ? "true" : "false");
-        bridgeInitialized = true;
-    }
-
     // Zawra Graphics Hook: Import DMA-BUF FD as EGLImage, then create an FBO from it
     // so WebKit's TextureMapper draws directly into the z-graphics RHI surface.
+    //
+    // Hook Logic & FD Lifecycle:
+    // 1. We retrieve the compositor's file descriptor via exportCompositorFD().
+    // 2. We verify the FD and construct the EGL attributes (EGL_LINUX_DMA_BUF_EXT).
+    // 3. We invoke platformDisplay.createEGLImage() to register the DMA-BUF with EGL.
+    // 4. Important: The EGL implementation duplicates/takes ownership of the underlying
+    //    DMA-BUF resource. Therefore, we must call close(fd) on our local descriptor
+    //    handle to avoid leaking file descriptors, regardless of whether EGL import
+    //    succeeded or failed.
+    // 5. If successful, we bind the EGLImage to GL_TEXTURE_2D and attach it to a new
+    //    FBO, redirecting WebKit's rendering target to the RHI surface.
     if (!surface) {
         int fd = ZawraGraphicsBridge::singleton().exportCompositorFD();
         fprintf(stderr, "[ZAWRA-BRIDGE] exportCompositorFD returned fd=%d\n", fd);
@@ -375,9 +377,13 @@ void TextureMapperGL::endPainting()
         glDisable(GL_DEPTH_TEST);
 
     // Zawra Graphics Hook: Present the composed frame
-    fprintf(stderr, "[ZAWRA-BRIDGE] calling presentFrame()\n");
-    ZawraGraphicsBridge::singleton().presentFrame();
-    fprintf(stderr, "[ZAWRA-BRIDGE] presentFrame done, glError=0x%04x\n", glGetError());
+    if (ZawraGraphicsBridge::singleton().exportCompositorFD() >= 0) {
+        fprintf(stderr, "[ZAWRA-BRIDGE] calling presentFrame()\n");
+        ZawraGraphicsBridge::singleton().presentFrame();
+        fprintf(stderr, "[ZAWRA-BRIDGE] presentFrame done\n");
+    } else {
+        fprintf(stderr, "[ZAWRA-BRIDGE] skipping presentFrame() (no valid compositor FD)\n");
+    }
 }
 
 void TextureMapperGL::drawBorder(const Color& color, float width, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix)
@@ -470,7 +476,6 @@ static TextureMapperShaderProgram::Options optionsForFilterType(FilterOperation:
             return { TextureMapperShaderProgram::AlphaBlur };
         return { TextureMapperShaderProgram::AlphaBlur, TextureMapperShaderProgram::ContentTexture, TextureMapperShaderProgram::SolidColor };
     default:
-        ASSERT_NOT_REACHED();
         return { };
     }
 }

@@ -209,11 +209,25 @@ impl ZNetInputStream {
 
 // Vtable function implementations for ZNetInputStream
 unsafe extern "C" fn stream_query_interface(
-    _this: *mut c_void,
-    _iid: *const u8,
-    _out: *mut *mut c_void,
+    this: *mut c_void,
+    iid: *const u8,
+    out: *mut *mut c_void,
 ) -> u32 {
-    0x80004002u32 // NS_NOINTERFACE
+    if out.is_null() { return ns_result::NS_ERROR_INVALID_ARG; }
+    unsafe { *out = std::ptr::null_mut(); }
+
+    let is_supports = unsafe { match_iid(iid, 0x00000000, 0x0000, 0x0000, [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46]) };
+    let is_stream = unsafe { match_iid(iid, 0xfa9c7f6c, 0x61b3, 0x11d4, [0x98, 0x77, 0x00, 0xc0, 0x4f, 0xa0, 0xcf, 0x4a]) };
+
+    if is_supports || is_stream {
+        unsafe {
+            *out = this;
+            stream_add_ref(this);
+        }
+        ns_result::NS_OK
+    } else {
+        ns_result::NS_NOINTERFACE
+    }
 }
 unsafe extern "C" fn stream_add_ref(this: *mut c_void) -> u32 {
     let s = unsafe { ZNetInputStream::from_ptr(this) };
@@ -341,6 +355,26 @@ pub mod ns_result {
     pub const NS_ERROR_FAILURE: u32 = 0x80004005;
     pub const NS_ERROR_NOT_IMPLEMENTED: u32 = 0x80004001;
     pub const NS_ERROR_INVALID_ARG: u32 = 0x80070057;
+    pub const NS_NOINTERFACE: u32 = 0x80004002;
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct nsID {
+    pub m0: u32,
+    pub m1: u16,
+    pub m2: u16,
+    pub m3: [u8; 8],
+}
+
+pub unsafe fn match_iid(iid: *const u8, m0: u32, m1: u16, m2: u16, m3: [u8; 8]) -> bool {
+    if iid.is_null() {
+        return false;
+    }
+    let ptr = iid as *const nsID;
+    unsafe {
+        (*ptr).m0 == m0 && (*ptr).m1 == m1 && (*ptr).m2 == m2 && (*ptr).m3 == m3
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -484,11 +518,26 @@ impl ZNetChannel {
 // ── nsIChannel vtable functions ─────────────────────────────────────────────
 
 unsafe extern "C" fn chan_query_interface(
-    _this: *mut c_void,
-    _iid: *const u8,
-    _out: *mut *mut c_void,
+    this: *mut c_void,
+    iid: *const u8,
+    out: *mut *mut c_void,
 ) -> u32 {
-    ns_result::NS_ERROR_NOT_IMPLEMENTED
+    if out.is_null() { return ns_result::NS_ERROR_INVALID_ARG; }
+    unsafe { *out = std::ptr::null_mut(); }
+
+    let is_supports = unsafe { match_iid(iid, 0x00000000, 0x0000, 0x0000, [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46]) };
+    let is_request = unsafe { match_iid(iid, 0xef6bfbd2, 0xfd46, 0x48d8, [0x96, 0xb7, 0x9f, 0x8f, 0x0f, 0xd3, 0x87, 0xfe]) };
+    let is_channel = unsafe { match_iid(iid, 0xc63a0557, 0xa63d, 0x4959, [0xaf, 0x2c, 0xf6, 0xae, 0x49, 0x01, 0x46, 0xa6]) };
+
+    if is_supports || is_request || is_channel {
+        unsafe {
+            *out = this;
+            chan_add_ref(this);
+        }
+        ns_result::NS_OK
+    } else {
+        ns_result::NS_NOINTERFACE
+    }
 }
 
 unsafe extern "C" fn chan_add_ref(this: *mut c_void) -> u32 {
@@ -683,7 +732,7 @@ fn parse_url(url: &str) -> Option<(String, u16)> {
 /// # Safety
 /// `url` must be a valid NUL-terminated UTF-8 string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Net_CreateChannel(url: *const c_char) -> *mut c_void {
+pub unsafe extern "C" fn Z_Net_CreateChannel(url: *const c_char) -> *mut c_void {
     if url.is_null() {
         return null_mut();
     }
@@ -706,7 +755,7 @@ pub unsafe extern "C" fn Zawra_Net_CreateChannel(url: *const c_char) -> *mut c_v
 /// # Safety
 /// `channel` must have been returned by `Zawra_Net_CreateChannel`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Net_DestroyChannel(channel: *mut c_void) {
+pub unsafe extern "C" fn Z_Net_DestroyChannel(channel: *mut c_void) {
     if channel.is_null() {
         return;
     }
@@ -718,7 +767,7 @@ pub unsafe extern "C" fn Zawra_Net_DestroyChannel(channel: *mut c_void) {
 /// # Safety
 /// `channel` must be a valid `ZNetChannel*`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Net_Open(channel: *mut c_void, out_stream: *mut *mut c_void) -> i32 {
+pub unsafe extern "C" fn Z_Net_Open(channel: *mut c_void, out_stream: *mut *mut c_void) -> i32 {
     if channel.is_null() || out_stream.is_null() {
         return ns_result::NS_ERROR_INVALID_ARG as i32;
     }
@@ -730,7 +779,7 @@ pub unsafe extern "C" fn Zawra_Net_Open(channel: *mut c_void, out_stream: *mut *
 /// # Safety
 /// `channel` must be a valid `ZNetChannel*`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Net_AsyncOpen(channel: *mut c_void, listener: *mut c_void) -> i32 {
+pub unsafe extern "C" fn Z_Net_AsyncOpen(channel: *mut c_void, listener: *mut c_void) -> i32 {
     if channel.is_null() {
         return ns_result::NS_ERROR_INVALID_ARG as i32;
     }
@@ -742,7 +791,7 @@ pub unsafe extern "C" fn Zawra_Net_AsyncOpen(channel: *mut c_void, listener: *mu
 /// # Safety
 /// All pointers must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Net_Read(
+pub unsafe extern "C" fn Z_Net_Read(
     stream: *mut c_void,
     buf: *mut c_char,
     count: u32,

@@ -36,7 +36,7 @@ This document outlines the systematic testing strategy for the Zawra Browser, fo
 ### Tier 4: Hardware & Environmental Testing
 *Objective: Ensure the system stays within thermal limits and utilizes resources efficiently.*
 
-- **Thermal Burst Validation**: Run a 10-minute navigation loop and verify `thermal_build_control.sh` correctly pauses the process when `thermal_zone2` hits 63°C.
+- **Thermal Burst Validation**: Run a 10-minute navigation loop and verify `thermal_build_control.sh` correctly pauses the build process when temperature reaches the `TEMP_HIGH` threshold (80°C) and resumes once it drops to `TEMP_LOW` (60°C). The script dynamically detects thermal zones, preferring `x86_pkg_temp`, rather than hardcoding `thermal_zone2`.
 - **Memory Pressure**: Monitor Zswap usage during a heavy load (multiple tabs) to ensure the 4GB swapfile handles memory spikes.
 
 ## 2. Automated Test Matrix
@@ -50,10 +50,10 @@ This document outlines the systematic testing strategy for the Zawra Browser, fo
 
 ## 3. Performance Success Criteria
 
-- **IPC Latency**: < 10μs for 1KB payloads (Hajr).
-- **Network TTFB**: < 50ms for local loopback (Z-Net).
-- **Startup Time**: MiniBrowser should reach the first paint in < 300ms.
-- **Thermal Stability**: CPU package temp must not exceed 68°C during sustained heavy rendering.
+- **IPC Latency**: < 10μs for 1KB payloads (Hajr). ⚠️ *Aspirational target — no benchmark results, CI dashboard, or measurement infrastructure exists yet. The only benchmark is `dependencies/hajr/src/tests/benchmark.zig`, but no results have been recorded.*
+- **Network TTFB**: < 50ms for local loopback (Z-Net). ⚠️ *Aspirational target — no benchmark results or measurement infrastructure exists yet.*
+- **Startup Time**: MiniBrowser should reach the first paint in < 300ms. ⚠️ *Aspirational target — no benchmark results or measurement infrastructure exists yet.*
+- **Thermal Stability**: CPU package temp must not exceed 68°C during sustained heavy rendering. ⚠️ *Aspirational target — no benchmark results or measurement infrastructure exists yet.*
 
 ---
 *Created on Saturday, May 30, 2026*

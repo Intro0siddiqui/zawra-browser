@@ -29,6 +29,7 @@ fn main() {
         }
 
         // 2. Common distro locations
+        dirs.push(PathBuf::from("/usr/lib"));
         dirs.push(PathBuf::from("/usr/lib/wpe-webkit-1.0"));
         dirs.push(PathBuf::from("/usr/lib64/wpe-webkit-1.0"));
         dirs.push(PathBuf::from("/usr/lib/x86_64-linux-gnu"));
@@ -38,25 +39,28 @@ fn main() {
     };
 
     // ── Locate libWPE (or WebKitWPE) ──────────────────────────────────────────
-    let wpe_found = search_dirs.iter().find_map(|dir| {
+    let wpe_info = search_dirs.iter().find_map(|dir| {
         let candidate = dir.join("libWPEBackend-fdo.so");
         if candidate.exists() {
-            Some(dir.clone())
-        } else {
-            None
+            return Some((dir.clone(), "WPEBackend-fdo"));
         }
+        let candidate_alt = dir.join("libWPEBackend-fdo-1.0.so");
+        if candidate_alt.exists() {
+            return Some((dir.clone(), "WPEBackend-fdo-1.0"));
+        }
+        None
     });
 
-    match wpe_found {
-        Some(wpe_dir) => {
-            println!("cargo:warning=Found WPE backend at {}", wpe_dir.display());
+    match wpe_info {
+        Some((wpe_dir, lib_name)) => {
+            println!("cargo:warning=Found WPE backend at {} (linking {})", wpe_dir.display(), lib_name);
 
             // Link against WPE shared objects
             println!("cargo:rustc-link-search=native={}", wpe_dir.display());
-            println!("cargo:rustc-link-lib=dylib=WPEBackend-fdo");
+            println!("cargo:rustc-link-lib=dylib={}", lib_name);
 
             // Emit a cfg flag so conditional WPE code can be activated
-            println!("cargo:rustc-cfg=wpe_available");
+            // println!("cargo:rustc-cfg=wpe_available");
         }
         None => {
             // No WPE found — emit a prominent warning but don't fail.

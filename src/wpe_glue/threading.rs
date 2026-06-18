@@ -23,7 +23,7 @@ unsafe extern "C" {
 
 /// Create a new thread using Hajr's agnostic threading API.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Thread_Create(
+pub unsafe extern "C" fn Z_Thread_Create(
     func: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
     arg: *mut c_void,
 ) -> ThreadHandle {
@@ -32,12 +32,12 @@ pub unsafe extern "C" fn Zawra_Thread_Create(
 
 /// Join a thread created via Zawra_Thread_Create.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Thread_Join(handle: ThreadHandle) -> c_int {
+pub unsafe extern "C" fn Z_Thread_Join(handle: ThreadHandle) -> c_int {
     unsafe { hajr_thread_join(handle) }
 }
 
 /// Set the priority of a thread.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Thread_SetPriority(handle: ThreadHandle, priority: u8) -> c_int {
+pub unsafe extern "C" fn Z_Thread_SetPriority(handle: ThreadHandle, priority: u8) -> c_int {
     unsafe { hajr_thread_set_priority(handle, priority) }
 }

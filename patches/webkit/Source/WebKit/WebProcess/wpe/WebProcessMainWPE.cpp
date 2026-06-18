@@ -70,15 +70,13 @@ public:
     }
 };
 
-extern "C" void hajr_seal_process(unsigned int process_type);
-extern "C" int Zawra_Init_Subsystems(const char* profile_path);
-
-#define HAJR_WEB_PROCESS 0
+extern "C" int Z_Init_Subsystems(const char* profile_path);
 
 int WebProcessMain(int argc, char** argv)
 {
-    hajr_seal_process(HAJR_WEB_PROCESS);
-    Zawra_Init_Subsystems("/tmp/zawra-profile");
+    fprintf(stderr, "[CRASH-V2] WebProcessMain: STARTED (pid=%d, argc=%d)\n", getpid(), argc);
+    Z_Init_Subsystems("/tmp/zawra-profile");
+    fprintf(stderr, "[CRASH-V2] WebProcessMain: Zawra_Init_Subsystems done\n");
     return AuxiliaryProcessMain<WebProcessMainWPE>(argc, argv);
 }
 

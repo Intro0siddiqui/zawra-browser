@@ -14,7 +14,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
 
 use crate::wpe_glue::networking::init_net_engine;
-use crate::wpe_glue::storage::Zawra_Storage_Init;
+use crate::wpe_glue::storage::Z_Storage_Init;
 
 const NS_OK: i32 = 0;
 const NS_ERROR_FAILURE: i32 = -2147467259i32;
@@ -28,7 +28,7 @@ const NS_ERROR_FAILURE: i32 = -2147467259i32;
 /// `profile_path` must be a valid, NUL-terminated UTF-8 string that remains
 /// valid for the duration of this call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
     // ── 1. Resolve DB path ──────────────────────────────────────────────────
     let profile_str = if profile_path.is_null() {
         "./zawra_profile".to_string()
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i
         Ok(c) => c,
         Err(_) => return NS_ERROR_FAILURE,
     };
-    let db_ret = unsafe { Zawra_Storage_Init(db_path_c.as_ptr()) };
+    let db_ret = unsafe { Z_Storage_Init(db_path_c.as_ptr()) };
     if db_ret != NS_OK {
         eprintln!("[zawra] BrowserDB init failed with code {}", db_ret);
         return NS_ERROR_FAILURE;
@@ -66,9 +66,9 @@ pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i
 
     // ── 4. Init z-graphics engine ───────────────────────────────────────────
     unsafe extern "C" {
-        fn ZawraGraphics_Initialize() -> bool;
+        fn Z_Graphics_Initialize() -> bool;
     }
-    if !unsafe { ZawraGraphics_Initialize() } {
+    if !unsafe { Z_Graphics_Initialize() } {
         eprintln!("[zawra] z-graphics engine init failed");
         return NS_ERROR_FAILURE;
     }
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i
 ///
 /// Safe to call even if init was never completed.
 #[unsafe(no_mangle)]
-pub extern "C" fn Zawra_Shutdown_Subsystems() {
+pub extern "C" fn Z_Shutdown_Subsystems() {
     eprintln!("[zawra] Shutdown requested — subsystems will be released at process exit");
 }
 
@@ -94,7 +94,7 @@ unsafe extern "C" {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_MapBootstrapRingWithSignal(
+pub unsafe extern "C" fn Z_Hajr_MapBootstrapRingWithSignal(
     id: u64,
     signal_fd: i32,
 ) -> *mut std::ffi::c_void {
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn Zawra_Hajr_MapBootstrapRingWithSignal(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_GetRingSignalFD(ring_ptr: *mut std::ffi::c_void) -> i32 {
+pub unsafe extern "C" fn Z_Hajr_GetRingSignalFD(ring_ptr: *mut std::ffi::c_void) -> i32 {
     if ring_ptr.is_null() {
         return -1;
     }
@@ -118,15 +118,15 @@ pub struct Zawra_Hajr_RingPair {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_RingPair {
+pub unsafe extern "C" fn Z_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_RingPair {
     let id1 = unsafe { __hajr_create_anonymous_ring(size) };
     let id2 = unsafe { __hajr_create_anonymous_ring(size) };
 
     let ring1 = unsafe { __hajr_map_anonymous_ring(id1) };
     let ring2 = unsafe { __hajr_map_anonymous_ring(id2) };
 
-    let fd1 = unsafe { Zawra_Hajr_GetRingSignalFD(ring1) };
-    let fd2 = unsafe { Zawra_Hajr_GetRingSignalFD(ring2) };
+    let fd1 = unsafe { Z_Hajr_GetRingSignalFD(ring1) };
+    let fd2 = unsafe { Z_Hajr_GetRingSignalFD(ring2) };
 
     Zawra_Hajr_RingPair {
         ring1_id: id1,
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn Zawra_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_Ri
 /// # Safety
 /// This is an unsafe FFI function called by WebKit.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void {
+pub unsafe extern "C" fn Z_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void {
     // For now, we use a simple libc malloc or hajr equivalent if available.
     // In a real implementation, this would use Hajr's specific memory management.
     // Given the context of patching WTF, we'll use libc::malloc as a placeholder
@@ -160,7 +160,7 @@ pub unsafe extern "C" fn Zawra_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_vo
 /// # Safety
 /// This is an unsafe FFI function called by WebKit.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_MemProtect(
+pub unsafe extern "C" fn Z_Hajr_MemProtect(
     ptr: *mut std::ffi::c_void,
     size: usize,
     read: bool,

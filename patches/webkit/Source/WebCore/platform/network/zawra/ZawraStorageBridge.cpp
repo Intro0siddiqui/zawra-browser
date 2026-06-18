@@ -6,28 +6,31 @@
 #include <wtf/ASCIICType.h>
 
 extern "C" {
-    int32_t Zawra_LocalStorage_Put(uint64_t hi, uint64_t lo, const char* key, const char* value);
-    int32_t Zawra_LocalStorage_Get(uint64_t hi, uint64_t lo, const char* key, char* out_buf, size_t out_buf_len);
-    int32_t Zawra_LocalStorage_GetAll(char* out_buf, size_t out_buf_len);
-    int32_t Zawra_LocalStorage_Delete(uint64_t hi, uint64_t lo, const char* key);
-    int32_t Zawra_LocalStorage_Clear(uint64_t hi, uint64_t lo);
+    int32_t Z_LocalStorage_Put(uint64_t hi, uint64_t lo, const char* key, const char* value);
+    int32_t Z_LocalStorage_Get(uint64_t hi, uint64_t lo, const char* key, char* out_buf, size_t out_buf_len);
+    int32_t Z_LocalStorage_GetAll(char* out_buf, size_t out_buf_len);
+    int32_t Z_LocalStorage_Delete(uint64_t hi, uint64_t lo, const char* key);
+    int32_t Z_LocalStorage_Clear(uint64_t hi, uint64_t lo);
 
-    void Zawra_Hash_String(const char* input, uint64_t* out_hi, uint64_t* out_lo);
-    int32_t Zawra_Cookie_Put(uint64_t hi, uint64_t lo, const char* name, const char* value, uint64_t expiry, uint8_t flags);
-    int32_t Zawra_Cookie_GetForDomain(uint64_t hi, uint64_t lo, char* out_buf, size_t out_buf_len);
-    int32_t Zawra_History_Put(uint64_t hi, uint64_t lo, const char* url, const char* title, uint64_t timestamp);
-    int32_t Zawra_Bookmark_Put(uint64_t hi, uint64_t lo, const char* url, const char* title, const char* folder);
-    int32_t Zawra_Bookmark_Delete(uint64_t hi, uint64_t lo);
-    int32_t Zawra_Bookmark_GetAll(char* out_buf, size_t out_buf_len);
-    int32_t Zawra_Cookie_DeleteForDomain(uint64_t hi, uint64_t lo);
-    int32_t Zawra_History_Increment(uint64_t hi, uint64_t lo, int64_t delta);
+    void Z_Hash_String(const char* input, uint64_t* out_hi, uint64_t* out_lo);
+    int32_t Z_Cookie_Put(uint64_t hi, uint64_t lo, const char* name, const char* value, const char* path, const char* domain, uint64_t expiry, uint8_t flags);
+    int32_t Z_Cookie_GetForDomain(uint64_t hi, uint64_t lo, char* out_buf, size_t out_buf_len);
+    int32_t Z_History_Put(uint64_t hi, uint64_t lo, const char* url, const char* title, uint64_t timestamp);
+    int32_t Z_Bookmark_Put(uint64_t hi, uint64_t lo, const char* url, const char* title, const char* folder);
+    int32_t Z_Bookmark_Delete(uint64_t hi, uint64_t lo);
+    int32_t Z_Bookmark_GetAll(char* out_buf, size_t out_buf_len);
+    int32_t Z_Cookie_DeleteForDomain(uint64_t hi, uint64_t lo);
+    int32_t Z_Cookie_Delete(uint64_t hi, uint64_t lo, const char* name);
+    int32_t Z_Cookie_DeleteAll();
+    int32_t Z_History_Increment(uint64_t hi, uint64_t lo, int64_t delta);
+    int32_t Z_Storage_Wipe();
 }
 
 namespace WebCore {
 
 void ZawraStorageBridge::hashString(const String& input, uint64_t& hi, uint64_t& lo)
 {
-    Zawra_Hash_String(input.utf8().data(), &hi, &lo);
+    Z_Hash_String(input.utf8().data(), &hi, &lo);
 }
 
 void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
@@ -46,6 +49,8 @@ void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
 
     uint64_t expiry = 0;
     uint8_t flags = 0;
+    String cookiePath;
+    String cookieDomain;
 
     for (size_t i = 1; i < parts.size(); ++i) {
         auto attr = parts[i].trim(isASCIIWhitespace);
@@ -65,9 +70,9 @@ void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
             if (ok && maxAge > 0)
                 expiry = static_cast<uint64_t>(WallTime::now().secondsSinceEpoch().value()) + static_cast<uint64_t>(maxAge);
         } else if (lowerAttr.startsWith("path="_s)) {
-            // Path is informational for domain matching; not stored separately yet
+            cookiePath = attr.substring(5);
         } else if (lowerAttr.startsWith("domain="_s)) {
-            // Domain override handled elsewhere if needed
+            cookieDomain = attr.substring(7);
         } else if (lowerAttr == "secure"_s) {
             flags |= 0x01;
         } else if (lowerAttr == "httponly"_s) {
@@ -82,7 +87,13 @@ void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
         }
     }
 
-    Zawra_Cookie_Put(hi, lo, name.utf8().data(), value.utf8().data(), expiry, flags);
+    Z_Cookie_Put(hi, lo,
+        name.utf8().data(),
+        value.utf8().data(),
+        cookiePath.utf8().data(),
+        cookieDomain.utf8().data(),
+        expiry,
+        flags);
 }
 
 String ZawraStorageBridge::getCookies(const URL& url)
@@ -91,7 +102,7 @@ String ZawraStorageBridge::getCookies(const URL& url)
     hashString(url.host().toString(), hi, lo);
 
     char buf[4096];
-    if (Zawra_Cookie_GetForDomain(hi, lo, buf, sizeof(buf)) == 0)
+    if (Z_Cookie_GetForDomain(hi, lo, buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     
     return String();
@@ -103,27 +114,27 @@ void ZawraStorageBridge::recordHistory(const URL& url, const String& title)
     hashString(url.string(), hi, lo);
     
     uint64_t ts = static_cast<uint64_t>(WallTime::now().secondsSinceEpoch().value());
-    Zawra_History_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), ts);
+    Z_History_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), ts);
 }
 
 void ZawraStorageBridge::addBookmark(const URL& url, const String& title, const String& folder)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
-    Zawra_Bookmark_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), folder.utf8().data());
+    Z_Bookmark_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), folder.utf8().data());
 }
 
 void ZawraStorageBridge::removeBookmark(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
-    Zawra_Bookmark_Delete(hi, lo);
+    Z_Bookmark_Delete(hi, lo);
 }
 
 String ZawraStorageBridge::getBookmarks()
 {
     char buf[16384];
-    if (Zawra_Bookmark_GetAll(buf, sizeof(buf)) == 0)
+    if (Z_Bookmark_GetAll(buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
 }
@@ -132,22 +143,34 @@ void ZawraStorageBridge::deleteCookiesForDomain(const String& domain)
 {
     uint64_t hi, lo;
     hashString(domain, hi, lo);
-    Zawra_Cookie_DeleteForDomain(hi, lo);
+    Z_Cookie_DeleteForDomain(hi, lo);
 }
 
+
+void ZawraStorageBridge::deleteCookie(const URL& url, const String& name)
+{
+    uint64_t hi, lo;
+    hashString(url.host().toString(), hi, lo);
+    Z_Cookie_Delete(hi, lo, name.utf8().data());
+}
+
+void ZawraStorageBridge::deleteAllCookies()
+{
+    Z_Cookie_DeleteAll();
+}
 
 void ZawraStorageBridge::incrementHistoryVisit(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
-    Zawra_History_Increment(hi, lo, 1);
+    Z_History_Increment(hi, lo, 1);
 }
 
 void ZawraStorageBridge::storeDataWithTTL(const String& key, const String& value, uint64_t ttl)
 {
     uint64_t hi, lo;
     hashString(key, hi, lo);
-    Zawra_LocalStorage_Put(hi, lo, key.utf8().data(), value.utf8().data());
+    Z_LocalStorage_Put(hi, lo, key.utf8().data(), value.utf8().data());
 }
 
 String ZawraStorageBridge::getData(const String& key)
@@ -155,7 +178,7 @@ String ZawraStorageBridge::getData(const String& key)
     uint64_t hi, lo;
     hashString(key, hi, lo);
     char buf[4096];
-    if (Zawra_LocalStorage_Get(hi, lo, key.utf8().data(), buf, sizeof(buf)) == 0)
+    if (Z_LocalStorage_Get(hi, lo, key.utf8().data(), buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
 }
@@ -164,7 +187,7 @@ HashMap<String, String> ZawraStorageBridge::getAllData()
 {
     HashMap<String, String> items;
     char buf[16384];
-    if (Zawra_LocalStorage_GetAll(buf, sizeof(buf)) == 0) {
+    if (Z_LocalStorage_GetAll(buf, sizeof(buf)) == 0) {
         String allData = String::fromUTF8(buf);
         auto lines = allData.split('\n');
         for (auto& line : lines) {
@@ -181,17 +204,23 @@ void ZawraStorageBridge::removeData(const String& key)
 {
     uint64_t hi, lo;
     hashString(key, hi, lo);
-    Zawra_LocalStorage_Delete(hi, lo, key.utf8().data());
+    Z_LocalStorage_Delete(hi, lo, key.utf8().data());
 }
 
-void ZawraStorageBridge::clearData()
+void ZawraStorageBridge::clearData(const String& urlString)
 {
-    // Without an origin available, clearing all local storage requires either
-    // wiping all local storage entirely, or just doing nothing.
-    // SQLiteStorageArea::clear normally clears all items for that StorageArea.
-    // For now we will use a global clear if possible, or omit the call.
-    // Using origin 0, 0 as a placeholder since we hash the key as origin above.
-    Zawra_LocalStorage_Clear(0, 0);
+    // Clear all local storage items for the given URL's origin.
+    // SQLiteStorageArea::clear() is per-origin — the urlString represents
+    // the page URL (or a blank string if unavailable).
+    if (urlString.isEmpty()) {
+        // No origin context — fall back to wiping all local storage.
+        // TODO(#3): Once Zawra_LocalStorage_ClearAll is available, call it here instead of wipe.
+        Z_Storage_Wipe();
+        return;
+    }
+    uint64_t hi, lo;
+    hashString(urlString, hi, lo);
+    Z_LocalStorage_Clear(hi, lo);
 }
 
 } // namespace WebCore

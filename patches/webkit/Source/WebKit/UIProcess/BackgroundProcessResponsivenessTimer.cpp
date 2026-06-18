@@ -29,6 +29,8 @@
 #include "Logging.h"
 #include "WebProcessMessages.h"
 #include "WebProcessProxy.h"
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace WebKit {
 
@@ -39,18 +41,23 @@ static const Seconds responsivenessTimeout { 90_s };
 BackgroundProcessResponsivenessTimer::BackgroundProcessResponsivenessTimer(WebProcessProxy& webProcessProxy)
     : m_webProcessProxy(webProcessProxy)
     , m_checkingInterval(initialCheckingInterval)
-    , m_responsivenessCheckTimer(RunLoop::main(), []{ })
-    , m_timeoutTimer(RunLoop::main(), []{ })
+    , m_responsivenessCheckTimer(RunLoop::main(), [this] { this->responsivenessCheckTimerFired(); })
+    , m_timeoutTimer(RunLoop::main(), [this] { this->timeoutTimerFired(); })
 {
 }
 
 BackgroundProcessResponsivenessTimer::~BackgroundProcessResponsivenessTimer()
 {
-    fprintf(stderr, "[ZAWRA-DEBUG] BackgroundProcessResponsivenessTimer destructor (this=%p, checkTimerActive=%d, timeoutTimerActive=%d)\n", this, m_responsivenessCheckTimer.isActive(), m_timeoutTimer.isActive());
 }
 
 void BackgroundProcessResponsivenessTimer::updateState()
 {
+    static int s_updateCount = 0;
+    s_updateCount++;
+    if (s_updateCount <= 20 || (s_updateCount % 1000) == 0) {
+        fprintf(stderr, "[STORM-TIMER] updateState #%d: shouldBeActive=%d isActive=%d checkTimerActive=%d tid=%d\n",
+            s_updateCount, shouldBeActive(), isActive(), m_responsivenessCheckTimer.isActive(), (int)syscall(SYS_gettid));
+    }
     if (m_webProcessProxy.isDummyProcessProxy())
         return;
     if (!shouldBeActive()) {
@@ -92,6 +99,10 @@ void BackgroundProcessResponsivenessTimer::processTerminated()
 
 void BackgroundProcessResponsivenessTimer::responsivenessCheckTimerFired()
 {
+    static int s_pingFiredCount = 0;
+    s_pingFiredCount++;
+    fprintf(stderr, "[STORM-TIMER] responsivenessCheckTimerFired #%d interval=%.1fs timeoutActive=%d tid=%d\n",
+        s_pingFiredCount, m_checkingInterval.value(), m_timeoutTimer.isActive(), (int)syscall(SYS_gettid));
     ASSERT(shouldBeActive());
     ASSERT(!m_timeoutTimer.isActive());
 

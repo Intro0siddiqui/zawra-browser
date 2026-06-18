@@ -267,7 +267,7 @@ Expected<void, StorageError> SQLiteStorageArea::clear(IPC::Connection::UniqueID 
     // startTransactionIfNecessary();
     
     // Zawra Modification: Clear all data via BrowserDB FFI bridge instead of SQLite
-    WebCore::ZawraStorageBridge::clearData();
+    WebCore::ZawraStorageBridge::clearData(urlString);
 
 /* Zawra: Disable SQLite persistence
     auto statement = cachedStatement(StatementType::DeleteAllItems);

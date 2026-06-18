@@ -26,6 +26,8 @@
 #include "config.h"
 #include "PageClientImpl.h"
 #include "../../../../WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h"
+#include "../../../../WebCore/platform/network/zawra/ZawraStorageBridge.h"
+#include <wtf/Assertions.h>
 
 #include "APIViewClient.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
@@ -61,7 +63,15 @@ struct wpe_view_backend* PageClientImpl::viewBackend()
 
 UnixFileDescriptor PageClientImpl::hostFileDescriptor()
 {
-    return UnixFileDescriptor { WebCore::ZawraGraphicsBridge::singleton().exportCompositorFD(), UnixFileDescriptor::Adopt };
+    auto size = viewSize();
+    WebCore::ZawraGraphicsBridge::singleton().initialize(nullptr, size.width(), size.height());
+    int fd = WebCore::ZawraGraphicsBridge::singleton().exportCompositorFD();
+    if (fd < 0) {
+        fprintf(stderr, "FATAL ERROR: hostFileDescriptor failed to get a valid compositor FD (fd=%d)!\n", fd);
+        fflush(stderr);
+        RELEASE_ASSERT_NOT_REACHED();
+    }
+    return UnixFileDescriptor { fd, UnixFileDescriptor::Adopt };
 }
 
 std::unique_ptr<DrawingAreaProxy> PageClientImpl::createDrawingAreaProxy()
@@ -89,22 +99,22 @@ WebCore::IntSize PageClientImpl::viewSize()
 
 bool PageClientImpl::isViewWindowActive()
 {
-    return m_view.viewState().contains(WebCore::ActivityState::WindowIsActive);
+    return true;
 }
 
 bool PageClientImpl::isViewFocused()
 {
-    return m_view.viewState().contains(WebCore::ActivityState::IsFocused);
+    return true;
 }
 
 bool PageClientImpl::isViewVisible()
 {
-    return m_view.viewState().contains(WebCore::ActivityState::IsVisible);
+    return true;
 }
 
 bool PageClientImpl::isViewInWindow()
 {
-    return m_view.viewState().contains(WebCore::ActivityState::IsInWindow);
+    return true;
 }
 
 void PageClientImpl::processDidExit()
@@ -127,8 +137,15 @@ void PageClientImpl::toolTipChanged(const String&, const String&)
 {
 }
 
-void PageClientImpl::didCommitLoadForMainFrame(const String&, bool)
+void PageClientImpl::didCommitLoadForMainFrame(const String& mimeType, bool frameHasCustomContentProvider)
 {
+    auto& page = m_view.page();
+    String urlString = page.currentURL();
+    if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
+        WebCore::URL pageURL({ }, urlString);
+        String title = page.pageLoadState().title();
+        WebCore::ZawraStorageBridge::recordHistory(pageURL, title);
+    }
 }
 
 void PageClientImpl::didChangeContentSize(const WebCore::IntSize&)
@@ -311,6 +328,12 @@ void PageClientImpl::didFirstVisuallyNonEmptyLayoutForMainFrame()
 
 void PageClientImpl::didFinishNavigation(API::Navigation*)
 {
+    // TODO: Wire bookmark UI actions here — call addBookmark/removeBookmark/getBookmarks
+    // from ZawraStorageBridge when the user triggers bookmark management via the UI.
+    // Example:
+    //   WebCore::ZawraStorageBridge::addBookmark(pageURL, title, "Default"_s);
+    //   WebCore::ZawraStorageBridge::removeBookmark(pageURL);
+    //   String bookmarks = WebCore::ZawraStorageBridge::getBookmarks();
 }
 
 void PageClientImpl::didFailNavigation(API::Navigation*)

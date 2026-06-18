@@ -129,12 +129,12 @@ pub unsafe fn create_zero_copy_buffer(
 /// # Safety
 /// `cx` must be a valid `JSContext*`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_JS_CreateCacheBuffer(
+pub unsafe extern "C" fn Z_JS_CreateCacheBuffer(
     cx:          *mut JSContext,
     url_hash_hi: u64,
     url_hash_lo: u64,
 ) -> *mut JSObject {
-    use crate::wpe_glue::storage::Zawra_Cache_Get;
+    use crate::wpe_glue::storage::Z_Cache_Get;
     use std::ptr::null_mut;
 
     if cx.is_null() { return null_mut(); }
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn Zawra_JS_CreateCacheBuffer(
     let mut out_ptr: *mut u8 = null_mut();
     let mut out_len: usize   = 0;
 
-    let ret = unsafe { Zawra_Cache_Get(url_hash_hi, url_hash_lo, &mut out_ptr, &mut out_len) };
+    let ret = unsafe { Z_Cache_Get(url_hash_hi, url_hash_lo, &mut out_ptr, &mut out_len) };
     if ret != 0 || out_ptr.is_null() { return null_mut(); }
 
     // Reconstruct the Vec<u8> from the heap pointer (was allocated by storage.rs)

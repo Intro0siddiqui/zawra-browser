@@ -67,7 +67,7 @@ pub struct ZawraStorageStats {
 /// # Safety
 /// `profile_path` must be a valid NUL-terminated UTF-8 path string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Storage_Init(profile_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn Z_Storage_Init(profile_path: *const c_char) -> i32 {
     if profile_path.is_null() { return NS_ERROR_INVALID_ARG; }
     let path_str = match unsafe { CStr::from_ptr(profile_path).to_str() } {
         Ok(s) => s,
@@ -80,8 +80,17 @@ pub unsafe extern "C" fn Zawra_Storage_Init(profile_path: *const c_char) -> i32 
             NS_OK
         }
         Err(e) => {
-            eprintln!("[ZAWRA-RUST] Storage_Init FAILED: {}", e);
-            NS_ERROR_FAILURE
+            eprintln!("[ZAWRA-RUST] Storage_Init with lock failed: {}. Retrying without locking...", e);
+            match BrowserDB::open_without_locking(path_str) {
+                Ok(db_instance) => {
+                    let _ = GLOBAL_DB.set(db_instance);
+                    NS_OK
+                }
+                Err(e2) => {
+                    eprintln!("[ZAWRA-RUST] Storage_Init FAILED: {}", e2);
+                    NS_ERROR_FAILURE
+                }
+            }
         },
     }
 }
@@ -96,7 +105,7 @@ pub unsafe extern "C" fn Zawra_Storage_Init(profile_path: *const c_char) -> i32 
 /// `headers`, `etag` are NUL-terminated strings; `body_ptr` points to
 /// `body_len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cache_Put(
+pub unsafe extern "C" fn Z_Cache_Put(
     url_hash_hi:  u64,
     url_hash_lo:  u64,
     headers:      *const c_char,
@@ -137,7 +146,7 @@ pub unsafe extern "C" fn Zawra_Cache_Put(
 /// # Safety
 /// `out_ptr` and `out_len` must be valid non-null pointers.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cache_Get(
+pub unsafe extern "C" fn Z_Cache_Get(
     url_hash_hi: u64,
     url_hash_lo: u64,
     out_ptr:     *mut *mut u8,
@@ -161,7 +170,7 @@ pub unsafe extern "C" fn Zawra_Cache_Get(
 
 /// Check whether a URL is present in the cache (fast path — no body copy).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cache_Has(url_hash_hi: u64, url_hash_lo: u64) -> i32 {
+pub unsafe extern "C" fn Z_Cache_Has(url_hash_hi: u64, url_hash_lo: u64) -> i32 {
     let url_hash = ((url_hash_hi as u128) << 64) | (url_hash_lo as u128);
     match db().cache().get(url_hash) {
         Err(_) => NS_ERROR_FAILURE,
@@ -179,7 +188,7 @@ pub unsafe extern "C" fn Zawra_Cache_Has(url_hash_hi: u64, url_hash_lo: u64) -> 
 /// # Safety
 /// `key` is NUL-terminated; `data_ptr` points to `data_len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Storage_PutBlob(
+pub unsafe extern "C" fn Z_Storage_PutBlob(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -211,7 +220,7 @@ pub unsafe extern "C" fn Zawra_Storage_PutBlob(
 /// # Safety
 /// `key`, `out_ptr`, `out_len` must be valid non-null pointers.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Storage_GetBlob(
+pub unsafe extern "C" fn Z_Storage_GetBlob(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -224,25 +233,21 @@ pub unsafe extern "C" fn Zawra_Storage_GetBlob(
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
 
-    match db().localstore().get_by_origin(origin_hash) {
+    match db().localstore().get(origin_hash, &key_str) {
         Err(_) => NS_ERROR_FAILURE,
-        Ok(entries) => {
-            match entries.into_iter().find(|e| e.key == key_str) {
-                None => NS_ERROR_NOT_FOUND,
-                Some(entry) => {
-                    let decoded = match decode_base64(entry.value.as_bytes()) {
-                        Some(d) => d,
-                        None => return NS_ERROR_FAILURE,
-                    };
-                    let mut boxed = decoded.into_boxed_slice();
-                    unsafe {
-                        *out_len = boxed.len();
-                        *out_ptr = boxed.as_mut_ptr();
-                    }
-                    std::mem::forget(boxed);
-                    NS_OK
-                }
+        Ok(None) => NS_ERROR_NOT_FOUND,
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let mut boxed = decoded.into_boxed_slice();
+            unsafe {
+                *out_len = boxed.len();
+                *out_ptr = boxed.as_mut_ptr();
             }
+            std::mem::forget(boxed);
+            NS_OK
         }
     }
 }
@@ -252,13 +257,18 @@ pub unsafe extern "C" fn Zawra_Storage_GetBlob(
 /// # Safety
 /// `key` must be a valid NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Storage_DeleteBlob(
-    _origin_hash_hi: u64,
-    _origin_hash_lo: u64,
-    _key:            *const c_char,
+pub unsafe extern "C" fn Z_Storage_DeleteBlob(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    key:            *const c_char,
 ) -> i32 {
-    // BrowserDB's LSM tree uses tombstones; compaction physically removes it.
-    NS_OK
+    if key.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
+    match db().localstore().remove(origin_hash, &key_str) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -266,7 +276,7 @@ pub unsafe extern "C" fn Zawra_Storage_DeleteBlob(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Bookmark_Put(
+pub unsafe extern "C" fn Z_Bookmark_Put(
     url_hash_hi: u64,
     url_hash_lo: u64,
     url:         *const c_char,
@@ -295,7 +305,7 @@ pub unsafe extern "C" fn Zawra_Bookmark_Put(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Bookmark_Delete(
+pub unsafe extern "C" fn Z_Bookmark_Delete(
     url_hash_hi: u64,
     url_hash_lo: u64,
 ) -> i32 {
@@ -307,7 +317,7 @@ pub unsafe extern "C" fn Zawra_Bookmark_Delete(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Bookmark_GetAll(
+pub unsafe extern "C" fn Z_Bookmark_GetAll(
     out_buf:        *mut c_char,
     out_buf_len:    usize,
 ) -> i32 {
@@ -337,13 +347,15 @@ pub unsafe extern "C" fn Zawra_Bookmark_GetAll(
 /// Store a single cookie.
 ///
 /// # Safety
-/// `name` and `value` must be valid NUL-terminated strings.
+/// `name`, `value`, `path`, and `domain` must be valid NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cookie_Put(
+pub unsafe extern "C" fn Z_Cookie_Put(
     domain_hash_hi: u64,
     domain_hash_lo: u64,
     name:           *const c_char,
     value:          *const c_char,
+    path:           *const c_char,
+    domain:         *const c_char,
     expiry:         u64,
     flags:          u8,
 ) -> i32 {
@@ -351,9 +363,21 @@ pub unsafe extern "C" fn Zawra_Cookie_Put(
     let domain_hash = ((domain_hash_hi as u128) << 64) | (domain_hash_lo as u128);
     let name_str  = unsafe { CStr::from_ptr(name).to_string_lossy().into_owned() };
     let value_str = unsafe { CStr::from_ptr(value).to_string_lossy().into_owned() };
-    eprintln!("[ZAWRA-RUST] Cookie_Put: domain={:x}:{:x} name={} value={}", domain_hash_hi, domain_hash_lo, name_str, value_str);
-    let mut entry = CookieEntry::new(domain_hash, name_str, value_str, expiry);
-    entry.flags = flags;
+    let path_str = if path.is_null() { String::new() } else {
+        unsafe { CStr::from_ptr(path).to_string_lossy().into_owned() }
+    };
+    let domain_str = if domain.is_null() { String::new() } else {
+        unsafe { CStr::from_ptr(domain).to_string_lossy().into_owned() }
+    };
+    let entry = CookieEntry {
+        domain_hash,
+        name: name_str,
+        value: value_str,
+        path: path_str,
+        domain: domain_str,
+        expiry,
+        flags,
+    };
     match db().cookies().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
@@ -367,7 +391,7 @@ pub unsafe extern "C" fn Zawra_Cookie_Put(
 /// # Safety
 /// `name`, `out_buf` must be valid; `out_buf_len` must be its allocated capacity.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cookie_Get(
+pub unsafe extern "C" fn Z_Cookie_Get(
     domain_hash_hi: u64,
     domain_hash_lo: u64,
     name:           *const c_char,
@@ -383,31 +407,27 @@ pub unsafe extern "C" fn Zawra_Cookie_Get(
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
 
-    match db().cookies().get_all() {
+    match db().cookies().get(domain_hash, &name_str) {
         Err(_) => NS_ERROR_FAILURE,
-        Ok(entries) => {
-            match entries.into_iter().find(|e| e.domain_hash == domain_hash && e.name == name_str) {
-                None => NS_ERROR_NOT_FOUND,
-                Some(entry) => {
-                    let bytes = entry.value.as_bytes();
-                    let copy_len = bytes.len().min(out_buf_len - 1);
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(
-                            bytes.as_ptr() as *const c_char,
-                            out_buf,
-                            copy_len,
-                        );
-                        *out_buf.add(copy_len) = 0;
-                    }
-                    NS_OK
-                }
+        Ok(None) => NS_ERROR_NOT_FOUND,
+        Ok(Some(entry)) => {
+            let bytes = entry.value.as_bytes();
+            let copy_len = bytes.len().min(out_buf_len - 1);
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr() as *const c_char,
+                    out_buf,
+                    copy_len,
+                );
+                *out_buf.add(copy_len) = 0;
             }
+            NS_OK
         }
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cookie_GetForDomain(
+pub unsafe extern "C" fn Z_Cookie_GetForDomain(
     domain_hash_hi: u64,
     domain_hash_lo: u64,
     out_buf:        *mut c_char,
@@ -415,15 +435,14 @@ pub unsafe extern "C" fn Zawra_Cookie_GetForDomain(
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
     let domain_hash = ((domain_hash_hi as u128) << 64) | (domain_hash_lo as u128);
-    match db().cookies().get_all() {
+    match db().cookies().get_by_domain(domain_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
-            let matches: Vec<String> = entries.into_iter()
-                .filter(|e| e.domain_hash == domain_hash)
+            if entries.is_empty() { return NS_ERROR_NOT_FOUND; }
+            let combined: String = entries.iter()
                 .map(|e| format!("{}={}", e.name, e.value))
-                .collect();
-            if matches.is_empty() { return NS_ERROR_NOT_FOUND; }
-            let combined = matches.join("; ");
+                .collect::<Vec<_>>()
+                .join("; ");
             let bytes = combined.as_bytes();
             let copy_len = bytes.len().min(out_buf_len - 1);
             unsafe {
@@ -438,20 +457,49 @@ pub unsafe extern "C" fn Zawra_Cookie_GetForDomain(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 /// Delete all cookies for a domain.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Cookie_DeleteForDomain(
+pub unsafe extern "C" fn Z_Cookie_DeleteForDomain(
     domain_hash_hi: u64,
     domain_hash_lo: u64,
 ) -> i32 {
     let domain_hash = ((domain_hash_hi as u128) << 64) | (domain_hash_lo as u128);
+    match db().cookies().get_by_domain(domain_hash) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in entries {
+                let _ = db().cookies().delete(domain_hash, &entry.name);
+            }
+            NS_OK
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Cookie_Delete(
+    domain_hash_hi: u64,
+    domain_hash_lo: u64,
+    name: *const c_char,
+) -> i32 {
+    if name.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let domain_hash = ((domain_hash_hi as u128) << 64) | (domain_hash_lo as u128);
+    let name_str = match unsafe { CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    match db().cookies().delete(domain_hash, name_str) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Cookie_DeleteAll() -> i32 {
     match db().cookies().get_all() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
-            let to_delete: Vec<String> = entries.into_iter()
-                .filter(|e| e.domain_hash == domain_hash)
-                .map(|e| e.name.clone())
-                .collect();
-            for name in to_delete {
-                let _ = db().cookies().delete(domain_hash, &name);
+            for entry in &entries {
+                let _ = db().cookies().delete(entry.domain_hash, &entry.name);
             }
             NS_OK
         }
@@ -467,15 +515,12 @@ pub unsafe extern "C" fn Zawra_Cookie_DeleteForDomain(
 /// # Safety
 /// `out_buf` must be valid and `out_buf_len` must be its capacity.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_GetAll(
-    origin_hash_hi: u64,
-    origin_hash_lo: u64,
+pub unsafe extern "C" fn Z_LocalStorage_GetAll(
     out_buf:        *mut c_char,
     out_buf_len:    usize,
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
-    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
-    match db().localstore().get_by_origin(origin_hash) {
+    match db().localstore().get_by_origin(0) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let mut combined = String::new();
@@ -498,7 +543,7 @@ pub unsafe extern "C" fn Zawra_LocalStorage_GetAll(
 /// # Safety
 /// `key` and `value` must be valid NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Put(
+pub unsafe extern "C" fn Z_LocalStorage_Put(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -526,7 +571,7 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Put(
 /// # Safety
 /// `key`, `out_buf` must be valid; `out_buf_len` must be its capacity.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Get(
+pub unsafe extern "C" fn Z_LocalStorage_Get(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -540,30 +585,26 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Get(
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
 
 
-    match db().localstore().get_by_origin(origin_hash) {
+    match db().localstore().get(origin_hash, &key_str) {
         Err(_) => NS_ERROR_FAILURE,
-        Ok(entries) => {
-            match entries.into_iter().find(|e| e.key == key_str) {
-                None => NS_ERROR_NOT_FOUND,
-                Some(entry) => {
-                    let bytes = entry.value.as_bytes();
-                    let copy_len = bytes.len().min(out_buf_len - 1);
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(
-                            bytes.as_ptr() as *const c_char,
-                            out_buf,
-                            copy_len,
-                        );
-                        *out_buf.add(copy_len) = 0;
-                    }
-                    NS_OK
-                }
+        Ok(None) => NS_ERROR_NOT_FOUND,
+        Ok(Some(entry)) => {
+            let bytes = entry.value.as_bytes();
+            let copy_len = bytes.len().min(out_buf_len - 1);
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr() as *const c_char,
+                    out_buf,
+                    copy_len,
+                );
+                *out_buf.add(copy_len) = 0;
             }
+            NS_OK
         }
     }
 }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Delete(
+pub unsafe extern "C" fn Z_LocalStorage_Delete(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     key:            *const c_char,
@@ -579,7 +620,7 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Delete(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_LocalStorage_Clear(
+pub unsafe extern "C" fn Z_LocalStorage_Clear(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
 ) -> i32 {
@@ -601,7 +642,7 @@ pub unsafe extern "C" fn Zawra_LocalStorage_Clear(
 /// # Safety
 /// Caller must ensure hi/lo form a valid URL hash.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_History_Increment(
+pub unsafe extern "C" fn Z_History_Increment(
     url_hash_hi: u64,
     url_hash_lo: u64,
     delta:       i64,
@@ -618,7 +659,7 @@ pub unsafe extern "C" fn Zawra_History_Increment(
 /// # Safety
 /// `url` and `title` must be valid NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_History_Put(
+pub unsafe extern "C" fn Z_History_Put(
     url_hash_hi: u64,
     url_hash_lo: u64,
     url:         *const c_char,
@@ -654,7 +695,7 @@ pub unsafe extern "C" fn Zawra_History_Put(
 /// # Safety
 /// `stats` must be a valid non-null pointer to a `ZawraStorageStats`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Storage_Stats(stats: *mut ZawraStorageStats) -> i32 {
+pub unsafe extern "C" fn Z_Storage_Stats(stats: *mut ZawraStorageStats) -> i32 {
     if stats.is_null() { return NS_ERROR_INVALID_ARG; }
     match db().stats() {
         Err(_) => NS_ERROR_FAILURE,
@@ -678,10 +719,150 @@ pub unsafe extern "C" fn Zawra_Storage_Stats(stats: *mut ZawraStorageStats) -> i
 
 /// Wipe ALL storage (panic-mode / "clear site data").
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Storage_Wipe() -> i32 {
+pub unsafe extern "C" fn Z_Storage_Wipe() -> i32 {
     match db().wipe() {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Binary Key-Value Store (IndexedDB backing)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store a binary value by key.
+///
+/// # Safety
+/// `key` and `value` point to `key_len`/`value_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_IDBStore_Put(
+    key_ptr:    *const u8,
+    key_len:    usize,
+    value_ptr:  *const u8,
+    value_len:  usize,
+) -> i32 {
+    if key_ptr.is_null() || value_ptr.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len) }.to_vec();
+    let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len) }.to_vec();
+    match db().binarystore().put(key, value) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve a binary value by key.
+///
+/// On success writes a heap-allocated buffer to `*out_ptr`/`*out_len`.
+/// Free with `Z_Free_Buffer`.
+///
+/// # Safety
+/// `out_ptr` and `out_len` must be valid non-null pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_IDBStore_Get(
+    key_ptr:    *const u8,
+    key_len:    usize,
+    out_ptr:    *mut *mut u8,
+    out_len:    *mut usize,
+) -> i32 {
+    if key_ptr.is_null() || out_ptr.is_null() || out_len.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len) };
+    match db().binarystore().get(key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => NS_ERROR_NOT_FOUND,
+        Ok(Some(value)) => {
+            let mut boxed = value.into_boxed_slice();
+            unsafe {
+                *out_len = boxed.len();
+                *out_ptr = boxed.as_mut_ptr();
+            }
+            std::mem::forget(boxed);
+            NS_OK
+        }
+    }
+}
+
+/// Delete a binary value by key.
+///
+/// # Safety
+/// `key` points to `key_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_IDBStore_Delete(
+    key_ptr:    *const u8,
+    key_len:    usize,
+) -> i32 {
+    if key_ptr.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len) };
+    match db().binarystore().delete(key) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Scan all keys/values matching a prefix.
+///
+/// Serializes results as flat buffer:
+///   [key_len:4][key...][value_len:4][value...]
+/// repeated for each matching entry.
+/// If output buffer overflows, returns NS_ERROR_FAILURE.
+///
+/// # Safety
+/// `prefix` points to `prefix_len` bytes; `out_buf`/`out_buf_len` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_IDBStore_ScanPrefix(
+    prefix_ptr: *const u8,
+    prefix_len: usize,
+    out_buf:    *mut u8,
+    out_buf_len: usize,
+) -> i32 {
+    if prefix_ptr.is_null() || out_buf.is_null() || out_buf_len == 0 {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let prefix = unsafe { std::slice::from_raw_parts(prefix_ptr, prefix_len) };
+    match db().binarystore().scan_prefix(prefix) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            let mut cursor: usize = 0;
+            let buf = unsafe { std::slice::from_raw_parts_mut(out_buf, out_buf_len) };
+            for (key, value) in &entries {
+                let remaining = out_buf_len - cursor;
+                let needed = 8 + key.len() + value.len(); // 4+4 for lengths
+                if remaining < needed {
+                    return NS_ERROR_FAILURE;
+                }
+                let key_len_32 = key.len() as u32;
+                let val_len_32 = value.len() as u32;
+                buf[cursor..cursor+4].copy_from_slice(&key_len_32.to_le_bytes());
+                cursor += 4;
+                buf[cursor..cursor+key.len()].copy_from_slice(key);
+                cursor += key.len();
+                buf[cursor..cursor+4].copy_from_slice(&val_len_32.to_le_bytes());
+                cursor += 4;
+                buf[cursor..cursor+value.len()].copy_from_slice(value);
+                cursor += value.len();
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Clear ALL entries in the binary store.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_IDBStore_Clear() -> i32 {
+    // Clear all entries by iterating and deleting each one
+    match db().binarystore().all_entries() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for (key, _) in &entries {
+                let _ = db().binarystore().delete(key);
+            }
+            NS_OK
+        }
     }
 }
 
@@ -690,7 +871,7 @@ pub unsafe extern "C" fn Zawra_Storage_Wipe() -> i32 {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hash_String(
+pub unsafe extern "C" fn Z_Hash_String(
     input: *const c_char,
     out_hi: *mut u64,
     out_lo: *mut u64,
@@ -718,7 +899,7 @@ pub unsafe extern "C" fn Zawra_Hash_String(
 /// # Safety
 /// `ptr` and `len` must match a previously returned buffer.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Free_Buffer(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn Z_Free_Buffer(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
         unsafe { let _ = Vec::from_raw_parts(ptr, len, len); }
     }

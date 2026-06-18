@@ -28,6 +28,6 @@ fn main() {
     let exit_code = launcher::launch_wpe(&profile);
     eprintln!("[zawra] WPE exited with code {}", exit_code);
 
-    zawra_browser::wpe_glue::init::Zawra_Shutdown_Subsystems();
+    zawra_browser::wpe_glue::init::Z_Shutdown_Subsystems();
     std::process::exit(exit_code);
 }

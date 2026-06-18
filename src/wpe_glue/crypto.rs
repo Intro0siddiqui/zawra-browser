@@ -16,7 +16,7 @@ pub enum CryptoAlgo {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Crypto_Digest(
+pub unsafe extern "C" fn Z_Crypto_Digest(
     algo: u32,
     data_ptr: *const u8,
     data_len: usize,
@@ -47,7 +47,7 @@ impl NonceSequence for OneNonce {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Crypto_Encrypt_GCM(
+pub unsafe extern "C" fn Z_Crypto_Encrypt_GCM(
     key_ptr: *const u8,
     key_len: usize,
     iv_ptr: *const u8,
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn Zawra_Crypto_Encrypt_GCM(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Crypto_Decrypt_GCM(
+pub unsafe extern "C" fn Z_Crypto_Decrypt_GCM(
     key_ptr: *const u8,
     key_len: usize,
     iv_ptr: *const u8,
@@ -183,7 +183,7 @@ pub unsafe extern "C" fn Zawra_Crypto_Decrypt_GCM(
 
 // Existing functions kept for compatibility if needed, but updated to use the same style
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Crypto_Encrypt(
+pub unsafe extern "C" fn Z_Crypto_Encrypt(
     _algo:   u32,
     _key_ptr: *const u8,
     _key_len: usize,
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn Zawra_Crypto_Encrypt(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Crypto_Decrypt(
+pub unsafe extern "C" fn Z_Crypto_Decrypt(
     _algo:   u32,
     _key_ptr: *const u8,
     _key_len: usize,

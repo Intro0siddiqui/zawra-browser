@@ -18,11 +18,13 @@ public:
     static String getData(const String& key);
     static HashMap<String, String> getAllData();
     static void removeData(const String& key);
-    static void clearData();
+    static void clearData(const String& urlString = String());
     static void addBookmark(const URL& url, const String& title, const String& folder = String());
     static void removeBookmark(const URL& url);
     static String getBookmarks();
     static void deleteCookiesForDomain(const String& domain);
+    static void deleteCookie(const URL& url, const String& name);
+    static void deleteAllCookies();
 };
 
 }

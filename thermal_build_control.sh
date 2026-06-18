@@ -14,9 +14,9 @@ export WEBKIT_USE_SCCACHE=1
 # --- Configuration ---
 BUILD_DIR="webkit/build/WPE/Debug"
 TARGET="MiniBrowser"
-JOBS=2              # i3-6006U has 4 threads; 3 jobs leaves 1 free for OS/thermal
-TEMP_HIGH=63        # User preferred — conservative pause threshold
-TEMP_LOW=50         # User preferred — conservative resume threshold
+JOBS=3              # i3-6006U has 4 threads; 3 jobs leaves 1 free for OS/thermal
+TEMP_HIGH=80        # User preferred — conservative pause threshold
+TEMP_LOW=60         # User preferred — conservative resume threshold
 POLL_INTERVAL=5     # seconds between temperature checks
 
 # Find the thermal zone
@@ -70,15 +70,17 @@ if [ -z "$NINJA_PGID" ]; then
 fi
 
 cleanup() {
-    trap - SIGINT SIGTERM
+    trap - SIGINT SIGTERM EXIT
     echo -e "\n\n🛑 Stopping build processes..."
     if [ -n "$NINJA_PGID" ]; then
         kill -TERM -"$NINJA_PGID" 2>/dev/null || true
+        sleep 1
+        kill -KILL -"$NINJA_PGID" 2>/dev/null || true
     fi
     exit 1
 }
 
-trap cleanup SIGINT SIGTERM
+trap cleanup SIGINT SIGTERM EXIT
 
 STATE="RUNNING"
 

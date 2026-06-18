@@ -16,6 +16,7 @@
 #include <mutex>
 #include <wtf/ThreadSpecific.h>
 #include <wtf/text/WTFString.h>
+#include "ZawraGraphicsBridge.h"
 
 #if USE(GBM)
 #include "GBMDevice.h"
@@ -127,6 +128,7 @@ void GLContext::swapBuffers()
         return;
     ASSERT(m_surface);
     eglSwapBuffers(m_display.eglDisplay(), m_surface);
+    ZawraGraphicsBridge::singleton().presentFrame();
 }
 
 std::unique_ptr<GLContext> GLContext::createSharing(PlatformDisplay& platformDisplay)

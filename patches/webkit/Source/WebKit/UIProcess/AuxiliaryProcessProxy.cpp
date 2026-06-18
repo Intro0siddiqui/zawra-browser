@@ -58,7 +58,6 @@ AuxiliaryProcessProxy::AuxiliaryProcessProxy(bool alwaysRunsAtBackgroundPriority
 
 AuxiliaryProcessProxy::~AuxiliaryProcessProxy()
 {
-    fprintf(stderr, "[ZAWRA-DEBUG] AuxiliaryProcessProxy destructor (this=%p, m_connection=%p, m_processLauncher=%p, m_pendingMessages=%zu)\n", this, m_connection.get(), m_processLauncher.get(), m_pendingMessages.size());
     if (m_connection)
         m_connection->invalidate();
 
@@ -68,7 +67,6 @@ AuxiliaryProcessProxy::~AuxiliaryProcessProxy()
     }
 
     replyToPendingMessages();
-    fprintf(stderr, "[ZAWRA-DEBUG] AuxiliaryProcessProxy destructor END (this=%p)\n", this);
 }
 
 void AuxiliaryProcessProxy::populateOverrideLanguagesLaunchOptions(ProcessLauncher::LaunchOptions& launchOptions) const
@@ -226,27 +224,38 @@ bool AuxiliaryProcessProxy::sendMessage(UniqueRef<IPC::Encoder>&& encoder, Optio
         };
     }
 
-    switch (state()) {
+    auto currentState = state();
+    fprintf(stderr, "[ZAWRA-APROX] sendMessage: processName=%s, state=%d, hasConnection=%d, hasAsyncReply=%d\n",
+        processName().characters(), (int)currentState, (int)!!m_connection, (int)!!asyncReplyHandler);
+    switch (currentState) {
     case State::Launching:
         // If we're waiting for the child process to launch, we need to stash away the messages so we can send them once we have a connection.
+        fprintf(stderr, "[ZAWRA-APROX] sendMessage: STASHING to pendingMessages (state=Launching)\n");
         m_pendingMessages.append({ WTFMove(encoder), sendOptions, WTFMove(asyncReplyHandler) });
         return true;
 
     case State::Running:
+        fprintf(stderr, "[ZAWRA-APROX] sendMessage: SENDING via connection (state=Running)\n");
         if (asyncReplyHandler) {
-            if (connection()->sendMessageWithAsyncReply(WTFMove(encoder), WTFMove(*asyncReplyHandler), sendOptions) == IPC::Error::NoError)
+            if (connection()->sendMessageWithAsyncReply(WTFMove(encoder), WTFMove(*asyncReplyHandler), sendOptions) == IPC::Error::NoError) {
+                fprintf(stderr, "[ZAWRA-APROX] sendMessage: sendMessageWithAsyncReply SUCCESS\n");
                 return true;
+            }
         } else {
-            if (connection()->sendMessage(WTFMove(encoder), sendOptions) == IPC::Error::NoError)
+            auto err = connection()->sendMessage(WTFMove(encoder), sendOptions);
+            fprintf(stderr, "[ZAWRA-APROX] sendMessage: sendMessage returned error=%d\n", (int)err);
+            if (err == IPC::Error::NoError)
                 return true;
         }
         break;
 
     case State::Terminated:
+        fprintf(stderr, "[ZAWRA-APROX] sendMessage: FAILED (state=Terminated)\n");
         break;
     }
 
     if (asyncReplyHandler && asyncReplyHandler->completionHandler) {
+        fprintf(stderr, "[ZAWRA-APROX] sendMessage: calling error completion handler\n");
         RunLoop::current().dispatch([completionHandler = WTFMove(asyncReplyHandler->completionHandler)]() mutable {
             completionHandler(nullptr);
         });
@@ -294,6 +303,9 @@ void AuxiliaryProcessProxy::didFinishLaunching(ProcessLauncher*, IPC::Connection
     if (launchTime > 1_s)
         RELEASE_LOG_FAULT(Process, "%s process (%p) took %f seconds to launch", processName().characters(), this, launchTime.value());
     
+    fprintf(stderr, "[ZAWRA-APROX] didFinishLaunching: processName=%s, connectionValid=%d, pendingMessages=%zu\n",
+        processName().characters(), (bool)connectionIdentifier, m_pendingMessages.size());
+
     if (!connectionIdentifier)
         return;
 

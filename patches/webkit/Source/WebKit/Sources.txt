@@ -176,7 +176,7 @@ NetworkProcess/storage/NetworkQuotaManager.cpp
 NetworkProcess/storage/NetworkStorageManager.cpp
 NetworkProcess/storage/OriginQuotaManager.cpp
 NetworkProcess/storage/OriginStorageManager.cpp
-NetworkProcess/storage/SQLiteStorageArea.cpp
+NetworkProcess/storage/BrowserDBStorageArea.cpp
 NetworkProcess/storage/ServiceWorkerStorageManager.cpp
 NetworkProcess/storage/SessionStorageManager.cpp
 NetworkProcess/storage/StorageAreaBase.cpp
@@ -199,6 +199,7 @@ NetworkProcess/cache/NetworkCacheSpeculativeLoadManager.cpp
 NetworkProcess/cache/NetworkCacheStorage.cpp
 NetworkProcess/cache/NetworkCacheSubresourcesEntry.cpp
 NetworkProcess/cache/PrefetchCache.cpp
+NetworkProcess/cache/ZawraCacheBridge.cpp
 
 NetworkProcess/webrtc/NetworkMDNSRegister.cpp
 NetworkProcess/webrtc/RTCDataChannelRemoteManagerProxy.cpp

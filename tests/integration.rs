@@ -159,9 +159,9 @@ mod storage_tests {
     use std::fs;
     use std::path::Path;
     use zawra_browser::wpe_glue::storage::{
-        Zawra_Storage_Init,
-        Zawra_Cookie_Put,
-        Zawra_Cookie_Get,
+        Z_Storage_Init,
+        Z_Cookie_Put,
+        Z_Cookie_Get,
     };
 
     #[test]
@@ -175,7 +175,7 @@ mod storage_tests {
         let profile_c = CString::new(profile_dir).unwrap();
         
         unsafe {
-            let init_res = Zawra_Storage_Init(profile_c.as_ptr());
+            let init_res = Z_Storage_Init(profile_c.as_ptr());
             assert_eq!(init_res, 0); // NS_OK
 
             let domain_hash_hi = 0x1122334455667788u64;
@@ -185,11 +185,16 @@ mod storage_tests {
             let expiry = 1716298800u64;
             let flags = 1u8;
 
-            let put_res = Zawra_Cookie_Put(
+            let path = CString::new("/").unwrap();
+            let domain = CString::new("").unwrap();
+
+            let put_res = Z_Cookie_Put(
                 domain_hash_hi,
                 domain_hash_lo,
                 name.as_ptr(),
                 value.as_ptr(),
+                path.as_ptr(),
+                domain.as_ptr(),
                 expiry,
                 flags,
             );
@@ -197,7 +202,7 @@ mod storage_tests {
 
             // Retrieve the cookie
             let mut buf = vec![0u8; 128];
-            let get_res = Zawra_Cookie_Get(
+            let get_res = Z_Cookie_Get(
                 domain_hash_hi,
                 domain_hash_lo,
                 name.as_ptr(),
@@ -213,7 +218,7 @@ mod storage_tests {
             
             // Try to retrieve a non-existent cookie
             let name_bad = CString::new("non_existent").unwrap();
-            let get_res_bad = Zawra_Cookie_Get(
+            let get_res_bad = Z_Cookie_Get(
                 domain_hash_hi,
                 domain_hash_lo,
                 name_bad.as_ptr(),

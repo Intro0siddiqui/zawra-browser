@@ -28,7 +28,7 @@
 #include "NetworkProcess.h"
 
 extern "C" {
-    int32_t Zawra_Storage_Init(const char* profile_path);
+    int32_t Z_Storage_Init(const char* profile_path);
 }
 
 
@@ -97,6 +97,10 @@ extern "C" {
 #include <WebCore/SecurityOriginData.h>
 #include <WebCore/SecurityPolicy.h>
 #include <WebCore/UserContentURLPattern.h>
+#if OS(LINUX)
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 #include <wtf/Algorithms.h>
 #include <wtf/CallbackAggregator.h>
 #include <wtf/CryptographicallyRandomNumber.h>
@@ -209,6 +213,9 @@ bool NetworkProcess::shouldTerminate()
 
 void NetworkProcess::didReceiveMessage(IPC::Connection& connection, IPC::Decoder& decoder)
 {
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::didReceiveMessage ENTER msgName=%d(%s) receiver=%d destID=%lu isSync=%d tid=%d\n",
+        (int)decoder.messageName(), description(decoder.messageName()), (int)decoder.messageReceiverName(),
+        (unsigned long)decoder.destinationID(), (int)decoder.isSyncMessage(), (int)syscall(SYS_gettid));
     ASSERT(parentProcessConnection() == &connection);
     if (parentProcessConnection() != &connection) {
         WTFLogAlways("Ignored message '%s' because it did not come from the UIProcess (destination=%" PRIu64 ")", description(decoder.messageName()), decoder.destinationID());
@@ -216,22 +223,33 @@ void NetworkProcess::didReceiveMessage(IPC::Connection& connection, IPC::Decoder
         return;
     }
 
-    if (messageReceiverMap().dispatchMessage(connection, decoder))
+    if (messageReceiverMap().dispatchMessage(connection, decoder)) {
+        fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::didReceiveMessage messageReceiverMap handled msgName=%d tid=%d\n",
+            (int)decoder.messageName(), (int)syscall(SYS_gettid));
         return;
+    }
 
     if (decoder.messageReceiverName() == Messages::AuxiliaryProcess::messageReceiverName()) {
+        fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::didReceiveMessage AuxiliaryProcess path msgName=%d tid=%d\n",
+            (int)decoder.messageName(), (int)syscall(SYS_gettid));
         AuxiliaryProcess::didReceiveMessage(connection, decoder);
         return;
     }
 
 #if ENABLE(CONTENT_EXTENSIONS)
     if (decoder.messageReceiverName() == Messages::NetworkContentRuleListManager::messageReceiverName()) {
+        fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::didReceiveMessage NetworkContentRuleListManager path msgName=%d tid=%d\n",
+            (int)decoder.messageName(), (int)syscall(SYS_gettid));
         m_networkContentRuleListManager.didReceiveMessage(connection, decoder);
         return;
     }
 #endif
 
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::didReceiveMessage falling through to didReceiveNetworkProcessMessage msgName=%d tid=%d\n",
+        (int)decoder.messageName(), (int)syscall(SYS_gettid));
     didReceiveNetworkProcessMessage(connection, decoder);
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::didReceiveMessage RETURN msgName=%d tid=%d\n",
+        (int)decoder.messageName(), (int)syscall(SYS_gettid));
 }
 
 bool NetworkProcess::didReceiveSyncMessage(IPC::Connection& connection, IPC::Decoder& decoder, UniqueRef<IPC::Encoder>& replyEncoder)
@@ -310,6 +328,7 @@ void NetworkProcess::lowMemoryHandler(Critical critical)
 
 void NetworkProcess::initializeNetworkProcess(NetworkProcessCreationParameters&& parameters, CompletionHandler<void()>&& completionHandler)
 {
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::initializeNetworkProcess ENTER tid=%d\n", (int)syscall(SYS_gettid));
     CompletionHandlerCallingScope callCompletionHandler(WTFMove(completionHandler));
 
     applyProcessCreationParameters(parameters.auxiliaryProcessParameters);
@@ -323,7 +342,7 @@ void NetworkProcess::initializeNetworkProcess(NetworkProcessCreationParameters&&
     platformInitializeNetworkProcess(parameters);
 
     const char* profilePath = "/tmp/zawra_profile";
-    Zawra_Storage_Init(profilePath);
+    Z_Storage_Init(profilePath);
     
 
     WTF::Thread::setCurrentThreadIsUserInitiated();
@@ -374,6 +393,7 @@ void NetworkProcess::initializeNetworkProcess(NetworkProcessCreationParameters&&
     m_localhostAliasesForTesting = WTFMove(parameters.localhostAliasesForTesting);
 
     RELEASE_LOG(Process, "%p - NetworkProcess::initializeNetworkProcess: Presenting processPID=%d", this, WebCore::presentingApplicationPID());
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::initializeNetworkProcess DONE tid=%d\n", (int)syscall(SYS_gettid));
 }
 
 void NetworkProcess::initializeConnection(IPC::Connection* connection)
@@ -390,25 +410,44 @@ void NetworkProcess::initializeConnection(IPC::Connection* connection)
 
 void NetworkProcess::createNetworkConnectionToWebProcess(ProcessIdentifier identifier, PAL::SessionID sessionID, NetworkProcessConnectionParameters&& parameters, CompletionHandler<void(std::optional<IPC::Connection::Handle>&&, HTTPCookieAcceptPolicy)>&& completionHandler)
 {
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess ENTER identifier=%u sessionID=%u tid=%d\n",
+        static_cast<unsigned>(identifier.toUInt64()), static_cast<unsigned>(sessionID.toUInt64()), (int)syscall(SYS_gettid));
     auto connectionIdentifiers = IPC::Connection::createConnectionIdentifierPair();
     if (!connectionIdentifiers) {
+        fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess NO identifiers tid=%d\n", (int)syscall(SYS_gettid));
         completionHandler({ }, HTTPCookieAcceptPolicy::Never);
         return;
     }
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess IDENTIFIERS OK serverHandle=%p clientHandle=%p tid=%d\n",
+        (void*)&connectionIdentifiers->server, (void*)&connectionIdentifiers->client, (int)syscall(SYS_gettid));
 
     auto newConnection = NetworkConnectionToWebProcess::create(*this, identifier, sessionID, WTFMove(parameters), connectionIdentifiers->server);
     auto& connection = newConnection.get();
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess CONNECTION_CREATED connection=%p uniqueID=%llu webProcessConnections=%zu tid=%d\n",
+        (void*)&connection, (unsigned long long)connection.connection().uniqueID().toUInt64(), static_cast<size_t>(m_webProcessConnections.size()), (int)syscall(SYS_gettid));
 
     ASSERT(!m_webProcessConnections.contains(identifier));
     m_webProcessConnections.add(identifier, WTFMove(newConnection));
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess CONNECTION_ADDED identifier=%u size=%zu tid=%d\n",
+        static_cast<unsigned>(identifier.toUInt64()), static_cast<size_t>(m_webProcessConnections.size()), (int)syscall(SYS_gettid));
 
     auto* storage = storageSession(sessionID);
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess STORAGE_SESSION=%p cookiePolicy=%u tid=%d\n",
+        (void*)storage, (unsigned)(storage ? storage->cookieAcceptPolicy() : HTTPCookieAcceptPolicy::Never), (int)syscall(SYS_gettid));
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess COMPLETING tid=%d\n", (int)syscall(SYS_gettid));
     completionHandler(WTFMove(connectionIdentifiers->client), storage ? storage->cookieAcceptPolicy() : HTTPCookieAcceptPolicy::Never);
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess COMPLETED tid=%d\n", (int)syscall(SYS_gettid));
 
     connection.setOnLineState(NetworkStateNotifier::singleton().onLine());
+    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess ONLINE_STATE_SET tid=%d\n", (int)syscall(SYS_gettid));
 
-    if (auto* session = networkSession(sessionID))
+    if (auto* session = networkSession(sessionID)) {
         session->storageManager().startReceivingMessageFromConnection(connection.connection());
+        fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess STORAGE_MANAGER_STARTED tid=%d\n", (int)syscall(SYS_gettid));
+    } else {
+        fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::createNetworkConnectionToWebProcess NO networkSession sessionID=%u tid=%d\n",
+            static_cast<unsigned>(sessionID.toUInt64()), (int)syscall(SYS_gettid));
+    }
 }
 
 void NetworkProcess::addAllowedFirstPartyForCookies(WebCore::ProcessIdentifier processIdentifier, WebCore::RegistrableDomain&& firstPartyForCookies, LoadedWebArchive loadedWebArchive, CompletionHandler<void()>&& completionHandler)

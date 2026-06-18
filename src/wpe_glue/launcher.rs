@@ -23,9 +23,9 @@ const NS_ERROR_FAILURE:   i32 = -2147467259i32;
 
 // ── C-ABI declarations from our glue layer ────────────────────────────────────
 unsafe extern "C" {
-    fn Zawra_Init_Subsystems(profile_path: *const c_char) -> i32;
-    fn Zawra_Register_Protocols() -> i32;
-    fn Zawra_Shutdown_Subsystems();
+    fn Z_Init_Subsystems(profile_path: *const c_char) -> i32;
+    fn Z_Register_Protocols() -> i32;
+    fn Z_Shutdown_Subsystems();
 }
 
 // ── WPE function types (resolved via dlopen at runtime) ────────────────
@@ -128,13 +128,13 @@ pub fn bootstrap_zawra(profile_path: &str) -> bool {
         }
     };
 
-    let ret = unsafe { Zawra_Init_Subsystems(profile_c.as_ptr()) };
+    let ret = unsafe { Z_Init_Subsystems(profile_c.as_ptr()) };
     if ret != NS_OK {
         eprintln!("[zawra-launcher] Zawra_Init_Subsystems failed: {:#010x}", ret as u32);
         return false;
     }
 
-    let proto_ret = unsafe { Zawra_Register_Protocols() };
+    let proto_ret = unsafe { Z_Register_Protocols() };
     if proto_ret != NS_OK {
         eprintln!("[zawra-launcher] Zawra_Register_Protocols failed: {:#010x}", proto_ret as u32);
         // Non-fatal — WPE will fall back to default networking for now
@@ -194,7 +194,7 @@ pub fn launch_wpe(profile_path: &str) -> i32 {
 /// # Safety
 /// `profile_path` must be a valid NUL-terminated string or NULL (uses default).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Bootstrap(profile_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn Z_Bootstrap(profile_path: *const c_char) -> i32 {
     let profile_str = if profile_path.is_null() {
         resolve_profile_dir().to_string_lossy().into_owned()
     } else {
@@ -209,8 +209,8 @@ pub unsafe extern "C" fn Zawra_Bootstrap(profile_path: *const c_char) -> i32 {
 
 /// Perform a graceful shutdown.
 #[unsafe(no_mangle)]
-pub extern "C" fn Zawra_ProcessShutdown() {
-    unsafe { Zawra_Shutdown_Subsystems() };
+pub extern "C" fn Z_ProcessShutdown() {
+    unsafe { Z_Shutdown_Subsystems() };
     eprintln!("[zawra-launcher] Process shutdown complete");
 }
 
@@ -228,7 +228,7 @@ unsafe extern "C" {
 /// # Safety
 /// `path` and `argv` must be valid NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_Hajr_SpawnProcess(
+pub unsafe extern "C" fn Z_Hajr_SpawnProcess(
     path: *const c_char,
     argv: *const *const c_char,
     out_socket: *mut c_int,

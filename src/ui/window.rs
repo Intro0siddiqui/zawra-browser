@@ -3,7 +3,8 @@
 //! Top-level native window wrapper. Communicates with WPE's embedding layer.
 //! Falls back to a headless "virtual window" when WPE is not present.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::ffi::{CString, c_char, c_void};
 
 /// Configuration for the browser window.
 #[derive(Debug, Clone)]
@@ -91,20 +92,102 @@ impl BrowserWindow {
     }
 }
 
-// ── Native window helpers (GTK stubs) ────────────────────────────────────────
+// ── Native window helpers (GTK / Wayland dynamically loaded) ──────────────────
 
-fn create_native_window(_config: &WindowConfig) -> *mut std::ffi::c_void {
-    // When GTK4 is available this would call:
-    //   gtk_window_new() → gtk_widget_show_all()
-    // For now return NULL — all operations degrade gracefully.
-    std::ptr::null_mut()
+struct GtkLib {
+    gtk_init: unsafe extern "C" fn(),
+    gtk_window_new: unsafe extern "C" fn() -> *mut c_void,
+    gtk_window_set_title: unsafe extern "C" fn(*mut c_void, *const c_char),
+    gtk_window_set_default_size: unsafe extern "C" fn(*mut c_void, i32, i32),
+    gtk_window_present: unsafe extern "C" fn(*mut c_void),
 }
 
-fn show_native_window(_handle: *mut std::ffi::c_void) {
-    // gtk_widget_show_all(handle);
+fn load_gtk() -> Option<&'static GtkLib> {
+    static GTK_LIB: OnceLock<Option<GtkLib>> = OnceLock::new();
+    GTK_LIB.get_or_init(|| {
+        let paths = ["libgtk-4.so.1", "libgtk-4.so"];
+        let mut handle = std::ptr::null_mut();
+        for path in &paths {
+            if let Ok(path_c) = CString::new(*path) {
+                handle = unsafe { libc::dlopen(path_c.as_ptr(), libc::RTLD_LAZY | libc::RTLD_GLOBAL) };
+                if !handle.is_null() {
+                    break;
+                }
+            }
+        }
+        if handle.is_null() {
+            eprintln!("[zawra-ui] Failed to load libgtk-4 dynamically");
+            return None;
+        }
+
+        unsafe {
+            let sym = |name: &str| -> Option<*mut c_void> {
+                let name_c = CString::new(name).ok()?;
+                let ptr = libc::dlsym(handle, name_c.as_ptr());
+                if ptr.is_null() {
+                    None
+                } else {
+                    Some(ptr)
+                }
+            };
+
+            let gtk_init = std::mem::transmute(sym("gtk_init")?);
+            let gtk_window_new = std::mem::transmute(sym("gtk_window_new")?);
+            let gtk_window_set_title = std::mem::transmute(sym("gtk_window_set_title")?);
+            let gtk_window_set_default_size = std::mem::transmute(sym("gtk_window_set_default_size")?);
+            let gtk_window_present = std::mem::transmute(sym("gtk_window_present")?);
+
+            Some(GtkLib {
+                gtk_init,
+                gtk_window_new,
+                gtk_window_set_title,
+                gtk_window_set_default_size,
+                gtk_window_present,
+            })
+        }
+    }).as_ref()
 }
 
-fn set_native_title(_handle: *mut std::ffi::c_void, title: &str) {
-    // gtk_window_set_title(handle, title);
-    eprintln!("[zawra-ui] set_title: {}", title);
+fn create_native_window(config: &WindowConfig) -> *mut std::ffi::c_void {
+    if let Some(gtk) = load_gtk() {
+        unsafe {
+            static INIT: std::sync::Once = std::sync::Once::new();
+            INIT.call_once(|| {
+                (gtk.gtk_init)();
+            });
+
+            let window = (gtk.gtk_window_new)();
+            if window.is_null() {
+                eprintln!("[zawra-ui] Failed to create GtkWindow");
+                return std::ptr::null_mut();
+            }
+
+            if let Ok(title_c) = CString::new(config.title.clone()) {
+                (gtk.gtk_window_set_title)(window, title_c.as_ptr());
+            }
+            (gtk.gtk_window_set_default_size)(window, config.width as i32, config.height as i32);
+
+            window
+        }
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+fn show_native_window(handle: *mut std::ffi::c_void) {
+    if let Some(gtk) = load_gtk() {
+        unsafe {
+            (gtk.gtk_window_present)(handle);
+        }
+    }
+}
+
+fn set_native_title(handle: *mut std::ffi::c_void, title: &str) {
+    if let Some(gtk) = load_gtk() {
+        if let Ok(title_c) = CString::new(title) {
+            unsafe {
+                (gtk.gtk_window_set_title)(handle, title_c.as_ptr());
+            }
+        }
+    }
 }

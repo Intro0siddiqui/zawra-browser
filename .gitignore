@@ -20,3 +20,8 @@ dependencies/WebKit/
 
 # Crawler Database
 zawra_inventory.db*
+
+# Temp / Debug
+core.*
+test_*.zig
+

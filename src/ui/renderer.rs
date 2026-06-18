@@ -7,6 +7,11 @@
 use std::ffi::{CString, c_char, c_void};
 use std::sync::{Arc, Mutex};
 
+unsafe extern "C" {
+    fn Z_Graphics_CreateSurface(window: *mut c_void, width: u32, height: u32) -> *mut c_void;
+    fn Z_Graphics_DestroySurface(handle: *mut c_void);
+}
+
 /// The dimensions of the render viewport.
 #[derive(Debug, Clone, Copy)]
 pub struct Viewport {
@@ -33,6 +38,7 @@ pub struct RendererEmbed {
     web_browser: *mut c_void,
     /// Native window handle used to host WPE's rendering
     parent_window: *mut c_void,
+    graphics_surface: Mutex<*mut c_void>,
 }
 
 // SAFETY: Managed by WPE's single-threaded event loop.
@@ -47,11 +53,28 @@ impl RendererEmbed {
             viewport: Mutex::new(viewport),
             web_browser: std::ptr::null_mut(),
             parent_window,
+            graphics_surface: Mutex::new(std::ptr::null_mut()),
         })
     }
 
     /// Initialise the WPE embed. Must be called after WPE is ready.
     pub fn init(&self) -> bool {
+        let (width, height) = {
+            let vp = self.viewport.lock().unwrap();
+            (vp.width, vp.height)
+        };
+        unsafe {
+            let surface = Z_Graphics_CreateSurface(self.parent_window, width, height);
+            if surface.is_null() {
+                eprintln!("[zawra-renderer] Failed to create graphics surface via z-graphics");
+            } else {
+                eprintln!("[zawra-renderer] Created graphics surface {:?}", surface);
+                if let Ok(mut gs) = self.graphics_surface.lock() {
+                    *gs = surface;
+                }
+            }
+        }
+
         #[cfg(wpe_available)]
         {
             // In a real implementation:
@@ -94,6 +117,19 @@ impl RendererEmbed {
             vp.width = width;
             vp.height = height;
         }
+        if let Ok(mut gs) = self.graphics_surface.lock() {
+            if !gs.is_null() {
+                unsafe {
+                    Z_Graphics_DestroySurface(*gs);
+                    *gs = Z_Graphics_CreateSurface(self.parent_window, width, height);
+                    if gs.is_null() {
+                        eprintln!("[zawra-renderer] Failed to recreate graphics surface on resize");
+                    } else {
+                        eprintln!("[zawra-renderer] Recreated graphics surface {:?} on resize to {}x{}", *gs, width, height);
+                    }
+                }
+            }
+        }
         // nsIBaseWindow::SetSize(width, height, true)
         eprintln!("[zawra-renderer] viewport resized to {}×{}", width, height);
     }
@@ -123,6 +159,14 @@ impl RendererEmbed {
     pub fn destroy(&self) {
         if let Ok(mut s) = self.state.lock() {
             *s = RendererState::Destroyed;
+        }
+        if let Ok(mut gs) = self.graphics_surface.lock() {
+            if !gs.is_null() {
+                unsafe {
+                    Z_Graphics_DestroySurface(*gs);
+                }
+                *gs = std::ptr::null_mut();
+            }
         }
         eprintln!("[zawra-renderer] destroyed");
     }

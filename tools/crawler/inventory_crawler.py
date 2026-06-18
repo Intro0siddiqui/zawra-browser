@@ -16,8 +16,9 @@ def init_db():
     cursor.execute("DROP TABLE IF EXISTS ffi_symbols")
     cursor.execute("DROP TABLE IF EXISTS build_inventory")
     cursor.execute("DROP TABLE IF EXISTS metadata")
+    cursor.execute("DROP TABLE IF EXISTS stubs")
     cursor.execute("""
-        CREATE TABLE patches (
+        CREATE TABLE IF NOT EXISTS patches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             patch_path TEXT,
             target_path TEXT,
@@ -26,7 +27,7 @@ def init_db():
         )
     """)
     cursor.execute("""
-        CREATE TABLE ffi_symbols (
+        CREATE TABLE IF NOT EXISTS ffi_symbols (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_file TEXT,
             symbol_name TEXT,
@@ -35,7 +36,7 @@ def init_db():
         )
     """)
     cursor.execute("""
-        CREATE TABLE build_inventory (
+        CREATE TABLE IF NOT EXISTS build_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_file TEXT,
             build_file TEXT,
@@ -43,7 +44,19 @@ def init_db():
         )
     """)
     cursor.execute("""
-        CREATE TABLE metadata (
+        CREATE TABLE IF NOT EXISTS stubs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL,
+            line_number INTEGER NOT NULL,
+            function_name TEXT,
+            pattern_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            context TEXT,
+            UNIQUE(file_path, line_number, pattern_type)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS metadata (
             key TEXT PRIMARY KEY,
             value TEXT
         )
@@ -442,17 +455,182 @@ def crawl_ffi(conn):
                         print(f"Error scanning {rel_path}: {e}")
     conn.commit()
 
+def crawl_stubs(conn):
+    cursor = conn.cursor()
+    # Walk patches/webkit/ and src/ only
+    search_dirs = [PROJECT_ROOT / "patches" / "webkit", PROJECT_ROOT / "src"]
+    
+    todo_pat = re.compile(r'//\s*(TODO|FIXME|HACK|STUB|XXX)', re.IGNORECASE)
+    not_impl_pat = re.compile(r'return\s+NS_ERROR_NOT_IMPLEMENTED', re.IGNORECASE)
+    nullptr_pat = re.compile(r'return\s+nullptr\s*;')
+    null_pat = re.compile(r'return\s+NULL\s*;')
+    
+    func_decl_cpp = re.compile(r'\b([a-zA-Z0-9_<>&*:]+)\s+([a-zA-Z0-9_:]+)\s*\([^)]*\)\s*\{?')
+    func_decl_rust = re.compile(r'\bfn\s+([a-zA-Z0-9_]+)\b')
+
+    for s_dir in search_dirs:
+        if not s_dir.exists():
+            continue
+        for root, _, files in os.walk(s_dir):
+            for file in files:
+                if not file.endswith((".cpp", ".h", ".rs")):
+                    continue
+                path = Path(root) / file
+                rel_path = path.relative_to(PROJECT_ROOT)
+                try:
+                    content = path.read_text(errors='ignore')
+                    lines = content.splitlines()
+                    
+                    functions = []
+                    if file.endswith(".rs"):
+                        for m in func_decl_rust.finditer(content):
+                            start_pos = m.start()
+                            line_num = content[:start_pos].count('\n') + 1
+                            functions.append((line_num, m.group(1)))
+                    else:
+                        for m in func_decl_cpp.finditer(content):
+                            if m.group(1) in {'if', 'while', 'for', 'switch', 'return', 'else', 'sizeof', 'static_cast'}:
+                                continue
+                            start_pos = m.start()
+                            line_num = content[:start_pos].count('\n') + 1
+                            functions.append((line_num, m.group(2)))
+                    
+                    functions.sort(key=lambda x: x[0])
+                    
+                    def get_func_name(line_no):
+                        curr_func = "unknown"
+                        for f_line, f_name in functions:
+                            if f_line <= line_no:
+                                curr_func = f_name
+                            else:
+                                break
+                        return curr_func
+
+                    # 1. Line-by-line scanning
+                    for idx, line in enumerate(lines):
+                        line_num = idx + 1
+                        stripped = line.strip()
+                        
+                        if not_impl_pat.search(stripped):
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (str(rel_path), line_num, get_func_name(line_num), 'not_implemented', 'high', stripped))
+                            continue
+                        
+                        is_guard = any(x in stripped for x in ["if", "case", "?", "&&", "||"])
+                        
+                        if nullptr_pat.search(stripped):
+                            sev = 'low' if is_guard else 'high'
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (str(rel_path), line_num, get_func_name(line_num), 'return_nullptr', sev, stripped))
+                            continue
+                            
+                        if null_pat.search(stripped):
+                            sev = 'low' if is_guard else 'high'
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (str(rel_path), line_num, get_func_name(line_num), 'return_null', sev, stripped))
+                            continue
+                        
+                        todo_m = todo_pat.search(stripped)
+                        if todo_m:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (str(rel_path), line_num, get_func_name(line_num), 'stub_comment', 'low', stripped))
+                            continue
+
+                    # 2. Multi-line empty body scanning
+                    empty_cpp_pat = re.compile(
+                        r'\b([a-zA-Z0-9_<>&*:]+)\s+([a-zA-Z0-9_:]+)\s*\([^)]*\)\s*\{\s*\}'
+                    )
+                    for m in empty_cpp_pat.finditer(content):
+                        if m.group(1) in {'if', 'while', 'for', 'switch', 'return', 'else', 'sizeof', 'static_cast'}:
+                            continue
+                        start_pos = m.start()
+                        line_num = content[:start_pos].count('\n') + 1
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (str(rel_path), line_num, m.group(2), 'empty_body', 'high', m.group(0).strip()))
+
+                    empty_rs_pat = re.compile(
+                        r'\bfn\s+([a-zA-Z0-9_]+)\b[^{]*\{\s*\}'
+                    )
+                    for m in empty_rs_pat.finditer(content):
+                        start_pos = m.start()
+                        line_num = content[:start_pos].count('\n') + 1
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (str(rel_path), line_num, m.group(1), 'empty_body', 'high', m.group(0).strip()))
+
+                    # 3. Smart Heuristic for short functions
+                    short_cpp_pat = re.compile(
+                        r'\b([a-zA-Z0-9_<>&*:]+)\s+([a-zA-Z0-9_:]+)\s*\([^)]*\)\s*\{\s*([^{}]+)\s*\}'
+                    )
+                    for m in short_cpp_pat.finditer(content):
+                        ret_type = m.group(1)
+                        if ret_type in {'if', 'while', 'for', 'switch', 'return', 'else', 'sizeof', 'static_cast'}:
+                            continue
+                        body = m.group(3).strip()
+                        if body.count('\n') <= 2:
+                            if re.search(r'return\s+false\s*;', body):
+                                start_pos = m.start()
+                                line_num = content[:start_pos].count('\n') + 1
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                """, (str(rel_path), line_num, m.group(2), 'return_false', 'medium', body))
+                            elif re.search(r'return\s+-\s*1\s*;', body):
+                                start_pos = m.start()
+                                line_num = content[:start_pos].count('\n') + 1
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                """, (str(rel_path), line_num, m.group(2), 'return_negative_one', 'medium', body))
+
+                    short_rs_pat = re.compile(
+                        r'\bfn\s+([a-zA-Z0-9_]+)\b[^{]*\{\s*([^{}]+)\s*\}'
+                    )
+                    for m in short_rs_pat.finditer(content):
+                        body = m.group(2).strip()
+                        if body.count('\n') <= 2:
+                            if re.search(r'\breturn\s+false\b|false\s*$', body):
+                                start_pos = m.start()
+                                line_num = content[:start_pos].count('\n') + 1
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                """, (str(rel_path), line_num, m.group(1), 'return_false', 'medium', body))
+                            elif re.search(r'\breturn\s+-\s*1\b|-\s*1\s*$', body):
+                                start_pos = m.start()
+                                line_num = content[:start_pos].count('\n') + 1
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO stubs (file_path, line_number, function_name, pattern_type, severity, context)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                """, (str(rel_path), line_num, m.group(1), 'return_negative_one', 'medium', body))
+
+                except Exception as e:
+                    print(f"Error parsing stubs in {rel_path}: {e}")
+    conn.commit()
+
 if __name__ == "__main__":
     print("🕸️  Crawling Zawra project structure...")
     connection = init_db()
     crawl_patches(connection)
     crawl_ffi(connection)
     crawl_build_files(connection)
+    crawl_stubs(connection)
     
     head, max_mtime = get_metadata()
     cur = connection.cursor()
-    cur.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("git_head", head))
-    cur.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("max_mtime", str(max_mtime)))
+    cur.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)", ("git_head", head))
+    cur.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)", ("max_mtime", str(max_mtime)))
     connection.commit()
     
     cur.execute("SELECT COUNT(*) FROM patches")
@@ -461,9 +639,12 @@ if __name__ == "__main__":
     f_count = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM build_inventory")
     b_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM stubs")
+    s_count = cur.fetchone()[0]
     
     print(f"✅ Crawl complete!")
     print(f"📊 Patches mapped: {p_count}")
     print(f"🔗 FFI Symbols found: {f_count}")
     print(f"🏗️  Build entries indexed: {b_count}")
+    print(f"🧩 Stubs detected: {s_count}")
     connection.close()

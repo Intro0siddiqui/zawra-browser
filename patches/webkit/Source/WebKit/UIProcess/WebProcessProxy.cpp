@@ -302,8 +302,7 @@ WebProcessProxy::WebProcessProxy(WebProcessPool& processPool, WebsiteDataStore* 
 #if ENABLE(ROUTING_ARBITRATION)
     , m_routingArbitrator(makeUniqueRef<AudioSessionRoutingArbitratorProxy>(*this))
 #endif
-{
-    fprintf(stderr, "[ZAWRA-DEBUG] WebProcessProxy constructor (this=%p, timer=%p, size=%zu)\n", this, &m_backgroundResponsivenessTimer, sizeof(*this));
+    {
     RELEASE_ASSERT(isMainThreadOrCheckDisabled());
     WEBPROCESSPROXY_RELEASE_LOG(Process, "constructor:");
 
@@ -323,7 +322,6 @@ void WebProcessProxy::platformInitialize()
 
 WebProcessProxy::~WebProcessProxy()
 {
-    fprintf(stderr, "[ZAWRA-DEBUG] WebProcessProxy destructor (this=%p, timer=%p)\n", this, &m_backgroundResponsivenessTimer);
     RELEASE_ASSERT(isMainThreadOrCheckDisabled());
     ASSERT(m_pageURLRetainCountMap.isEmpty());
     WEBPROCESSPROXY_RELEASE_LOG(Process, "destructor:");
@@ -362,7 +360,6 @@ WebProcessProxy::~WebProcessProxy()
 #endif
 
     platformDestroy();
-    fprintf(stderr, "[ZAWRA-DEBUG] WebProcessProxy destructor body END (this=%p)\n", this);
 }
 
 #if !PLATFORM(IOS_FAMILY)
@@ -973,13 +970,20 @@ void WebProcessProxy::updateBackForwardItem(const BackForwardListItemState& item
 
 void WebProcessProxy::getNetworkProcessConnection(CompletionHandler<void(NetworkProcessConnectionInfo&&)>&& reply)
 {
+    fprintf(stderr, "[NETCONN-TRACE] WebProcessProxy::getNetworkProcessConnection ENTERED pid=%d\n", getpid());
     auto* dataStore = websiteDataStore();
     if (!dataStore) {
+        fprintf(stderr, "[NETCONN-TRACE] WebProcessProxy::getNetworkProcessConnection dataStore=NULL, replying invalid\n");
         ASSERT_NOT_REACHED();
         RELEASE_LOG_FAULT(Process, "WebProcessProxy should always have a WebsiteDataStore when used by a web process requesting a network process connection");
         return reply({ });
     }
-    dataStore->getNetworkProcessConnection(*this, WTFMove(reply));
+    fprintf(stderr, "[NETCONN-TRACE] WebProcessProxy::getNetworkProcessConnection calling dataStore->getNetworkProcessConnection pid=%d\n", getpid());
+    dataStore->getNetworkProcessConnection(*this, [reply = WTFMove(reply)](auto&& info) mutable {
+        fprintf(stderr, "[NETCONN-TRACE] WebProcessProxy::getNetworkProcessConnection REPLY CALLED pid=%d\n", getpid());
+        reply(WTFMove(info));
+    });
+    fprintf(stderr, "[NETCONN-TRACE] WebProcessProxy::getNetworkProcessConnection returned from dataStore call pid=%d\n", getpid());
 }
 
 #if ENABLE(GPU_PROCESS)

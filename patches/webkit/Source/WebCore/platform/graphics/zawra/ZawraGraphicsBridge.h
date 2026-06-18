@@ -24,6 +24,7 @@ public:
 
 private:
     void* m_surfaceHandle { nullptr };
+    void* m_compositorState { nullptr };
     int m_compositorWidth { 0 };
     int m_compositorHeight { 0 };
 };

@@ -277,6 +277,7 @@ public:
         int hajrSig1 { -1 };
         int hajrSig2 { -1 };
         int hajrPidfd { -1 };
+        int hajrFdTransferFd { -1 };
 #elif OS(WINDOWS)
         explicit Identifier(Handle&& handle)
             : Identifier(handle.handle.leak())
@@ -627,7 +628,7 @@ private:
     std::unique_ptr<UnixMessage> m_pendingOutputMessage;
 #if USE(GLIB)
     GRefPtr<GSocket> m_socket;
-    GRefPtr<GSocket> m_hajrSignalSocket;
+    GSource* m_hajrSignalSource { nullptr };
     GSocketMonitor m_readSocketMonitor;
     GSocketMonitor m_writeSocketMonitor;
     C_HardenedRingBuffer* m_inboundRing { nullptr };
@@ -641,6 +642,7 @@ private:
     int m_hajrSig1 { -1 };
     int m_hajrSig2 { -1 };
     int m_hajrPidfd { -1 };
+    int m_fdTransferFd { -1 };
 #endif
 #if PLATFORM(PLAYSTATION)
     RefPtr<WTF::Thread> m_socketMonitor;

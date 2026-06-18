@@ -307,7 +307,7 @@ fn fire_on_stop_request(listener: *mut c_void, channel: *mut c_void, status: u32
 /// # Safety
 /// `buf_ptr` must point to `buf_len` valid bytes. Out-params must be non-null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_ParseHttpHead(
+pub unsafe extern "C" fn Z_ParseHttpHead(
     buf_ptr: *const u8,
     buf_len: usize,
     out_status: *mut u16,

@@ -40,7 +40,7 @@
 // Hajr FFI Declarations
 extern "C" {
     typedef struct C_HardenedRingBuffer C_HardenedRingBuffer;
-    void* Zawra_Hajr_MapBootstrapRingWithSignal(uint64_t id, int signal_fd);
+    void* Z_Hajr_MapBootstrapRingWithSignal(uint64_t id, int signal_fd);
     void hajr_ring_free(C_HardenedRingBuffer*);
     int32_t hajr_ring_write(C_HardenedRingBuffer*, const uint8_t* data, size_t length);
     int32_t hajr_ring_read(C_HardenedRingBuffer*, uint8_t* buf, size_t length, size_t* bytes_read);
@@ -81,6 +81,34 @@ void Connection::platformInitialize(Identifier identifier)
     m_hajrSig1 = identifier.hajrSig1;
     m_hajrSig2 = identifier.hajrSig2;
     m_hajrPidfd = identifier.hajrPidfd;
+    m_fdTransferFd = identifier.hajrFdTransferFd;
+
+    if (!m_hasHajrInfo && identifier.handle != -1) {
+        // Socketpair-backed IPC connections created by createConnectionIdentifierPair()
+        // must use their own descriptor. Do not inherit the UIProcess parent
+        // connection's Hajr environment, otherwise secondary connections such as
+        // NetworkProcess<->WebProcess read/write on the wrong ring pair.
+        m_socketDescriptor = identifier.handle;
+#if USE(GLIB)
+        m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
+#endif
+    } else if (!m_hasHajrInfo) {
+        const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
+        const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
+        const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
+        const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
+        if (ring1Str && ring2Str && sig1Str && sig2Str) {
+            m_hajrRing1 = strtoull(ring1Str, nullptr, 10);
+            m_hajrRing2 = strtoull(ring2Str, nullptr, 10);
+            m_hajrSig1 = atoi(sig1Str);
+            m_hajrSig2 = atoi(sig2Str);
+            const char* parentPidFDStr = getenv("ZAWRA_HAJR_PARENT_PIDFD");
+            m_hajrPidfd = parentPidFDStr ? atoi(parentPidFDStr) : -1;
+            const char* fdTransferStr = getenv("ZAWRA_HAJR_FDTRANSFER");
+            m_fdTransferFd = fdTransferStr ? atoi(fdTransferStr) : -1;
+            m_hasHajrInfo = true;
+        }
+    }
 
     if (m_hasHajrInfo) {
         // When Hajr is enabled, identifier.handle IS the eventfd (signal2_fd),
@@ -207,6 +235,7 @@ static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer
 void Connection::readyReadHandler()
 {
     if (m_isHajrEnabled && m_inboundRing) {
+        fprintf(stderr, "[ZAWRA] readyReadHandler ENTERED on tid=%d isServer=%d\n", (int)syscall(SYS_gettid), m_isServer);
         // Clear eventfd signal if any
         hajr_ring_wait(m_inboundRing);
 
@@ -216,6 +245,11 @@ void Connection::readyReadHandler()
             int32_t res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&msgInfo), sizeof(msgInfo), &msgInfoBytesRead);
             if (res != 1 || msgInfoBytesRead == 0)
                 break;
+
+            fprintf(stderr, "[HAJR-CONN] readyReadHandler READ MSG: this=%p inbound=%p inboundSig=%d bodySize=%zu attCount=%zu tid=%d\n",
+                (void*)this, (void*)m_inboundRing,
+                m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
+                msgInfo.bodySize(), msgInfo.attachmentCount(), (int)syscall(SYS_gettid));
 
             if (msgInfoBytesRead != sizeof(msgInfo)) {
                 fprintf(stderr, "[ZAWRA] readyReadHandler - PARTIAL MESSAGE INFO READ\n");
@@ -237,29 +271,87 @@ void Connection::readyReadHandler()
 
             Vector<Attachment> fds;
             bool attachmentFail = false;
+
+            // Read handle values from ring to advance read pointer (they're part of the wire format)
+            // The actual FDs are received separately via SCM_RIGHTS on the transfer socket.
+            Vector<int32_t> handleValues;
             for (uint32_t i = 0; i < attachmentCount; ++i) {
                 int32_t handle;
                 size_t handleRead = 0;
                 res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&handle), sizeof(handle), &handleRead);
                 if (res != 1 || handleRead != sizeof(handle)) {
+                    fprintf(stderr, "[ZAWRA] readyReadHandler - FAILED TO READ HANDLE %u FROM RING\n", i);
                     attachmentFail = true;
                     break;
                 }
-                int fd = hajr_ipc_recv_fd(m_inboundRing, handle);
-                if (fd == -1) {
+                handleValues.append(handle);
+            }
+
+            // Now receive the actual FDs via SCM_RIGHTS from the transfer socket
+            if (!attachmentFail && attachmentCount > 0 && m_fdTransferFd != -1) {
+                struct iovec iov;
+                char dummy = 0;
+                iov.iov_base = &dummy;
+                iov.iov_len = sizeof(dummy);
+
+                size_t cmsgSpace = CMSG_SPACE(sizeof(int) * attachmentCount);
+                Vector<uint8_t> cmsgBuf(cmsgSpace);
+                memset(cmsgBuf.data(), 0, cmsgSpace);
+
+                struct msghdr msg;
+                memset(&msg, 0, sizeof(msg));
+                msg.msg_iov = &iov;
+                msg.msg_iovlen = 1;
+                msg.msg_control = cmsgBuf.data();
+                msg.msg_controllen = cmsgSpace;
+
+                ssize_t recvResult = recvmsg(m_fdTransferFd, &msg, 0);
+                fprintf(stderr, "[CRASH-V2] readyReadHandler: SCM_RIGHTS recvmsg result=%zd errno=%d fdCount=%u fdTransferFd=%d\n",
+                    recvResult, (recvResult == -1) ? errno : 0, attachmentCount, m_fdTransferFd);
+
+                if (recvResult == -1) {
+                    fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS recvmsg FAILED, errno=%d\n", errno);
                     attachmentFail = true;
-                    break;
+                } else {
+                    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                    if (!cmsg || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
+                        fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS cmsg header invalid\n");
+                        attachmentFail = true;
+                    } else {
+                        int* receivedFds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+                        for (uint32_t i = 0; i < attachmentCount; ++i) {
+                            int fd = receivedFds[i];
+                            if (fd == -1) {
+                                fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS received fd=-1 for index %u\n", i);
+                                attachmentFail = true;
+                                break;
+                            }
+                            if (!setCloseOnExec(fd)) {
+                                close(fd);
+                                attachmentFail = true;
+                                break;
+                            }
+                            fds.append(Attachment(fd, Attachment::Adopt));
+                        }
+                    }
                 }
-                if (!setCloseOnExec(fd)) {
-                    close(fd);
-                    attachmentFail = true;
-                    break;
-                }
-                fds.append(Attachment(fd, Attachment::Adopt));
+            } else if (!attachmentFail && attachmentCount > 0) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - attachmentCount=%u but no FD transfer socket\n", attachmentCount);
+                attachmentFail = true;
             }
 
             if (attachmentFail) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED\n");
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED, skipping body+checksum to resync ring\n");
+                // Skip remaining body + checksum to resync ring position
+                if (msgInfo.bodySize() > 0) {
+                    uint8_t* skipBuf = static_cast<uint8_t*>(fastMalloc(msgInfo.bodySize()));
+                    size_t skipRead = 0;
+                    hajr_ring_read(m_inboundRing, skipBuf, msgInfo.bodySize(), &skipRead);
+                    fastFree(skipBuf);
+                }
+                uint32_t skipChecksum = 0;
+                size_t skipChecksumRead = 0;
+                hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&skipChecksum), sizeof(skipChecksum), &skipChecksumRead);
                 break;
             }
 
@@ -304,8 +396,42 @@ void Connection::readyReadHandler()
                 WTFMove(fds)
             );
 
-            if (decoder)
+            if (decoder) {
+                static int s_readCount = 0;
+                static uint64_t s_prevFirst8 = 0;
+                static size_t s_prevBodySize = 0;
+                static int s_dupCount = 0;
+                s_readCount++;
+                if (msgInfo.bodySize() >= 8) {
+                    uint64_t first8;
+                    memcpy(&first8, payloadBuffer, sizeof(first8));
+                    if (first8 == s_prevFirst8 && msgInfo.bodySize() == s_prevBodySize && s_readCount > 1) {
+                        s_dupCount++;
+                        if (s_dupCount <= 10 || (s_dupCount % 1000) == 0)
+                            fprintf(stderr, "[STORM-DUP] readyReadHandler DUPLICATE #%d (dupCount=%d) this=%p inbound=%p inboundSig=%d first8=0x%016lX bodySize=%zu tid=%d\n",
+                                s_readCount, s_dupCount, (void*)this, (void*)m_inboundRing,
+                                m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
+                                first8, msgInfo.bodySize(), (int)syscall(SYS_gettid));
+                    } else if (s_dupCount > 0) {
+                        fprintf(stderr, "[STORM-DUP] readyReadHandler: dup streak ended after %d duplicates, this=%p inbound=%p inboundSig=%d new msg first8=0x%016lX tid=%d\n",
+                            s_dupCount, (void*)this, (void*)m_inboundRing,
+                            m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
+                            first8, (int)syscall(SYS_gettid));
+                        s_dupCount = 0;
+                    }
+                    s_prevFirst8 = first8;
+                    s_prevBodySize = msgInfo.bodySize();
+                    if (s_readCount <= 20 || (s_readCount % 10000) == 0)
+                        fprintf(stderr, "[STORM-READ] readyReadHandler DISPATCH #%d: this=%p inbound=%p inboundSig=%d bodySize=%zu first8=0x%016lX tid=%d\n",
+                            s_readCount, (void*)this, (void*)m_inboundRing,
+                            m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
+                            msgInfo.bodySize(), first8, (int)syscall(SYS_gettid));
+                }
                 processIncomingMessage(WTFMove(decoder));
+            } else {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - Decoder::create FAILED bodySize=%zu tid=%d\n", msgInfo.bodySize(), (int)syscall(SYS_gettid));
+                fastFree(payloadBuffer);
+            }
         }
         return;
     }
@@ -453,8 +579,6 @@ void Connection::platformOpen()
     RefPtr<Connection> protectedThis(this);
     m_isConnected = true;
 
-    fprintf(stderr, "[ZAWRA-DEBUG] Connection::platformOpen: m_isServer=%d, m_socketDescriptor=%d\n", m_isServer, m_socketDescriptor);
-
     // Prefer per-connection Hajr info from the Identifier (set by parent).
     // Fall back to env vars for child processes (which inherit env at fork).
     uint64_t ring1 = 0, ring2 = 0;
@@ -468,19 +592,12 @@ void Connection::platformOpen()
         sig2 = m_hajrSig2;
         pidfd = m_hajrPidfd;
         haveHajrInfo = true;
-        fprintf(stderr, "[ZAWRA-DEBUG] platformOpen: using Identifier Hajr info: ring1=%llu ring2=%llu sig1=%d sig2=%d pidfd=%d\n",
-            (unsigned long long)ring1, (unsigned long long)ring2, sig1, sig2, pidfd);
     } else {
         const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
         const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
         const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
         const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
         const char* parentPidFDStr = getenv("ZAWRA_HAJR_PARENT_PIDFD");
-
-        fprintf(stderr, "[ZAWRA-DEBUG] platformOpen: env vars: ring1=%s ring2=%s sig1=%s sig2=%s pidfd=%s\n",
-            ring1Str ? ring1Str : "NULL", ring2Str ? ring2Str : "NULL",
-            sig1Str ? sig1Str : "NULL", sig2Str ? sig2Str : "NULL",
-            parentPidFDStr ? parentPidFDStr : "NULL");
 
         if (ring1Str && ring2Str && sig1Str && sig2Str) {
             ring1 = strtoull(ring1Str, nullptr, 10);
@@ -502,6 +619,11 @@ void Connection::platformOpen()
         if (m_socket && m_socketDescriptor != -1) {
             int sockFd = g_socket_get_fd(m_socket.get());
             if (sockFd == sig1 || sockFd == sig2) {
+                int dupFd = dup(sockFd);
+                if (sockFd == sig1)
+                    sig1 = dupFd;
+                if (sockFd == sig2)
+                    sig2 = dupFd;
                 m_socket = nullptr;
                 m_socketDescriptor = -1;
             }
@@ -512,7 +634,6 @@ void Connection::platformOpen()
             int parentPidfd = syscall(434, getppid(), 0);
             if (parentPidfd != -1) {
                 pidfd = parentPidfd;
-                fprintf(stderr, "[ZAWRA-DEBUG] Dynamically opened parent pidfd=%d for ppid=%d\n", pidfd, getppid());
             } else {
                 fprintf(stderr, "[ZAWRA-ERROR] Failed to dynamically open parent pidfd: errno=%d\n", errno);
             }
@@ -521,15 +642,19 @@ void Connection::platformOpen()
             hajr_ipc_set_other_pidfd(pidfd);
 
         if (m_isServer) {
-            m_inboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
-            m_outboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring1, sig1));
+            m_inboundRing = static_cast<C_HardenedRingBuffer*>(Z_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
+            m_outboundRing = static_cast<C_HardenedRingBuffer*>(Z_Hajr_MapBootstrapRingWithSignal(ring1, sig1));
         } else {
-            m_inboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring1, sig1));
-            m_outboundRing = static_cast<C_HardenedRingBuffer*>(Zawra_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
+            m_inboundRing = static_cast<C_HardenedRingBuffer*>(Z_Hajr_MapBootstrapRingWithSignal(ring1, sig1));
+            m_outboundRing = static_cast<C_HardenedRingBuffer*>(Z_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
         }
         m_isHajrEnabled = (m_inboundRing && m_outboundRing);
-        fprintf(stderr, "[ZAWRA-DEBUG] platformOpen: m_isHajrEnabled=%d, inbound=%p, outbound=%p\n",
-            m_isHajrEnabled, (void*)m_inboundRing, (void*)m_outboundRing);
+        fprintf(stderr, "[HAJR-CONN] platformOpen: this=%p isServer=%d m_isHajrEnabled=%d inbound=%p outbound=%p inboundSig=%d outboundSig=%d ring1=%llu ring2=%llu sig1=%d sig2=%d pidfd=%d\n",
+            (void*)this, m_isServer, m_isHajrEnabled,
+            (void*)m_inboundRing, (void*)m_outboundRing,
+            m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
+            m_outboundRing ? hajr_ring_get_signal_fd(m_outboundRing) : -1,
+            (unsigned long long)ring1, (unsigned long long)ring2, sig1, sig2, pidfd);
 #if USE(GLIB)
         if (m_isHajrEnabled) {
             int hajrFd = hajr_ring_get_signal_fd(m_inboundRing);
@@ -571,9 +696,16 @@ void Connection::platformOpen()
     }
 #endif
 
-    m_connectionQueue->dispatch([protectedThis] {
-        protectedThis->readyReadHandler();
-    });
+    // When Hajr is enabled, the HajrSource GSource (attached above) handles
+    // inbound data via poll on the signal fd. Dispatching readyReadHandler()
+    // directly would BLOCK the queue thread inside hajr_ring_wait() because
+    // no data is available yet, permanently stalling all subsequent dispatches
+    // (including sendOutgoingMessages).
+    if (!m_isHajrEnabled) {
+        m_connectionQueue->dispatch([protectedThis] {
+            protectedThis->readyReadHandler();
+        });
+    }
 
     fprintf(stderr, "[CRASH-V2] platformOpen: DONE, m_isHajrEnabled=%d\n", m_isHajrEnabled);
 }
@@ -618,15 +750,129 @@ bool Connection::sendOutputMessage(UnixMessage& outputMessage)
         );
         memcpy(ptr + outputMessage.bodySize(), &checksum, sizeof(checksum));
 
+        fprintf(stderr, "[HAJR-CONN] sendOutputMessage: this=%p outbound=%p outboundSig=%d bodySize=%zu attachments=%u tid=%d\n",
+            (void*)this, (void*)m_outboundRing,
+            m_outboundRing ? hajr_ring_get_signal_fd(m_outboundRing) : -1,
+            outputMessage.bodySize(), attachmentCount, (int)syscall(SYS_gettid));
         fprintf(stderr, "[CRASH-V2] sendOutputMessage: writing to ring\n");
         if (hajr_ring_write(m_outboundRing, payload.data(), payload.size()) == 1) {
-            fprintf(stderr, "[CRASH-V2] sendOutputMessage: signaling ring\n");
-            hajr_ring_signal(m_outboundRing);
-            fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning true\n");
-            return true;
-        }
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: ring write failed\n");
+            // If we have attachments, send FDs via SCM_RIGHTS on the transfer socket.
+            // pidfd_getfd requires CAP_SYS_PTRACE which sandboxed children lack.
+            if (attachmentCount > 0 && m_fdTransferFd != -1) {
+                // Build iovec + cmsg for sendmsg with SCM_RIGHTS
+                // We send a tiny 1-byte payload alongside the FDs to maintain message boundaries
+                struct iovec iov;
+                char dummy = 0;
+                iov.iov_base = &dummy;
+                iov.iov_len = sizeof(dummy);
+
+                // Calculate cmsg buffer size for up to 254 FDs
+                size_t cmsgSpace = CMSG_SPACE(sizeof(int) * attachmentCount);
+                Vector<uint8_t> cmsgBuf(cmsgSpace);
+                memset(cmsgBuf.data(), 0, cmsgSpace);
+
+                struct msghdr msg;
+                memset(&msg, 0, sizeof(msg));
+                msg.msg_iov = &iov;
+                msg.msg_iovlen = 1;
+                msg.msg_control = cmsgBuf.data();
+                msg.msg_controllen = cmsgSpace;
+
+                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                cmsg->cmsg_level = SOL_SOCKET;
+                cmsg->cmsg_type = SCM_RIGHTS;
+                cmsg->cmsg_len = CMSG_LEN(sizeof(int) * attachmentCount);
+
+                int* fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+                int fdIndex = 0;
+                for (auto& attachment : attachments) {
+                    fds[fdIndex++] = attachment.value();
+                }
+
+                ssize_t sendResult = sendmsg(m_fdTransferFd, &msg, MSG_NOSIGNAL);
+                fprintf(stderr, "[CRASH-V2] sendOutputMessage: SCM_RIGHTS sendmsg result=%zd errno=%d fdCount=%u fdTransferFd=%d\n",
+                    sendResult, (sendResult == -1) ? errno : 0, attachmentCount, m_fdTransferFd);
+                if (sendResult == -1) {
+                    fprintf(stderr, "[CRASH-V2] sendOutputMessage: SCM_RIGHTS FAILED\n");
+                }
+            }
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: signaling ring\n");
+        hajr_ring_signal(m_outboundRing);
+        fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning true\n");
+        return true;
     }
+    }
+
+    if (m_socketDescriptor != -1) {
+        auto& messageInfo = outputMessage.messageInfo();
+        auto& attachments = outputMessage.attachments();
+        uint32_t attachmentCount = attachments.size();
+
+        size_t totalSize = sizeof(messageInfo)
+            + sizeof(attachmentCount)
+            + (attachmentCount * sizeof(AttachmentInfo))
+            + outputMessage.bodySize()
+            + sizeof(uint32_t);
+        Vector<uint8_t> payload(totalSize);
+        uint8_t* ptr = payload.data();
+
+        memcpy(ptr, &messageInfo, sizeof(messageInfo));
+        ptr += sizeof(messageInfo);
+
+        memcpy(ptr, &attachmentCount, sizeof(attachmentCount));
+        ptr += sizeof(attachmentCount);
+
+        for (uint32_t i = 0; i < attachmentCount; ++i) {
+            AttachmentInfo info;
+            memcpy(ptr, &info, sizeof(info));
+            ptr += sizeof(info);
+        }
+
+        memcpy(ptr, outputMessage.body(), outputMessage.bodySize());
+        ptr += outputMessage.bodySize();
+
+        uint32_t checksum = hajr_ipc_message_checksum(
+            reinterpret_cast<const uint8_t*>(&messageInfo),
+            sizeof(messageInfo),
+            outputMessage.body(),
+            outputMessage.bodySize());
+        memcpy(ptr, &checksum, sizeof(checksum));
+
+        struct iovec iov;
+        iov.iov_base = payload.data();
+        iov.iov_len = payload.size();
+
+        struct msghdr msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+
+        Vector<uint8_t> cmsgBuffer;
+        if (attachmentCount > 0) {
+            cmsgBuffer.resize(CMSG_SPACE(sizeof(int) * attachmentCount));
+            msg.msg_control = cmsgBuffer.data();
+            msg.msg_controllen = CMSG_SPACE(sizeof(int) * attachmentCount);
+
+            cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+            cmsg->cmsg_level = SOL_SOCKET;
+            cmsg->cmsg_type = SCM_RIGHTS;
+            cmsg->cmsg_len = CMSG_LEN(sizeof(int) * attachmentCount);
+
+            int* fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+            for (uint32_t i = 0; i < attachmentCount; ++i)
+                fds[i] = attachments[i].value();
+        }
+
+        ssize_t sendResult = sendmsg(m_socketDescriptor, &msg, MSG_NOSIGNAL);
+        fprintf(stderr, "[SOCK-SEND] sendmsg result=%zd errno=%d fdCount=%u fd=%d bodySize=%zu\n",
+            sendResult == -1 ? -1 : static_cast<long>(sendResult),
+            sendResult == -1 ? errno : 0, attachmentCount, m_socketDescriptor, outputMessage.bodySize());
+        if (sendResult == -1)
+            return false;
+
+        return static_cast<size_t>(sendResult) == payload.size();
+    }
+
     fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning false\n");
     return false; 
 }
@@ -635,7 +881,13 @@ bool Connection::platformCanSendOutgoingMessages() const { return !m_pendingOutp
 
 bool Connection::sendOutgoingMessage(UniqueRef<Encoder>&& encoder)
 {
-    fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: called\n");
+    static int s_sendCount = 0;
+    s_sendCount++;
+    if (s_sendCount <= 20 || (s_sendCount % 10000) == 0) {
+        fprintf(stderr, "[STORM-SEND] sendOutgoingMessage #%d: msgName=%d receiver=%d destID=0x%016lX bodySize=%zu tid=%d\n",
+            s_sendCount, (int)encoder->messageName(), (int)encoder->messageReceiverName(),
+            (unsigned long)encoder->destinationID(), encoder->bufferSize(), (int)syscall(SYS_gettid));
+    }
     UnixMessage outputMessage(encoder.get());
     if (outputMessage.attachments().size() > (attachmentMaxAmount - 1)) {
         ASSERT_NOT_REACHED();

@@ -26,8 +26,8 @@
 #include "config.h"
 #include "LocalStorageManager.h"
 
+#include "BrowserDBStorageArea.h"
 #include "MemoryStorageArea.h"
-#include "SQLiteStorageArea.h"
 #include "StorageAreaRegistry.h"
 #include <WebCore/SecurityOriginData.h>
 #include <wtf/FileSystem.h>
@@ -118,26 +118,26 @@ void LocalStorageManager::clearDataInMemory()
 
 void LocalStorageManager::clearDataOnDisk()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
+    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
         m_localStorageArea->clear();
 }
 
 void LocalStorageManager::close()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
-        downcast<SQLiteStorageArea>(*m_localStorageArea).close();
+    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
+        downcast<BrowserDBStorageArea>(*m_localStorageArea).close();
 }
 
 void LocalStorageManager::handleLowMemoryWarning()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
-        downcast<SQLiteStorageArea>(*m_localStorageArea).handleLowMemoryWarning();
+    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
+        downcast<BrowserDBStorageArea>(*m_localStorageArea).handleLowMemoryWarning();
 }
 
 void LocalStorageManager::syncLocalStorage()
 {
-    if (m_localStorageArea && is<SQLiteStorageArea>(*m_localStorageArea))
-        downcast<SQLiteStorageArea>(*m_localStorageArea).commitTransactionIfNecessary();
+    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
+        downcast<BrowserDBStorageArea>(*m_localStorageArea).commitTransactionIfNecessary();
 }
 
 void LocalStorageManager::connectionClosed(IPC::Connection::UniqueID connection)
@@ -179,14 +179,14 @@ StorageAreaIdentifier LocalStorageManager::connectToLocalStorageArea(IPC::Connec
 {
     if (!m_localStorageArea) {
         if (!m_path.isEmpty())
-            m_localStorageArea = makeUnique<SQLiteStorageArea>(localStorageQuotaInBytes, origin, localStorageFilePath(m_path, origin), WTFMove(workQueue));
+            m_localStorageArea = makeUnique<BrowserDBStorageArea>(localStorageQuotaInBytes, origin, WTFMove(workQueue));
         else
             m_localStorageArea = makeUnique<MemoryStorageArea>(origin, StorageAreaBase::StorageType::Local);
 
         m_registry.registerStorageArea(m_localStorageArea->identifier(), *m_localStorageArea);
     }
 
-    ASSERT(m_path.isEmpty() || m_localStorageArea->type() == StorageAreaBase::Type::SQLite);
+    ASSERT(m_path.isEmpty() || m_localStorageArea->type() == StorageAreaBase::Type::BrowserDB);
     m_localStorageArea->addListener(connection, sourceIdentifier);
     return m_localStorageArea->identifier();
 }

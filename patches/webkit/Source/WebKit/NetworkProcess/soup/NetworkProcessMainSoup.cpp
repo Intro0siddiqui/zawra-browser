@@ -30,6 +30,8 @@
 #include "AuxiliaryProcessMain.h"
 #include "NetworkProcess.h"
 #include <WebCore/NetworkStorageSession.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #if USE(GCRYPT)
 #include <pal/crypto/gcrypt/Initialization.h>
@@ -56,18 +58,19 @@ public:
     }
 };
 
-extern "C" void hajr_seal_process(unsigned int process_type);
-extern "C" int Zawra_Init_Subsystems(const char* profile_path);
-extern "C" int Zawra_Register_Protocols();
-
-#define HAJR_NETWORK_PROCESS 1
+extern "C" int Z_Init_Subsystems(const char* profile_path);
+extern "C" int Z_Register_Protocols();
 
 int NetworkProcessMain(int argc, char** argv)
 {
-    hajr_seal_process(HAJR_NETWORK_PROCESS);
-    Zawra_Init_Subsystems("/tmp/zawra-profile");
-    Zawra_Register_Protocols();
-    return AuxiliaryProcessMain<NetworkProcessMainSoup>(argc, argv);
+    fprintf(stderr, "[NETCONN-MAIN] NetworkProcessMain ENTER argc=%d pid=%d tid=%d\n", argc, (int)getpid(), (int)syscall(SYS_gettid));
+    Z_Init_Subsystems("/tmp/zawra-profile");
+    fprintf(stderr, "[NETCONN-MAIN] NetworkProcessMain Zawra_Init_Subsystems done pid=%d tid=%d\n", (int)getpid(), (int)syscall(SYS_gettid));
+    Z_Register_Protocols();
+    fprintf(stderr, "[NETCONN-MAIN] NetworkProcessMain Zawra_Register_Protocols done pid=%d tid=%d\n", (int)getpid(), (int)syscall(SYS_gettid));
+    int result = AuxiliaryProcessMain<NetworkProcessMainSoup>(argc, argv);
+    fprintf(stderr, "[NETCONN-MAIN] NetworkProcessMain AuxiliaryProcessMain returned result=%d pid=%d tid=%d\n", result, (int)getpid(), (int)syscall(SYS_gettid));
+    return result;
 }
 
 } // namespace WebKit

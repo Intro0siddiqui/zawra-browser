@@ -38,7 +38,7 @@ BrowserDBStorageArea::BrowserDBStorageArea(unsigned quota, const WebCore::Client
     , m_queue(WTFMove(workQueue))
 {
     ASSERT(!isMainRunLoop());
-    WebCore::ZawraStorageBridge::hashString(origin.clientOrigin.databaseIdentifier(), m_originHashHi, m_originHashLo);
+    WebCore::ZSB::hashString(origin.clientOrigin.databaseIdentifier(), m_originHashHi, m_originHashLo);
 }
 
 void BrowserDBStorageArea::close()
@@ -51,7 +51,8 @@ bool BrowserDBStorageArea::isEmpty()
 {
     if (m_cache)
         return m_cache->isEmpty();
-    return true;
+    auto items = allItems();
+    return items.isEmpty();
 }
 
 void BrowserDBStorageArea::clear()
@@ -59,7 +60,7 @@ void BrowserDBStorageArea::clear()
     ASSERT(!isMainRunLoop());
 
     close();
-    WebCore::ZawraStorageBridge::clearData(m_originHashHi, m_originHashLo);
+    WebCore::ZSB::clearData(m_originHashHi, m_originHashLo);
     notifyListenersAboutClear();
 }
 
@@ -81,14 +82,14 @@ Expected<String, StorageError> BrowserDBStorageArea::getItem(const String& key)
 
 Expected<String, StorageError> BrowserDBStorageArea::getItemFromDatabase(const String& key)
 {
-    return WebCore::ZawraStorageBridge::getData(m_originHashHi, m_originHashLo, key);
+    return WebCore::ZSB::getData(m_originHashHi, m_originHashLo, key);
 }
 
 HashMap<String, String> BrowserDBStorageArea::allItems()
 {
     ASSERT(!isMainRunLoop());
 
-    HashMap<String, String> items = WebCore::ZawraStorageBridge::getAllData(m_originHashHi, m_originHashLo);
+    HashMap<String, String> items = WebCore::ZSB::getAllData(m_originHashHi, m_originHashLo);
 
     m_cache = HashMap<String, Value> { };
     m_cacheSize = 0;
@@ -111,7 +112,7 @@ Expected<void, StorageError> BrowserDBStorageArea::setItem(IPC::Connection::Uniq
     if (auto valueOrError = getItem(key))
         oldValue = valueOrError.value();
 
-    WebCore::ZawraStorageBridge::storeDataWithTTL(m_originHashHi, m_originHashLo, key, value, 0);
+    WebCore::ZSB::storeDataWithTTL(m_originHashHi, m_originHashLo, key, value, 0);
 
     dispatchEvents(connection, storageAreaImplID, key, oldValue, value, urlString);
     updateCacheIfNeeded(key, value);
@@ -129,7 +130,7 @@ Expected<void, StorageError> BrowserDBStorageArea::removeItem(IPC::Connection::U
     else
         return makeUnexpected(StorageError::ItemNotFound);
 
-    WebCore::ZawraStorageBridge::removeData(m_originHashHi, m_originHashLo, key);
+    WebCore::ZSB::removeData(m_originHashHi, m_originHashLo, key);
 
     dispatchEvents(connection, storageAreaImplID, key, oldValue, String(), urlString);
     updateCacheIfNeeded(key, { });
@@ -149,7 +150,7 @@ Expected<void, StorageError> BrowserDBStorageArea::clear(IPC::Connection::Unique
         m_cacheSize = 0;
     }
 
-    WebCore::ZawraStorageBridge::clearData(m_originHashHi, m_originHashLo);
+    WebCore::ZSB::clearData(m_originHashHi, m_originHashLo);
 
     dispatchEvents(connection, storageAreaImplID, String(), String(), String(), urlString);
 
@@ -162,6 +163,8 @@ void BrowserDBStorageArea::commitTransactionIfNecessary()
 
 void BrowserDBStorageArea::handleLowMemoryWarning()
 {
+    m_cache = std::nullopt;
+    m_cacheSize = std::nullopt;
 }
 
 void BrowserDBStorageArea::updateCacheIfNeeded(const String& key, const String& value)

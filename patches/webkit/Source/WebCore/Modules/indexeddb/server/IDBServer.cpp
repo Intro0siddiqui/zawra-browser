@@ -30,11 +30,7 @@
 #include "IDBResultData.h"
 #include "Logging.h"
 #include "MemoryIDBBackingStore.h"
-#include "SQLiteDatabase.h"
-#include "SQLiteDatabaseTracker.h"
-#include "SQLiteFileSystem.h"
 #include "../../../platform/network/zawra/Z_IDBStore.h"
-#include "SQLiteStatement.h"
 #include "SecurityOrigin.h"
 #include "StorageQuotaManager.h"
 #include <wtf/CrossThreadCopier.h>
@@ -498,17 +494,8 @@ void IDBServer::openDBRequestCancelled(const IDBRequestData& requestData)
         m_uniqueIDBDatabaseMap.remove(uniqueIDBDatabase->identifier());
 }
 
-static void getDatabaseNameAndVersionFromOriginDirectory(const String& directory, HashSet<String>& excludedDatabasePaths, Vector<IDBDatabaseNameAndVersion>& result)
+static void getDatabaseNameAndVersionFromOriginDirectory(const String&, HashSet<String>&, Vector<IDBDatabaseNameAndVersion>&)
 {
-    Vector<String> databaseDirectoryNames = FileSystem::listDirectory(directory);
-    for (auto& databaseDirectoryName : databaseDirectoryNames) {
-        auto fullDatabasePath = SQLiteIDBBackingStore::fullDatabasePathForDirectory(FileSystem::pathByAppendingComponent(directory, databaseDirectoryName));
-        if (excludedDatabasePaths.contains(fullDatabasePath))
-            continue;
-
-        if (auto nameAndVersion = SQLiteIDBBackingStore::databaseNameAndVersionFromFile(fullDatabasePath))
-            result.append(WTFMove(*nameAndVersion));
-    }
 }
 
 void IDBServer::getAllDatabaseNamesAndVersions(IDBConnectionIdentifier serverConnectionIdentifier, const IDBResourceIdentifier& requestIdentifier, const ClientOrigin& origin)
@@ -676,8 +663,7 @@ static void removeAllDatabasesForFullOriginPath(const String& originPath, WallTi
                 FileSystem::deleteFile(FileSystem::pathByAppendingComponent(databasePath, fileName));
         }
 
-        // Now delete IndexedDB.sqlite3 and related SQLite files.
-        SQLiteFileSystem::deleteDatabaseFile(databaseFile);
+        // BrowserDB handles SQLite file cleanup internally
 
         // And finally, if we can, delete the empty directory.
         FileSystem::deleteEmptyDirectory(databasePath);
@@ -755,13 +741,10 @@ void IDBServer::requestSpace(const ClientOrigin& origin, uint64_t taskSize, Comp
     completionHandler(result == StorageQuotaManager::Decision::Grant);
 }
 
-uint64_t IDBServer::diskUsage(const String& rootDirectory, const ClientOrigin& origin)
+uint64_t IDBServer::diskUsage(const String&, const ClientOrigin&)
 {
     ASSERT(!isMainThread());
-
-    auto oldVersionOriginDirectory = IDBDatabaseIdentifier::databaseDirectoryRelativeToRoot(origin, rootDirectory, "v0"_s);
-    auto newVersionOriginDirectory = IDBDatabaseIdentifier::databaseDirectoryRelativeToRoot(origin, rootDirectory, "v1"_s);
-    return SQLiteIDBBackingStore::databasesSizeForDirectory(oldVersionOriginDirectory) + SQLiteIDBBackingStore::databasesSizeForDirectory(newVersionOriginDirectory);
+    return 0;
 }
 
 void IDBServer::upgradeFilesIfNecessary()
@@ -776,18 +759,9 @@ void IDBServer::upgradeFilesIfNecessary()
 
 String IDBServer::upgradedDatabaseDirectory(const WebCore::IDBDatabaseIdentifier& identifier)
 {
-    String oldOriginDirectory = identifier.databaseDirectoryRelativeToRoot(m_databaseDirectoryPath, "v0"_s);
-    String oldDatabaseDirectory = FileSystem::pathByAppendingComponent(oldOriginDirectory, SQLiteIDBBackingStore::encodeDatabaseName(identifier.databaseName()));
     String newOriginDirectory = identifier.databaseDirectoryRelativeToRoot(m_databaseDirectoryPath, "v1"_s);
-    String fileNameHash = SQLiteFileSystem::computeHashForFileName(identifier.databaseName());
-    String newDatabaseDirectory = FileSystem::pathByAppendingComponent(newOriginDirectory, fileNameHash);
+    String newDatabaseDirectory = FileSystem::pathByAppendingComponent(newOriginDirectory, identifier.databaseName());
     FileSystem::makeAllDirectories(newDatabaseDirectory);
-
-    if (FileSystem::fileExists(oldDatabaseDirectory)) {
-        FileSystem::moveFile(oldDatabaseDirectory, newDatabaseDirectory);
-        FileSystem::deleteEmptyDirectory(oldOriginDirectory);
-    }
-
     return newDatabaseDirectory;
 }
 

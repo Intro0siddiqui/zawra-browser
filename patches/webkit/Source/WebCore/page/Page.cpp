@@ -686,7 +686,7 @@ void Page::setOpenedByDOM()
 void Page::goToItem(HistoryItem& item, FrameLoadType type, ShouldTreatAsContinuingLoad shouldTreatAsContinuingLoad)
 {
     // Zawra Modification: track history visits using BrowserDB
-    WebCore::ZawraStorageBridge::incrementHistoryVisit(item.url());
+    WebCore::ZSB::incrementHistoryVisit(item.url());
 
     // stopAllLoaders may end up running onload handlers, which could cause further history traversals that may lead to the passed in HistoryItem
     // being deref()-ed. Make sure we can still use it with HistoryController::goToItem later.

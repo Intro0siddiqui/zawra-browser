@@ -182,9 +182,6 @@
 #include <WebCore/DisplayRefreshMonitorManager.h>
 #endif
 
-#if USE(RUNNINGBOARD)
-#include "WebSQLiteDatabaseTracker.h"
-#endif
 
 #if ENABLE(SEC_ITEM_SHIM)
 #include "SecItemShim.h"
@@ -1638,7 +1635,6 @@ void WebProcess::prepareToSuspend(bool isSuspensionImminent, MonotonicTime estim
 
 #if USE(RUNNINGBOARD)
     m_webSQLiteDatabaseTracker.setIsSuspended(true);
-    SQLiteDatabase::setIsDatabaseOpeningForbidden(true);
 #endif
 
 #if PLATFORM(IOS_FAMILY)
@@ -1703,7 +1699,6 @@ void WebProcess::processDidResume()
     
 #if USE(RUNNINGBOARD)
     m_webSQLiteDatabaseTracker.setIsSuspended(false);
-    SQLiteDatabase::setIsDatabaseOpeningForbidden(false);
 #endif
 
 #if PLATFORM(IOS_FAMILY)

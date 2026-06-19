@@ -31,6 +31,7 @@
 
 #include "APIViewClient.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
+#include "NativeWebKeyboardEvent.h"
 #include "NativeWebMouseEvent.h"
 #include "NativeWebTouchEvent.h"
 #include "NativeWebWheelEvent.h"
@@ -39,6 +40,7 @@
 #include "WebContextMenuProxy.h"
 #include "WebContextMenuProxyWPE.h"
 #include "WebKitPopupMenu.h"
+#include "WebPageProxy.h"
 #include <WebCore/ActivityState.h>
 #include <WebCore/DOMPasteAccess.h>
 #include <WebCore/NotImplemented.h>
@@ -142,9 +144,8 @@ void PageClientImpl::didCommitLoadForMainFrame(const String& mimeType, bool fram
     auto& page = m_view.page();
     String urlString = page.currentURL();
     if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
-        WebCore::URL pageURL({ }, urlString);
-        String title = page.pageLoadState().title();
-        WebCore::ZawraStorageBridge::recordHistory(pageURL, title);
+        URL pageURL({ }, urlString);
+        WebCore::ZSB::recordHistory(pageURL, String());
     }
 }
 
@@ -218,9 +219,8 @@ void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool)
         auto& page = m_view.page();
         String urlString = page.currentURL();
         if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
-            WebCore::URL pageURL({ }, urlString);
-            String title = page.pageLoadState().title();
-            WebCore::ZawraStorageBridge::addBookmark(pageURL, title, "Default"_s);
+            URL pageURL({ }, urlString);
+            WebCore::ZSB::addBookmark(pageURL, String(), "Default"_s);
         }
         return;
     }
@@ -229,14 +229,14 @@ void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool)
         auto& page = m_view.page();
         String urlString = page.currentURL();
         if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
-            WebCore::URL pageURL({ }, urlString);
-            WebCore::ZawraStorageBridge::removeBookmark(pageURL);
+            URL pageURL({ }, urlString);
+            WebCore::ZSB::removeBookmark(pageURL);
         }
         return;
     }
     // Ctrl+B: Get all bookmarks (debug log)
     if (event.controlKey() && (event.key() == "b"_s || event.key() == "B"_s) && !event.shiftKey()) {
-        String bookmarks = WebCore::ZawraStorageBridge::getBookmarks();
+        String bookmarks = WebCore::ZSB::getBookmarks();
         if (!bookmarks.isEmpty())
             WTFLogAlways("[Bookmarks] %s\n", bookmarks.utf8().data());
         else

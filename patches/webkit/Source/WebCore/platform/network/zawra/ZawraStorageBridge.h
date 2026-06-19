@@ -1,4 +1,5 @@
 #pragma once
+// ZSB = ZawraStorageBridge
 
 #include <wtf/text/WTFString.h>
 #include <wtf/URL.h>
@@ -7,7 +8,7 @@
 
 namespace WebCore {
 
-class ZawraStorageBridge {
+class ZSB {
 public:
     static void hashString(const String& input, uint64_t& hi, uint64_t& lo);
     static void storeCookie(const URL& url, const String& cookieStr);

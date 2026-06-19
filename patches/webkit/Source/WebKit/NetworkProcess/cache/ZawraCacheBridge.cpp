@@ -56,7 +56,7 @@ bool ZawraCacheBridge::retrieveRecord(const SHA1::Digest& keyHash, WallTime& tim
     double ts;
     memcpy(&ts, data, sizeof(double));
     data += sizeof(double);
-    timestamp = WallTime::fromRawSeconds(Seconds { ts });
+    timestamp = WallTime::fromRawSeconds(ts);
 
     if (data + sizeof(uint32_t) > end) {
         Z_Free_Buffer(outPtr, outLen);

@@ -48,6 +48,7 @@ private:
     Expected<void, StorageError> clear(IPC::Connection::UniqueID, StorageAreaImplIdentifier, const String& urlString) final;
 
     Expected<String, StorageError> getItem(const String& key);
+    Expected<String, StorageError> getItemFromDatabase(const String& key);
     void updateCacheIfNeeded(const String& key, const String& value);
     bool requestSpace(const String& key, const String& value);
 

@@ -1,5 +1,6 @@
 #include "config.h"
 #include "ZawraStorageBridge.h"
+// ZSB = ZawraStorageBridge
 #include <wtf/text/CString.h>
 #include <wtf/DateMath.h>
 #include <wtf/WallTime.h>
@@ -28,12 +29,12 @@ extern "C" {
 
 namespace WebCore {
 
-void ZawraStorageBridge::hashString(const String& input, uint64_t& hi, uint64_t& lo)
+void ZSB::hashString(const String& input, uint64_t& hi, uint64_t& lo)
 {
     Z_Hash_String(input.utf8().data(), &hi, &lo);
 }
 
-void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
+void ZSB::storeCookie(const URL& url, const String& cookieStr)
 {
     uint64_t hi, lo;
     hashString(url.host().toString(), hi, lo);
@@ -96,19 +97,19 @@ void ZawraStorageBridge::storeCookie(const URL& url, const String& cookieStr)
         flags);
 }
 
-String ZawraStorageBridge::getCookies(const URL& url)
+String ZSB::getCookies(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.host().toString(), hi, lo);
 
-    char buf[4096];
+    char buf[131072];
     if (Z_Cookie_GetForDomain(hi, lo, url.path().utf8().data(), buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     
     return String();
 }
 
-void ZawraStorageBridge::recordHistory(const URL& url, const String& title)
+void ZSB::recordHistory(const URL& url, const String& title)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
@@ -117,29 +118,29 @@ void ZawraStorageBridge::recordHistory(const URL& url, const String& title)
     Z_History_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), ts);
 }
 
-void ZawraStorageBridge::addBookmark(const URL& url, const String& title, const String& folder)
+void ZSB::addBookmark(const URL& url, const String& title, const String& folder)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
     Z_Bookmark_Put(hi, lo, url.string().utf8().data(), title.utf8().data(), folder.utf8().data());
 }
 
-void ZawraStorageBridge::removeBookmark(const URL& url)
+void ZSB::removeBookmark(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
     Z_Bookmark_Delete(hi, lo);
 }
 
-String ZawraStorageBridge::getBookmarks()
+String ZSB::getBookmarks()
 {
-    char buf[16384];
+    char buf[131072];
     if (Z_Bookmark_GetAll(buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
 }
 
-void ZawraStorageBridge::deleteCookiesForDomain(const String& domain)
+void ZSB::deleteCookiesForDomain(const String& domain)
 {
     uint64_t hi, lo;
     hashString(domain, hi, lo);
@@ -147,43 +148,43 @@ void ZawraStorageBridge::deleteCookiesForDomain(const String& domain)
 }
 
 
-void ZawraStorageBridge::deleteCookie(const URL& url, const String& name)
+void ZSB::deleteCookie(const URL& url, const String& name)
 {
     uint64_t hi, lo;
     hashString(url.host().toString(), hi, lo);
     Z_Cookie_Delete(hi, lo, name.utf8().data());
 }
 
-void ZawraStorageBridge::deleteAllCookies()
+void ZSB::deleteAllCookies()
 {
     Z_Cookie_DeleteAll();
 }
 
-void ZawraStorageBridge::incrementHistoryVisit(const URL& url)
+void ZSB::incrementHistoryVisit(const URL& url)
 {
     uint64_t hi, lo;
     hashString(url.string(), hi, lo);
     Z_History_Increment(hi, lo, 1);
 }
 
-void ZawraStorageBridge::storeDataWithTTL(uint64_t originHashHi, uint64_t originHashLo, const String& key, const String& value, uint64_t ttl)
+void ZSB::storeDataWithTTL(uint64_t originHashHi, uint64_t originHashLo, const String& key, const String& value, uint64_t ttl)
 {
     (void)ttl;
     Z_LocalStorage_Put(originHashHi, originHashLo, key.utf8().data(), value.utf8().data());
 }
 
-String ZawraStorageBridge::getData(uint64_t originHashHi, uint64_t originHashLo, const String& key)
+String ZSB::getData(uint64_t originHashHi, uint64_t originHashLo, const String& key)
 {
-    char buf[4096];
+    char buf[131072];
     if (Z_LocalStorage_Get(originHashHi, originHashLo, key.utf8().data(), buf, sizeof(buf)) == 0)
         return String::fromUTF8(buf);
     return String();
 }
 
-HashMap<String, String> ZawraStorageBridge::getAllData(uint64_t originHashHi, uint64_t originHashLo)
+HashMap<String, String> ZSB::getAllData(uint64_t originHashHi, uint64_t originHashLo)
 {
     HashMap<String, String> items;
-    char buf[16384];
+    char buf[131072];
     if (Z_LocalStorage_GetAll(originHashHi, originHashLo, buf, sizeof(buf)) == 0) {
         String allData = String::fromUTF8(buf);
         auto lines = allData.split('\n');
@@ -197,12 +198,12 @@ HashMap<String, String> ZawraStorageBridge::getAllData(uint64_t originHashHi, ui
     return items;
 }
 
-void ZawraStorageBridge::removeData(uint64_t originHashHi, uint64_t originHashLo, const String& key)
+void ZSB::removeData(uint64_t originHashHi, uint64_t originHashLo, const String& key)
 {
     Z_LocalStorage_Delete(originHashHi, originHashLo, key.utf8().data());
 }
 
-void ZawraStorageBridge::clearData(uint64_t originHashHi, uint64_t originHashLo)
+void ZSB::clearData(uint64_t originHashHi, uint64_t originHashLo)
 {
     Z_LocalStorage_Clear(originHashHi, originHashLo);
 }

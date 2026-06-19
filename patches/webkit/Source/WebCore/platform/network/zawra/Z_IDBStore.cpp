@@ -381,9 +381,9 @@ IDBError Z_IDBStore::renameObjectStore(const IDBResourceIdentifier&, uint64_t ob
 
     Z_IDBStore_Put(metaKey.data(), metaKey.size(), val.data(), val.size());
 
-    if (auto cached = m_objectStoreInfoCache.get(objectStoreIdentifier)) {
-        cached.rename(newName);
-        m_objectStoreInfoCache.set(objectStoreIdentifier, cached);
+    auto it = m_objectStoreInfoCache.find(objectStoreIdentifier);
+    if (it != m_objectStoreInfoCache.end()) {
+        it->value.rename(newName);
     }
 
     return IDBError { };
@@ -1109,8 +1109,6 @@ IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&,
     return IDBError { };
 }
 
-namespace {
-
 struct ZCursorState {
     IDBCursorInfo info;
     Vector<IDBKeyData> keys;
@@ -1119,8 +1117,6 @@ struct ZCursorState {
     int64_t currentIndex { -1 };
     bool done { false };
 };
-
-}
 
 IDBError Z_IDBStore::getObjectStoreValue(uint64_t objectStoreIdentifier, const IDBKeyData& primaryKey, ThreadSafeDataBuffer& outBuffer)
 {
@@ -1272,7 +1268,7 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
 
     auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(info.objectStoreIdentifier()) : nullptr;
 
-    auto cursorState = makeUnique<ZCursorState>();
+    auto cursorState = std::make_unique<ZCursorState>();
     cursorState->info = info;
 
     Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>> records;

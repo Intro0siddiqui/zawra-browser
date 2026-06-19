@@ -40,6 +40,11 @@
 #include "URLSoup.h"
 #include "../zawra/ZawraStorageBridge.h"
 #include <libsoup/soup.h>
+
+extern "C" {
+    int32_t Z_Cookie_Delete(uint64_t hi, uint64_t lo, const char* name);
+}
+
 #include <optional>
 #include <wtf/DateMath.h>
 #include <wtf/MainThread.h>
@@ -394,7 +399,7 @@ void NetworkStorageSession::setCookiesFromDOM(const URL& firstParty, const SameS
                 browserDBCookie = browserDBCookie + "; path=" + String::fromUTF8(rawPath);
             if (rawDomain && strlen(rawDomain) > 0)
                 browserDBCookie = browserDBCookie + "; domain=" + String::fromUTF8(rawDomain);
-            ZawraStorageBridge::storeCookie(url, browserDBCookie);
+            ZSB::storeCookie(url, browserDBCookie);
         }
 
 #if SOUP_CHECK_VERSION(2, 67, 1)
@@ -434,13 +439,13 @@ void NetworkStorageSession::setCookie(const Cookie& cookie)
     soup_cookie_jar_add_cookie(cookieStorage(), cookie.toSoupCookie());
 
     // Also store in BrowserDB
-    String cookieString = cookie.name() + "="_s + cookie.value();
-    if (!cookie.path().isEmpty())
-        cookieString = cookieString + "; path="_s + cookie.path();
-    if (!cookie.domain().isEmpty())
-        cookieString = cookieString + "; domain="_s + cookie.domain();
-    URL url(URL(), "https://"_s + cookie.domain());
-    ZawraStorageBridge::storeCookie(url, cookieString);
+    String cookieString = cookie.name + "="_s + cookie.value;
+    if (!cookie.path.isEmpty())
+        cookieString = cookieString + "; path="_s + cookie.path;
+    if (!cookie.domain.isEmpty())
+        cookieString = cookieString + "; domain="_s + cookie.domain;
+    URL url(URL(), "https://"_s + cookie.domain);
+    ZSB::storeCookie(url, cookieString);
 }
 
 void NetworkStorageSession::replaceCookies(const Vector<Cookie>& cookies)
@@ -454,18 +459,18 @@ void NetworkStorageSession::replaceCookies(const Vector<Cookie>& cookies)
     g_signal_handler_block(jar, handler);
 
     deleteAllCookies([] { });
-    ZawraStorageBridge::deleteAllCookies();
+    ZSB::deleteAllCookies();
     for (const auto& cookie : cookies) {
         soup_cookie_jar_add_cookie(jar, cookie.toSoupCookie());
 
         // Also store in BrowserDB
-        String cookieString = cookie.name() + "="_s + cookie.value();
-        if (!cookie.path().isEmpty())
-            cookieString = cookieString + "; path="_s + cookie.path();
-        if (!cookie.domain().isEmpty())
-            cookieString = cookieString + "; domain="_s + cookie.domain();
-        URL url(URL(), "https://"_s + cookie.domain());
-        ZawraStorageBridge::storeCookie(url, cookieString);
+        String cookieString = cookie.name + "="_s + cookie.value;
+        if (!cookie.path.isEmpty())
+            cookieString = cookieString + "; path="_s + cookie.path;
+        if (!cookie.domain.isEmpty())
+            cookieString = cookieString + "; domain="_s + cookie.domain;
+        URL url(URL(), "https://"_s + cookie.domain);
+        ZSB::storeCookie(url, cookieString);
     }
 
     g_signal_handler_unblock(jar, handler);
@@ -481,16 +486,15 @@ void NetworkStorageSession::deleteCookie(const Cookie& cookie, CompletionHandler
 
     // Also delete from BrowserDB
     uint64_t hi, lo;
-    ZawraStorageBridge::hashString(cookie.domain(), hi, lo);
-    extern int32_t Z_Cookie_Delete(uint64_t hi, uint64_t lo, const char* name);
-    Z_Cookie_Delete(hi, lo, cookie.name().utf8().data());
+    ZSB::hashString(cookie.domain, hi, lo);
+    Z_Cookie_Delete(hi, lo, cookie.name.utf8().data());
 
     completionHandler();
 }
 
 void NetworkStorageSession::deleteCookie(const URL& url, const String& name, CompletionHandler<void()>&& completionHandler) const
 {
-    ZawraStorageBridge::deleteCookie(url, name);
+    ZSB::deleteCookie(url, name);
 
     auto uri = urlToSoupURI(url);
     if (!uri)
@@ -516,7 +520,7 @@ void NetworkStorageSession::deleteCookie(const URL& url, const String& name, Com
 
 void NetworkStorageSession::deleteAllCookies(CompletionHandler<void()>&& completionHandler)
 {
-    ZawraStorageBridge::deleteAllCookies();
+    ZSB::deleteAllCookies();
 
     SoupCookieJar* cookieJar = cookieStorage();
     GUniquePtr<GSList> cookies(soup_cookie_jar_all_cookies(cookieJar));
@@ -542,7 +546,7 @@ void NetworkStorageSession::deleteAllCookiesModifiedSince(WallTime timestamp, Co
 void NetworkStorageSession::deleteCookiesForHostnames(const Vector<String>& hostnames, IncludeHttpOnlyCookies includeHttpOnlyCookies, ScriptWrittenCookiesOnly, CompletionHandler<void()>&& completionHandler)
 {
     for (const auto& hostname : hostnames)
-        ZawraStorageBridge::deleteCookiesForDomain(hostname);
+        ZSB::deleteCookiesForDomain(hostname);
 
     SoupCookieJar* cookieJar = cookieStorage();
     for (const auto& hostname : hostnames) {
@@ -668,7 +672,7 @@ static std::pair<String, bool> cookiesForSession(const NetworkStorageSession& se
 #endif
 
     // Try BrowserDB first, fall back to SoupCookieJar
-    String browserDbCookies = ZawraStorageBridge::getCookies(url);
+    String browserDbCookies = ZSB::getCookies(url);
     if (!browserDbCookies.isEmpty())
         return { browserDbCookies, false };
 

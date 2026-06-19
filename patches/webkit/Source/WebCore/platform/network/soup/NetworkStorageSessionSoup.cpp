@@ -40,6 +40,11 @@
 #include "URLSoup.h"
 #include "../zawra/ZawraStorageBridge.h"
 #include <libsoup/soup.h>
+
+extern "C" {
+    int32_t Z_Cookie_Delete(uint64_t hi, uint64_t lo, const char* name);
+}
+
 #include <optional>
 #include <wtf/DateMath.h>
 #include <wtf/MainThread.h>
@@ -434,12 +439,12 @@ void NetworkStorageSession::setCookie(const Cookie& cookie)
     soup_cookie_jar_add_cookie(cookieStorage(), cookie.toSoupCookie());
 
     // Also store in BrowserDB
-    String cookieString = cookie.name() + "="_s + cookie.value();
-    if (!cookie.path().isEmpty())
-        cookieString = cookieString + "; path="_s + cookie.path();
-    if (!cookie.domain().isEmpty())
-        cookieString = cookieString + "; domain="_s + cookie.domain();
-    URL url(URL(), "https://"_s + cookie.domain());
+    String cookieString = cookie.name + "="_s + cookie.value;
+    if (!cookie.path.isEmpty())
+        cookieString = cookieString + "; path="_s + cookie.path;
+    if (!cookie.domain.isEmpty())
+        cookieString = cookieString + "; domain="_s + cookie.domain;
+    URL url(URL(), "https://"_s + cookie.domain);
     ZSB::storeCookie(url, cookieString);
 }
 
@@ -459,12 +464,12 @@ void NetworkStorageSession::replaceCookies(const Vector<Cookie>& cookies)
         soup_cookie_jar_add_cookie(jar, cookie.toSoupCookie());
 
         // Also store in BrowserDB
-        String cookieString = cookie.name() + "="_s + cookie.value();
-        if (!cookie.path().isEmpty())
-            cookieString = cookieString + "; path="_s + cookie.path();
-        if (!cookie.domain().isEmpty())
-            cookieString = cookieString + "; domain="_s + cookie.domain();
-        URL url(URL(), "https://"_s + cookie.domain());
+        String cookieString = cookie.name + "="_s + cookie.value;
+        if (!cookie.path.isEmpty())
+            cookieString = cookieString + "; path="_s + cookie.path;
+        if (!cookie.domain.isEmpty())
+            cookieString = cookieString + "; domain="_s + cookie.domain;
+        URL url(URL(), "https://"_s + cookie.domain);
         ZSB::storeCookie(url, cookieString);
     }
 
@@ -481,9 +486,8 @@ void NetworkStorageSession::deleteCookie(const Cookie& cookie, CompletionHandler
 
     // Also delete from BrowserDB
     uint64_t hi, lo;
-    ZSB::hashString(cookie.domain(), hi, lo);
-    extern int32_t Z_Cookie_Delete(uint64_t hi, uint64_t lo, const char* name);
-    Z_Cookie_Delete(hi, lo, cookie.name().utf8().data());
+    ZSB::hashString(cookie.domain, hi, lo);
+    Z_Cookie_Delete(hi, lo, cookie.name.utf8().data());
 
     completionHandler();
 }

@@ -1025,6 +1025,171 @@ pub unsafe extern "C" fn Z_CacheStore_Clear() -> i32 {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WebSQL BrowserDB bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Open (or create) a WebSQL database via BrowserDB localstore.
+///
+/// Stores database metadata at key "ws:meta:<origin>:<db_name>".
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_Open(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+    version: i32,
+) -> i32 {
+    if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    let value = version.to_string();
+    let entry = LocalStoreEntry {
+        origin_hash,
+        key,
+        value,
+    };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Close a WebSQL database (no-op, data persists in BrowserDB).
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_Close(
+    _origin_hash_hi: u64,
+    _origin_hash_lo: u64,
+    _db_name: *const c_char,
+    _db_name_len: u32,
+) -> i32 {
+    NS_OK
+}
+
+/// Execute SQL against a WebSQL database.
+///
+/// For now, returns an empty JSON array `[]` as the result.
+/// Full SQL execution would require a SQL parser.
+///
+/// # Safety
+/// `db_name` and `sql` must point to valid UTF-8 bytes.
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_ExecSQL(
+    _origin_hash_hi: u64,
+    _origin_hash_lo: u64,
+    _db_name: *const c_char,
+    _db_name_len: u32,
+    _sql: *const c_char,
+    _sql_len: u32,
+    result_buf: *mut u8,
+    result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let empty = b"[]";
+    let len = std::cmp::min(empty.len(), result_buf_len as usize);
+    unsafe {
+        std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+        *result_written = len as u32;
+    }
+    NS_OK
+}
+
+/// Get the stored version for a WebSQL database.
+///
+/// Returns the version as an i32, or -1 if not found.
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_GetVersion(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+) -> i32 {
+    if db_name.is_null() { return -1; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    match db().localstore().get(origin_hash, &key) {
+        Ok(Some(entry)) => {
+            entry.value.parse::<i32>().unwrap_or(-1)
+        }
+        _ => -1,
+    }
+}
+
+/// Set the version for a WebSQL database.
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_SetVersion(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+    version: i32,
+) -> i32 {
+    if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    let value = version.to_string();
+    let entry = LocalStoreEntry {
+        origin_hash,
+        key,
+        value,
+    };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Delete a WebSQL database and all its data.
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_DeleteDatabase(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+) -> i32 {
+    if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

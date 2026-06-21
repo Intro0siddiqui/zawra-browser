@@ -2759,6 +2759,7 @@ if (ENABLE_WEBSQL)
         Modules/webdatabase/SQLTransactionBackend.cpp
         Modules/webdatabase/SQLTransactionCoordinator.cpp
         Modules/webdatabase/SQLTransactionStateMachine.cpp
+        Modules/webdatabase/ZWebSQLBridge.cpp
     )
     list(APPEND WebCore_SOURCES
         ${WebCore_DERIVED_SOURCES_DIR}/JSDatabase.cpp

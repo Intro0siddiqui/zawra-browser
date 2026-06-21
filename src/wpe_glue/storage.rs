@@ -1364,6 +1364,154 @@ pub unsafe extern "C" fn Z_AppCache_DeleteOrigin(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ITP (Intelligent Tracking Prevention) Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store ITP statistics for an origin.
+///
+/// # Safety
+/// `data` must point to `data_len` valid bytes (JSON-encoded statistics).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_StoreStatistics(
+    origin_hi: u64, origin_lo: u64,
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let stats_data = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(stats_data.len() * 4 / 3 + 4);
+        encode_base64_into(stats_data, &mut s);
+        s
+    };
+    let key = format!("itp:stats:{}", origin_hash);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve ITP statistics for an origin.
+///
+/// On success writes JSON data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_GetStatistics(
+    origin_hi: u64, origin_lo: u64,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("itp:stats:{}", origin_hash);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete ITP statistics for a specific origin.
+///
+/// # Safety
+/// `origin_hi` and `origin_lo` must form a valid origin hash.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_DeleteStatistics(
+    origin_hi: u64, origin_lo: u64,
+) -> i32 {
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("itp:stats:{}", origin_hash);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Delete all ITP statistics for all origins.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_DeleteAll() -> i32 {
+    eprintln!("[ZAWRA-RUST] Z_ITP_DeleteAll: clearing all ITP statistics");
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("itp:stats:"))
+        .execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in &entries {
+                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Get all origins that have ITP statistics stored.
+///
+/// On success writes a JSON array of origin hashes as strings into `result_buf`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_GetAllOrigins(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("itp:stats:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut origins: Vec<u128> = entries.iter().map(|e| e.origin_hash).collect();
+            origins.sort();
+            origins.dedup();
+            let json = format!("[{}]", origins.iter()
+                .map(|h| format!("\"{}\"", h))
+                .collect::<Vec<_>>()
+                .join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -119,6 +119,7 @@ NetworkProcess/PreconnectTask.cpp
 
 NetworkProcess/Classifier/ResourceLoadStatisticsDatabaseStore.cpp
 NetworkProcess/Classifier/ResourceLoadStatisticsStore.cpp
+NetworkProcess/Classifier/ZITPBridge.cpp
 
 NetworkProcess/Cookies/WebCookieManager.cpp
 

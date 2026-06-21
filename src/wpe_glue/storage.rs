@@ -1190,6 +1190,180 @@ pub unsafe extern "C" fn Z_WebSQL_DeleteDatabase(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ApplicationCache Bridge (deprecated window.applicationCache API)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store an application cache manifest.
+///
+/// # Safety
+/// `manifest_url` must point to `manifest_url_len` valid UTF-8 bytes.
+/// `manifest_data` must point to `manifest_data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_StoreManifest(
+    origin_hi: u64, origin_lo: u64,
+    manifest_url: *const u8, manifest_url_len: u32,
+    manifest_data: *const u8, manifest_data_len: u32,
+) -> i32 {
+    if manifest_url.is_null() || manifest_data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(manifest_url, manifest_url_len as usize) }) {
+        Ok(s) => s.to_owned(),
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let data = unsafe { std::slice::from_raw_parts(manifest_data, manifest_data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(data.len() * 4 / 3 + 4);
+        encode_base64_into(data, &mut s);
+        s
+    };
+    let key = format!("ac:manifest:{}", url);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve an application cache manifest.
+///
+/// On success copies the manifest data into `result_buf`.
+///
+/// # Safety
+/// `manifest_url` must point to `manifest_url_len` valid UTF-8 bytes.
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_GetManifest(
+    origin_hi: u64, origin_lo: u64,
+    manifest_url: *const u8, manifest_url_len: u32,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if manifest_url.is_null() || result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(manifest_url, manifest_url_len as usize) }) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ac:manifest:{}", url);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe { *result_written = 0; }
+            NS_ERROR_NOT_FOUND
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Store an application cache resource.
+///
+/// # Safety
+/// `resource_url` must point to `resource_url_len` valid UTF-8 bytes.
+/// `resource_data` must point to `resource_data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_StoreResource(
+    origin_hi: u64, origin_lo: u64,
+    resource_url: *const u8, resource_url_len: u32,
+    resource_data: *const u8, resource_data_len: u32,
+) -> i32 {
+    if resource_url.is_null() || resource_data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(resource_url, resource_url_len as usize) }) {
+        Ok(s) => s.to_owned(),
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let data = unsafe { std::slice::from_raw_parts(resource_data, resource_data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(data.len() * 4 / 3 + 4);
+        encode_base64_into(data, &mut s);
+        s
+    };
+    let key = format!("ac:resource:{}", url);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve an application cache resource.
+///
+/// On success copies the resource data into `result_buf`.
+///
+/// # Safety
+/// `resource_url` must point to `resource_url_len` valid UTF-8 bytes.
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_GetResource(
+    origin_hi: u64, origin_lo: u64,
+    resource_url: *const u8, resource_url_len: u32,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if resource_url.is_null() || result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(resource_url, resource_url_len as usize) }) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ac:resource:{}", url);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe { *result_written = 0; }
+            NS_ERROR_NOT_FOUND
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete all application cache data for an origin.
+///
+/// # Safety
+/// `origin_hi` and `origin_lo` must form a valid origin hash.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_DeleteOrigin(
+    origin_hi: u64, origin_lo: u64,
+) -> i32 {
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    match db().localstore().get_by_origin(origin_hash) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in entries {
+                if entry.key.starts_with("ac:manifest:") || entry.key.starts_with("ac:resource:") {
+                    let _ = db().localstore().remove(origin_hash, &entry.key);
+                }
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

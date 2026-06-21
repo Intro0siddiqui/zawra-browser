@@ -2784,6 +2784,7 @@ if (ENABLE_APPLICATION_CACHE)
         loader/appcache/ApplicationCacheResourceLoader.cpp
         loader/appcache/ApplicationCacheStorage.cpp
         loader/appcache/DOMApplicationCache.cpp
+        loader/appcache/ZAppCacheBridge.cpp
     )
     list(APPEND WebCore_SOURCES
         ${WebCore_DERIVED_SOURCES_DIR}/JSDOMApplicationCache.cpp

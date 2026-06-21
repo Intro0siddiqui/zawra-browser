@@ -1364,6 +1364,169 @@ pub unsafe extern "C" fn Z_AppCache_DeleteOrigin(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PCM (Private Click Measurement) Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store unattributed PCM data.
+///
+/// # Safety
+/// `data` must point to `data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_StoreUnattributed(
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let raw = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(raw.len() * 4 / 3 + 4);
+        encode_base64_into(raw, &mut s);
+        s
+    };
+    let key = format!("pcm:unattributed:{}", encoded.len());
+    let origin_hash: u128 = 0;
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve all unattributed PCM data.
+///
+/// On success writes JSON data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_GetUnattributed(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash: u128 = 0;
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("pcm:unattributed:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut items: Vec<String> = Vec::new();
+            for entry in &entries {
+                if let Some(decoded) = decode_base64(entry.value.as_bytes()) {
+                    if let Ok(s) = std::str::from_utf8(&decoded) {
+                        items.push(format!("\"{}\"", s));
+                    }
+                }
+            }
+            let json = format!("[{}]", items.join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Store attributed PCM data.
+///
+/// # Safety
+/// `data` must point to `data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_StoreAttributed(
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let raw = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(raw.len() * 4 / 3 + 4);
+        encode_base64_into(raw, &mut s);
+        s
+    };
+    let key = format!("pcm:attributed:{}", encoded.len());
+    let origin_hash: u128 = 0;
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve all attributed PCM data.
+///
+/// On success writes JSON data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_GetAttributed(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash: u128 = 0;
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("pcm:attributed:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut items: Vec<String> = Vec::new();
+            for entry in &entries {
+                if let Some(decoded) = decode_base64(entry.value.as_bytes()) {
+                    if let Ok(s) = std::str::from_utf8(&decoded) {
+                        items.push(format!("\"{}\"", s));
+                    }
+                }
+            }
+            let json = format!("[{}]", items.join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete a specific PCM measurement by its composite ID.
+///
+/// # Safety
+/// `id_hi` and `id_lo` must form a valid measurement identifier.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_DeleteMeasurement(
+    id_hi: u64, id_lo: u64,
+) -> i32 {
+    let id_hash = ((id_hi as u128) << 64) | (id_lo as u128);
+    let key_unattributed = format!("pcm:unattributed:{}", id_hash);
+    let key_attributed = format!("pcm:attributed:{}", id_hash);
+    let origin_hash: u128 = 0;
+    let _ = db().localstore().remove(origin_hash, &key_unattributed);
+    let _ = db().localstore().remove(origin_hash, &key_attributed);
+    NS_OK
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ITP (Intelligent Tracking Prevention) Bridge
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

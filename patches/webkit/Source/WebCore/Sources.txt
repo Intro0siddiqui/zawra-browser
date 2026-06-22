@@ -309,6 +309,7 @@ Modules/push-api/PushSubscriptionIdentifier.cpp
 Modules/push-api/PushSubscriptionOptions.cpp
 Modules/push-api/PushManager.cpp
 Modules/push-api/ServiceWorkerRegistrationPushAPI.cpp
+Modules/push-api/ZPushBridge.cpp
 Modules/remoteplayback/RemotePlayback.cpp
 Modules/reporting/DeprecationReportBody.cpp
 Modules/reporting/Report.cpp

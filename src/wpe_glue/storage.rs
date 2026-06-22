@@ -1675,6 +1675,123 @@ pub unsafe extern "C" fn Z_ITP_GetAllOrigins(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Push API Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store a push subscription for an origin.
+///
+/// # Safety
+/// `endpoint`, `p256dh`, and `auth` must point to valid byte slices of the given lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_StoreSubscription(
+    origin_hi: u64, origin_lo: u64,
+    endpoint: *const u8, endpoint_len: u32,
+    p256dh: *const u8, p256dh_len: u32,
+    auth: *const u8, auth_len: u32,
+) -> i32 {
+    if endpoint.is_null() || p256dh.is_null() || auth.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let endpoint_data = unsafe { std::slice::from_raw_parts(endpoint, endpoint_len as usize) };
+    let p256dh_data = unsafe { std::slice::from_raw_parts(p256dh, p256dh_len as usize) };
+    let auth_data = unsafe { std::slice::from_raw_parts(auth, auth_len as usize) };
+    let mut encoded_endpoint = String::with_capacity(endpoint_data.len() * 4 / 3 + 4);
+    encode_base64_into(endpoint_data, &mut encoded_endpoint);
+    let mut encoded_p256dh = String::with_capacity(p256dh_data.len() * 4 / 3 + 4);
+    encode_base64_into(p256dh_data, &mut encoded_p256dh);
+    let mut encoded_auth = String::with_capacity(auth_data.len() * 4 / 3 + 4);
+    encode_base64_into(auth_data, &mut encoded_auth);
+    let key = format!("push:sub:endpoint:{}", origin_hash);
+    let val = format!("{}|{}|{}", encoded_endpoint, encoded_p256dh, encoded_auth);
+    let entry = LocalStoreEntry { origin_hash, key, value: val };
+    match db().localstore().insert(&entry) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_Push_StoreSubscription: stored for origin={}", origin_hash);
+            NS_OK
+        }
+        Err(e) => {
+            eprintln!("[ZAWRA-RUST] Z_Push_StoreSubscription FAILED: {}", e);
+            NS_ERROR_FAILURE
+        }
+    }
+}
+
+/// Retrieve a push subscription for an origin.
+///
+/// On success writes the subscription data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_GetSubscription(
+    origin_hi: u64, origin_lo: u64,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("push:sub:endpoint:{}", origin_hash);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe {
+                *result_written = 0;
+            }
+            NS_OK
+        }
+        Ok(Some(entry)) => {
+            let bytes = entry.value.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete a push subscription for a specific origin.
+///
+/// # Safety
+/// `origin_hi` and `origin_lo` must form a valid origin hash.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_DeleteSubscription(
+    origin_hi: u64, origin_lo: u64,
+) -> i32 {
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("push:sub:endpoint:{}", origin_hash);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_Push_DeleteSubscription: deleted for origin={}", origin_hash);
+            NS_OK
+        }
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Delete all push subscriptions for all origins.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_DeleteAll() -> i32 {
+    eprintln!("[ZAWRA-RUST] Z_Push_DeleteAll: clearing all push subscriptions");
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("push:sub:"))
+        .execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in &entries {
+                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

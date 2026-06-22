@@ -1025,6 +1025,945 @@ pub unsafe extern "C" fn Z_CacheStore_Clear() -> i32 {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WebSQL BrowserDB bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Open (or create) a WebSQL database via BrowserDB localstore.
+///
+/// Stores database metadata at key "ws:meta:<origin>:<db_name>".
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_Open(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+    version: i32,
+) -> i32 {
+    if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    let value = version.to_string();
+    let entry = LocalStoreEntry {
+        origin_hash,
+        key,
+        value,
+    };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Close a WebSQL database (no-op, data persists in BrowserDB).
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_Close(
+    _origin_hash_hi: u64,
+    _origin_hash_lo: u64,
+    _db_name: *const c_char,
+    _db_name_len: u32,
+) -> i32 {
+    NS_OK
+}
+
+/// Execute SQL against a WebSQL database.
+///
+/// For now, returns an empty JSON array `[]` as the result.
+/// Full SQL execution would require a SQL parser.
+///
+/// # Safety
+/// `db_name` and `sql` must point to valid UTF-8 bytes.
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_ExecSQL(
+    _origin_hash_hi: u64,
+    _origin_hash_lo: u64,
+    _db_name: *const c_char,
+    _db_name_len: u32,
+    _sql: *const c_char,
+    _sql_len: u32,
+    result_buf: *mut u8,
+    result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let empty = b"[]";
+    let len = std::cmp::min(empty.len(), result_buf_len as usize);
+    unsafe {
+        std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+        *result_written = len as u32;
+    }
+    NS_OK
+}
+
+/// Get the stored version for a WebSQL database.
+///
+/// Returns the version as an i32, or -1 if not found.
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_GetVersion(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+) -> i32 {
+    if db_name.is_null() { return -1; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    match db().localstore().get(origin_hash, &key) {
+        Ok(Some(entry)) => {
+            entry.value.parse::<i32>().unwrap_or(-1)
+        }
+        _ => -1,
+    }
+}
+
+/// Set the version for a WebSQL database.
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_SetVersion(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+    version: i32,
+) -> i32 {
+    if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    let value = version.to_string();
+    let entry = LocalStoreEntry {
+        origin_hash,
+        key,
+        value,
+    };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Delete a WebSQL database and all its data.
+///
+/// # Safety
+/// `db_name` must point to `db_name_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_WebSQL_DeleteDatabase(
+    origin_hash_hi: u64,
+    origin_hash_lo: u64,
+    db_name: *const c_char,
+    db_name_len: u32,
+) -> i32 {
+    if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
+    let name = match unsafe { CStr::from_ptr(db_name).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ws:meta:{}:{}", origin_hash, name);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ApplicationCache Bridge (deprecated window.applicationCache API)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store an application cache manifest.
+///
+/// # Safety
+/// `manifest_url` must point to `manifest_url_len` valid UTF-8 bytes.
+/// `manifest_data` must point to `manifest_data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_StoreManifest(
+    origin_hi: u64, origin_lo: u64,
+    manifest_url: *const u8, manifest_url_len: u32,
+    manifest_data: *const u8, manifest_data_len: u32,
+) -> i32 {
+    if manifest_url.is_null() || manifest_data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(manifest_url, manifest_url_len as usize) }) {
+        Ok(s) => s.to_owned(),
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let data = unsafe { std::slice::from_raw_parts(manifest_data, manifest_data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(data.len() * 4 / 3 + 4);
+        encode_base64_into(data, &mut s);
+        s
+    };
+    let key = format!("ac:manifest:{}", url);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve an application cache manifest.
+///
+/// On success copies the manifest data into `result_buf`.
+///
+/// # Safety
+/// `manifest_url` must point to `manifest_url_len` valid UTF-8 bytes.
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_GetManifest(
+    origin_hi: u64, origin_lo: u64,
+    manifest_url: *const u8, manifest_url_len: u32,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if manifest_url.is_null() || result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(manifest_url, manifest_url_len as usize) }) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ac:manifest:{}", url);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe { *result_written = 0; }
+            NS_ERROR_NOT_FOUND
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Store an application cache resource.
+///
+/// # Safety
+/// `resource_url` must point to `resource_url_len` valid UTF-8 bytes.
+/// `resource_data` must point to `resource_data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_StoreResource(
+    origin_hi: u64, origin_lo: u64,
+    resource_url: *const u8, resource_url_len: u32,
+    resource_data: *const u8, resource_data_len: u32,
+) -> i32 {
+    if resource_url.is_null() || resource_data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(resource_url, resource_url_len as usize) }) {
+        Ok(s) => s.to_owned(),
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let data = unsafe { std::slice::from_raw_parts(resource_data, resource_data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(data.len() * 4 / 3 + 4);
+        encode_base64_into(data, &mut s);
+        s
+    };
+    let key = format!("ac:resource:{}", url);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve an application cache resource.
+///
+/// On success copies the resource data into `result_buf`.
+///
+/// # Safety
+/// `resource_url` must point to `resource_url_len` valid UTF-8 bytes.
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_GetResource(
+    origin_hi: u64, origin_lo: u64,
+    resource_url: *const u8, resource_url_len: u32,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if resource_url.is_null() || result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let url = match std::str::from_utf8(unsafe { std::slice::from_raw_parts(resource_url, resource_url_len as usize) }) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let key = format!("ac:resource:{}", url);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe { *result_written = 0; }
+            NS_ERROR_NOT_FOUND
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete all application cache data for an origin.
+///
+/// # Safety
+/// `origin_hi` and `origin_lo` must form a valid origin hash.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_AppCache_DeleteOrigin(
+    origin_hi: u64, origin_lo: u64,
+) -> i32 {
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    match db().localstore().get_by_origin(origin_hash) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in entries {
+                if entry.key.starts_with("ac:manifest:") || entry.key.starts_with("ac:resource:") {
+                    let _ = db().localstore().remove(origin_hash, &entry.key);
+                }
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PCM (Private Click Measurement) Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store unattributed PCM data.
+///
+/// # Safety
+/// `data` must point to `data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_StoreUnattributed(
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let raw = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(raw.len() * 4 / 3 + 4);
+        encode_base64_into(raw, &mut s);
+        s
+    };
+    let key = format!("pcm:unattributed:{}", encoded.len());
+    let origin_hash: u128 = 0;
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve all unattributed PCM data.
+///
+/// On success writes JSON data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_GetUnattributed(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash: u128 = 0;
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("pcm:unattributed:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut items: Vec<String> = Vec::new();
+            for entry in &entries {
+                if let Some(decoded) = decode_base64(entry.value.as_bytes()) {
+                    if let Ok(s) = std::str::from_utf8(&decoded) {
+                        items.push(format!("\"{}\"", s));
+                    }
+                }
+            }
+            let json = format!("[{}]", items.join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Store attributed PCM data.
+///
+/// # Safety
+/// `data` must point to `data_len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_StoreAttributed(
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let raw = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(raw.len() * 4 / 3 + 4);
+        encode_base64_into(raw, &mut s);
+        s
+    };
+    let key = format!("pcm:attributed:{}", encoded.len());
+    let origin_hash: u128 = 0;
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve all attributed PCM data.
+///
+/// On success writes JSON data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_GetAttributed(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash: u128 = 0;
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("pcm:attributed:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut items: Vec<String> = Vec::new();
+            for entry in &entries {
+                if let Some(decoded) = decode_base64(entry.value.as_bytes()) {
+                    if let Ok(s) = std::str::from_utf8(&decoded) {
+                        items.push(format!("\"{}\"", s));
+                    }
+                }
+            }
+            let json = format!("[{}]", items.join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete a specific PCM measurement by its composite ID.
+///
+/// # Safety
+/// `id_hi` and `id_lo` must form a valid measurement identifier.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_PCM_DeleteMeasurement(
+    id_hi: u64, id_lo: u64,
+) -> i32 {
+    let id_hash = ((id_hi as u128) << 64) | (id_lo as u128);
+    let key_unattributed = format!("pcm:unattributed:{}", id_hash);
+    let key_attributed = format!("pcm:attributed:{}", id_hash);
+    let origin_hash: u128 = 0;
+    let _ = db().localstore().remove(origin_hash, &key_unattributed);
+    let _ = db().localstore().remove(origin_hash, &key_attributed);
+    NS_OK
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ITP (Intelligent Tracking Prevention) Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store ITP statistics for an origin.
+///
+/// # Safety
+/// `data` must point to `data_len` valid bytes (JSON-encoded statistics).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_StoreStatistics(
+    origin_hi: u64, origin_lo: u64,
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let stats_data = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let encoded = {
+        let mut s = String::with_capacity(stats_data.len() * 4 / 3 + 4);
+        encode_base64_into(stats_data, &mut s);
+        s
+    };
+    let key = format!("itp:stats:{}", origin_hash);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve ITP statistics for an origin.
+///
+/// On success writes JSON data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_GetStatistics(
+    origin_hi: u64, origin_lo: u64,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("itp:stats:{}", origin_hash);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete ITP statistics for a specific origin.
+///
+/// # Safety
+/// `origin_hi` and `origin_lo` must form a valid origin hash.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_DeleteStatistics(
+    origin_hi: u64, origin_lo: u64,
+) -> i32 {
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("itp:stats:{}", origin_hash);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => NS_OK,
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Delete all ITP statistics for all origins.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_DeleteAll() -> i32 {
+    eprintln!("[ZAWRA-RUST] Z_ITP_DeleteAll: clearing all ITP statistics");
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("itp:stats:"))
+        .execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in &entries {
+                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Get all origins that have ITP statistics stored.
+///
+/// On success writes a JSON array of origin hashes as strings into `result_buf`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_ITP_GetAllOrigins(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("itp:stats:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut origins: Vec<u128> = entries.iter().map(|e| e.origin_hash).collect();
+            origins.sort();
+            origins.dedup();
+            let json = format!("[{}]", origins.iter()
+                .map(|h| format!("\"{}\"", h))
+                .collect::<Vec<_>>()
+                .join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Push API Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store a push subscription for an origin.
+///
+/// # Safety
+/// `endpoint`, `p256dh`, and `auth` must point to valid byte slices of the given lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_StoreSubscription(
+    origin_hi: u64, origin_lo: u64,
+    endpoint: *const u8, endpoint_len: u32,
+    p256dh: *const u8, p256dh_len: u32,
+    auth: *const u8, auth_len: u32,
+) -> i32 {
+    if endpoint.is_null() || p256dh.is_null() || auth.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let endpoint_data = unsafe { std::slice::from_raw_parts(endpoint, endpoint_len as usize) };
+    let p256dh_data = unsafe { std::slice::from_raw_parts(p256dh, p256dh_len as usize) };
+    let auth_data = unsafe { std::slice::from_raw_parts(auth, auth_len as usize) };
+    let mut encoded_endpoint = String::with_capacity(endpoint_data.len() * 4 / 3 + 4);
+    encode_base64_into(endpoint_data, &mut encoded_endpoint);
+    let mut encoded_p256dh = String::with_capacity(p256dh_data.len() * 4 / 3 + 4);
+    encode_base64_into(p256dh_data, &mut encoded_p256dh);
+    let mut encoded_auth = String::with_capacity(auth_data.len() * 4 / 3 + 4);
+    encode_base64_into(auth_data, &mut encoded_auth);
+    let key = format!("push:sub:endpoint:{}", origin_hash);
+    let val = format!("{}|{}|{}", encoded_endpoint, encoded_p256dh, encoded_auth);
+    let entry = LocalStoreEntry { origin_hash, key, value: val };
+    match db().localstore().insert(&entry) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_Push_StoreSubscription: stored for origin={}", origin_hash);
+            NS_OK
+        }
+        Err(e) => {
+            eprintln!("[ZAWRA-RUST] Z_Push_StoreSubscription FAILED: {}", e);
+            NS_ERROR_FAILURE
+        }
+    }
+}
+
+/// Retrieve a push subscription for an origin.
+///
+/// On success writes the subscription data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_GetSubscription(
+    origin_hi: u64, origin_lo: u64,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("push:sub:endpoint:{}", origin_hash);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe {
+                *result_written = 0;
+            }
+            NS_OK
+        }
+        Ok(Some(entry)) => {
+            let bytes = entry.value.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete a push subscription for a specific origin.
+///
+/// # Safety
+/// `origin_hi` and `origin_lo` must form a valid origin hash.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_DeleteSubscription(
+    origin_hi: u64, origin_lo: u64,
+) -> i32 {
+    let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
+    let key = format!("push:sub:endpoint:{}", origin_hash);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_Push_DeleteSubscription: deleted for origin={}", origin_hash);
+            NS_OK
+        }
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Delete all push subscriptions for all origins.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Push_DeleteAll() -> i32 {
+    eprintln!("[ZAWRA-RUST] Z_Push_DeleteAll: clearing all push subscriptions");
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("push:sub:"))
+        .execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in &entries {
+                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Service Worker Registration Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store a service worker registration.
+///
+/// # Safety
+/// `scope` and `data` must point to valid byte slices of the given lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_StoreRegistration(
+    scope: *const u8, scope_len: u32,
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if scope.is_null() || data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let scope_data = unsafe { std::slice::from_raw_parts(scope, scope_len as usize) };
+    let reg_data = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let scope_str = match std::str::from_utf8(scope_data) {
+        Ok(s) => s.to_owned(),
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let encoded = {
+        let mut s = String::with_capacity(reg_data.len() * 4 / 3 + 4);
+        encode_base64_into(reg_data, &mut s);
+        s
+    };
+    let origin_hash: u128 = 0;
+    let key = format!("swreg:{}", scope_str);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_SWReg_StoreRegistration: stored scope={}", scope_str);
+            NS_OK
+        }
+        Err(e) => {
+            eprintln!("[ZAWRA-RUST] Z_SWReg_StoreRegistration FAILED: {}", e);
+            NS_ERROR_FAILURE
+        }
+    }
+}
+
+/// Retrieve a service worker registration by scope.
+///
+/// On success writes serialized data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_GetRegistration(
+    scope: *const u8, scope_len: u32,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if scope.is_null() || result_buf.is_null() || result_written.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let scope_data = unsafe { std::slice::from_raw_parts(scope, scope_len as usize) };
+    let scope_str = match std::str::from_utf8(scope_data) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let origin_hash: u128 = 0;
+    let key = format!("swreg:{}", scope_str);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe { *result_written = 0; }
+            NS_ERROR_NOT_FOUND
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete a service worker registration by scope.
+///
+/// # Safety
+/// `scope` must point to `scope_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_DeleteRegistration(
+    scope: *const u8, scope_len: u32,
+) -> i32 {
+    if scope.is_null() { return NS_ERROR_INVALID_ARG; }
+    let scope_data = unsafe { std::slice::from_raw_parts(scope, scope_len as usize) };
+    let scope_str = match std::str::from_utf8(scope_data) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let origin_hash: u128 = 0;
+    let key = format!("swreg:{}", scope_str);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_SWReg_DeleteRegistration: deleted scope={}", scope_str);
+            NS_OK
+        }
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve all service worker registrations.
+///
+/// On success writes serialized data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_GetAll(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("swreg:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut items: Vec<String> = Vec::new();
+            for entry in &entries {
+                if let Some(decoded) = decode_base64(entry.value.as_bytes()) {
+                    if let Ok(s) = std::str::from_utf8(&decoded) {
+                        items.push(format!("\"{}\"", s));
+                    }
+                }
+            }
+            let json = format!("[{}]", items.join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete all service worker registrations.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_DeleteAll() -> i32 {
+    eprintln!("[ZAWRA-RUST] Z_SWReg_DeleteAll: clearing all SW registrations");
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("swreg:"))
+        .execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in &entries {
+                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

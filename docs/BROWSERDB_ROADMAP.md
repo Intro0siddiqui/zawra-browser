@@ -69,6 +69,25 @@ To achieve full isolation and deprecate legacy storage systems, the following ph
 - **Objective**: Wire BrowserDB history and bookmark storage to real call sites in the UI layer.
 - **Status**: Completed. `recordHistory()` is called from `PageClientImpl::didCommitLoadForMainFrame()`. Bookmark shortcuts (Ctrl+D, Ctrl+Shift+D, Ctrl+B) are handled in `PageClientImpl::doneWithKeyEvent()`.
 
-### Stage 5: Compiling Without SQLite (`ENABLE_SQLITE=OFF`)
-- **Objective**: Disable SQLite compilation completely by setting `-DENABLE_SQLITE=OFF` in CMake once all fallbacks are eliminated.
-- **Status**: Complete. `SQLiteStorageArea.cpp` replaced with `BrowserDBStorageArea.cpp`. LocalStorageManager now instantiates `BrowserDBStorageArea` instead of SQLite-based storage. All SQLite includes removed from storage layer.
+### Stage 5: SQLite Fully Removed from Build
+- **Objective**: Replace ALL SQLite consumers with BrowserDB-backed implementations, add CMake disable flags for two-version build, then remove SQLite entirely from the WebCore build.
+- **Status**: Complete. SQLite has been completely removed from the WebCore/WebKit build. No `sqlite3` references remain in `build.ninja`. All SQLite consumers replaced:
+
+| Consumer | Bridge Class | Key Prefix | Status |
+|----------|-------------|------------|--------|
+| LocalStorage | `BrowserDBStorageArea` | `ls:` | Complete (Stage 4) |
+| Cookies | `ZawraStorageBridge` | `cookie:` | Complete (Stage 4) |
+| History/Bookmarks | `ZawraStorageBridge` | `hist:` | Complete (Stage 4) |
+| Cache API / NetworkCache | `ZawraCacheBridge` | `0xCA` | Complete (Stage 3) |
+| IndexedDB | `Z_IDBStore_*` / `Z_Storage_*` | `idb:` | Complete (Stage 1) |
+| WebSQL | `ZWebSQLBridge` | `websql:` | Complete |
+| ApplicationCache | `ZAppCacheBridge` | `ac:manifest:`, `ac:resource:` | Complete |
+| ITP (ResourceLoadStatistics) | `ZITPBridge` | `itp:stats:` | Complete |
+| PCM (PrivateClickMeasurement) | `ZPCMBridge` | `pcm:unattributed:`, `pcm:attributed:` | Complete |
+
+- **CMake Flags** (for two-version build):
+  - `ENABLE_WEBSQL=OFF` — Disables WebSQL source compilation
+  - `ENABLE_APPLICATION_CACHE=OFF` — Disables ApplicationCache source compilation
+  - `ENABLE_PRIVATE_CLICK_MEASUREMENT=OFF` — Disables PCM source compilation
+- **Removed from build**: `find_package(SQLite3)` in `OptionsWPE.cmake` (commented out), SQLite headers from `Headers.cmake`, SQLite source files from `Sources.txt`.
+- **Note**: `PushDatabase.cpp` and `SWRegistrationDatabase.cpp` do not exist in WPE WebKit 2.42.5, so Push and SW Registration phases were skipped.

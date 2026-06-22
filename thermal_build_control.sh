@@ -12,7 +12,7 @@ export WEBKIT_USE_SCCACHE=1
 # -------------------------------
 
 # --- Configuration ---
-BUILD_DIR="webkit/build/WPE/Debug"
+BUILD_DIR="webkit/build"
 TARGET="MiniBrowser"
 JOBS=3              # i3-6006U has 4 threads; 3 jobs leaves 1 free for OS/thermal
 TEMP_HIGH=80        # User preferred — conservative pause threshold

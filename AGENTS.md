@@ -181,6 +181,11 @@ For Zawra-specific project intelligence, agents **MUST** use the following `zw` 
     * **Clean Mode (`./zw stubs --pattern empty_body`)**: Only shows functions with physically empty braces `{ }`. This has the highest precision for "gutted" functions.
     * **Purpose**: For identifying missing implementation points or platform-specific gaps.
 
+6.  **`./zw deps <module_path>`**: **CRITICAL for feature disabling.** Scan ALL files that `#include` headers from a given module directory. Shows which files are in `patches/` (can be modified) vs `webkit/source/` (need new patches). **Always run this BEFORE disabling a CMake feature flag** to avoid cascading "header not found" build errors.
+    * `./zw deps Modules/webdatabase` — check WebSQL consumers
+    * `./zw deps loader/appcache` — check AppCache consumers
+    * `./zw deps NetworkProcess/PrivateClickMeasurement` — check PCM consumers
+
 ### Smart Auto-Update
 The `zw` tool is now autonomous. It monitors the project's **Git HEAD** and **file modification times (mtime)**. 
 - If you pull a new commit or edit a source file, the next `./zw` command will automatically re-index the project in the background before showing results.

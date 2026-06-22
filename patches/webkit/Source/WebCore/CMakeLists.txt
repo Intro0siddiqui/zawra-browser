@@ -194,16 +194,10 @@ set(WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/xml/parser"
 )
 
-if (ENABLE_WEBSQL)
-    list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
-        "${WEBCORE_DIR}/Modules/webdatabase"
-    )
-endif ()
-if (ENABLE_APPLICATION_CACHE)
-    list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
-        "${WEBCORE_DIR}/loader/appcache"
-    )
-endif ()
+list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
+    "${WEBCORE_DIR}/Modules/webdatabase"
+    "${WEBCORE_DIR}/loader/appcache"
+)
 
 set(WebCore_IDL_INCLUDES
     css
@@ -1415,27 +1409,20 @@ set(WebCore_NON_SVG_IDL_FILES
     xml/XSLTProcessor.idl
 )
 
-if (ENABLE_WEBSQL)
-    list(APPEND WebCore_NON_SVG_IDL_FILES
-        Modules/webdatabase/Database.idl
-        Modules/webdatabase/DatabaseCallback.idl
-        Modules/webdatabase/LocalDOMWindow+WebDatabase.idl
-        Modules/webdatabase/SQLError.idl
-        Modules/webdatabase/SQLResultSet.idl
-        Modules/webdatabase/SQLResultSetRowList.idl
-        Modules/webdatabase/SQLStatementCallback.idl
-        Modules/webdatabase/SQLStatementErrorCallback.idl
-        Modules/webdatabase/SQLTransaction.idl
-        Modules/webdatabase/SQLTransactionCallback.idl
-        Modules/webdatabase/SQLTransactionErrorCallback.idl
-    )
-endif ()
-
-if (ENABLE_APPLICATION_CACHE)
-    list(APPEND WebCore_NON_SVG_IDL_FILES
-        loader/appcache/DOMApplicationCache.idl
-    )
-endif ()
+list(APPEND WebCore_NON_SVG_IDL_FILES
+    Modules/webdatabase/Database.idl
+    Modules/webdatabase/DatabaseCallback.idl
+    Modules/webdatabase/LocalDOMWindow+WebDatabase.idl
+    Modules/webdatabase/SQLError.idl
+    Modules/webdatabase/SQLResultSet.idl
+    Modules/webdatabase/SQLResultSetRowList.idl
+    Modules/webdatabase/SQLStatementCallback.idl
+    Modules/webdatabase/SQLStatementErrorCallback.idl
+    Modules/webdatabase/SQLTransaction.idl
+    Modules/webdatabase/SQLTransactionCallback.idl
+    Modules/webdatabase/SQLTransactionErrorCallback.idl
+    loader/appcache/DOMApplicationCache.idl
+)
 
 set(WebCore_SVG_IDL_FILES
     svg/Document+SVG.idl

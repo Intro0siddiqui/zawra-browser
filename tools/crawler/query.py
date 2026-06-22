@@ -372,6 +372,150 @@ def chain_trace(msg_name):
     print()
 
 
+def deps(module_path):
+    """Scan for all files that #include headers from a given module directory.
+
+    Usage: zw deps <module_path>
+    Example: zw deps Modules/webdatabase
+             zw deps loader/appcache
+             zw deps NetworkProcess/PrivateClickMeasurement
+
+    Shows every file outside the module that includes its headers,
+    categorized as PATCHES (can be modified) or UPSTREAM (need new patches).
+    """
+    if not DB_PATH.exists():
+        print(f"Error: {DB_PATH} not found. Run inventory_crawler.py first.")
+        return
+
+    source_root = PROJECT_ROOT / "webkit" / "source" / "Source"
+    patches_root = PROJECT_ROOT / "patches" / "webkit"
+
+    if not source_root.exists():
+        print(f"Error: {source_root} not found.")
+        return
+
+    module_dir = None
+    for parent in ["WebCore", "WebKit", "WTF", "JavaScriptCore", "PAL"]:
+        candidate = source_root / parent / module_path
+        if candidate.exists():
+            module_dir = candidate
+            break
+
+    if module_dir is None:
+        candidate = source_root / module_path
+        if candidate.exists():
+            module_dir = candidate
+
+    if module_dir is None:
+        print(f"Error: Module directory not found for '{module_path}'.")
+        print("Searched in:")
+        for parent in ["WebCore", "WebKit", "WTF", "JavaScriptCore", "PAL"]:
+            print(f"  Source/{parent}/{module_path}")
+        print(f"  Source/{module_path}")
+        print("\nAvailable modules:")
+        for parent in ["WebCore", "WebKit"]:
+            base = source_root / parent
+            if not base.exists():
+                continue
+            for d in sorted(base.rglob("*")):
+                if d.is_dir() and d.name and (d / "*.h").parent == d:
+                    has_headers = any(d.glob("*.h"))
+                    if has_headers:
+                        rel = str(d.relative_to(source_root))
+                        print(f"  {rel}")
+        return
+
+    headers = set()
+    for h in module_dir.rglob("*.h"):
+        headers.add(h.name)
+
+    include_pattern = re.compile(r'^\s*#include\s+[<"]([^>"]+)[>"]', re.MULTILINE)
+
+    consumers = []
+
+    search_dirs = [source_root / "WebCore", source_root / "WebKit", source_root / "WTF", source_root / "JavaScriptCore"]
+    search_dirs = [d for d in search_dirs if d.exists()]
+
+    for search_dir in search_dirs:
+        for root, _, files in os.walk(search_dir):
+            for fname in files:
+                if not (fname.endswith(".cpp") or fname.endswith(".h")):
+                    continue
+
+                fpath = Path(root) / fname
+                rel = str(fpath.relative_to(source_root))
+
+                try:
+                    fpath.relative_to(module_dir)
+                    continue
+                except ValueError:
+                    pass
+
+                try:
+                    content = fpath.read_text(errors='ignore')
+                except Exception:
+                    continue
+
+                for m in include_pattern.finditer(content):
+                    inc_path = m.group(1)
+                    inc_basename = Path(inc_path).name
+
+                    if inc_basename not in headers:
+                        continue
+
+                    line_num = content[:m.start()].count('\n') + 1
+                    line_text = content.splitlines()[line_num - 1].strip() if line_num <= len(content.splitlines()) else ""
+
+                    patch_match = None
+                    candidate_patch = patches_root / "Source" / (str(fpath.relative_to(source_root)))
+                    if candidate_patch.exists():
+                        patch_match = str(candidate_patch.relative_to(PROJECT_ROOT))
+
+                    consumers.append({
+                        "file": rel,
+                        "line": line_num,
+                        "include": inc_path,
+                        "basename": inc_basename,
+                        "patch": patch_match,
+                    })
+
+    consumers.sort(key=lambda c: (c["file"], c["line"]))
+
+    patches_files = [c for c in consumers if c["patch"]]
+    upstream_files = [c for c in consumers if not c["patch"]]
+
+    print(f"\n=== HEADER DEPENDENCY SCAN: {module_path} ===")
+    print(f"Headers in module: {len(headers)}")
+    print(f"Total consumers found: {len(consumers)}")
+    print(f"  In patches/ (can modify): {len(patches_files)} includes across {len(set(c['file'] for c in patches_files))} files")
+    print(f"  In source/ (need new patch): {len(upstream_files)} includes across {len(set(c['file'] for c in upstream_files))} files")
+
+    if patches_files:
+        print(f"\n--- PATCHES (already modifiable) ---")
+        current_file = None
+        for c in patches_files:
+            if c["file"] != current_file:
+                current_file = c["file"]
+                print(f"\n  {c['patch']}:")
+            print(f"    L{c['line']}: #include \"{c['include']}\"")
+
+    if upstream_files:
+        print(f"\n--- UPSTREAM (need new patches) ---")
+        current_file = None
+        for c in upstream_files:
+            if c["file"] != current_file:
+                current_file = c["file"]
+                print(f"\n  {c['file']}:")
+            print(f"    L{c['line']}: #include \"{c['include']}\"")
+
+    print(f"\n{'=' * 50}")
+    if upstream_files:
+        print(f"⚠️  {len(set(c['file'] for c in upstream_files))} upstream files need patches before disabling this module.")
+    else:
+        print(f"✅ No upstream consumers — safe to disable.")
+    print()
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage:")
@@ -382,6 +526,10 @@ if __name__ == "__main__":
         print("  audit            (Run build graph audit)")
         print("  stubs            (List detected stubs / stub patterns)")
         print("  chain <MessageName>  (Trace IPC call chain)")
+        print("  deps <module_path>  (Scan header deps before disabling a feature)")
+        print("    e.g. zw deps Modules/webdatabase")
+        print("    e.g. zw deps loader/appcache")
+        print("    e.g. zw deps NetworkProcess/PrivateClickMeasurement")
     else:
         check_auto_update()
         cmd = sys.argv[1]
@@ -471,5 +619,7 @@ if __name__ == "__main__":
             read_file(sys.argv[2])
         elif cmd == "chain" and len(sys.argv) > 2:
             chain_trace(sys.argv[2])
+        elif cmd == "deps" and len(sys.argv) > 2:
+            deps(sys.argv[2])
         else:
             query(cmd)

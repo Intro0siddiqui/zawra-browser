@@ -80,13 +80,13 @@ def crawl_build_files(conn):
     visited_cmake = set()
     visited_sources_txt = set()
 
-    def _parse_sources_txt(path, base_path_override, rel_build_file, target_name):
+    def _parse_sources_txt(path, base_path_override, rel_build_file, target_name, force=False):
         """Parse a Sources*.txt file, using base_path_override for path resolution."""
         try:
             real_path = path.resolve()
         except Exception:
             real_path = None
-        if real_path and real_path in visited_sources_txt:
+        if not force and real_path and real_path in visited_sources_txt:
             return
         if real_path:
             visited_sources_txt.add(real_path)
@@ -294,8 +294,9 @@ def crawl_build_files(conn):
                             base_path_in_webkit = Path(*parts[idx:-1])
                         else: base_path_in_webkit = Path(".")
                     except: base_path_in_webkit = Path(".")
-                    
-                    _parse_sources_txt(path, base_path_in_webkit, rel_build_file, f"{origin}_UNIFIED_LIST")
+
+                    force = origin == "zawra"
+                    _parse_sources_txt(path, base_path_in_webkit, rel_build_file, f"{origin}_UNIFIED_LIST", force=force)
                 
                 # *.cmake / CMakeLists.txt
                 elif file.endswith(".cmake") or file == "CMakeLists.txt":

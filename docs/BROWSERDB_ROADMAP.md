@@ -84,10 +84,11 @@ To achieve full isolation and deprecate legacy storage systems, the following ph
 | ApplicationCache | `ZAppCacheBridge` | `ac:manifest:`, `ac:resource:` | Complete |
 | ITP (ResourceLoadStatistics) | `ZITPBridge` | `itp:stats:` | Complete |
 | PCM (PrivateClickMeasurement) | `ZPCMBridge` | `pcm:unattributed:`, `pcm:attributed:` | Complete |
+| Push | `ZPushBridge` | `push:sub:` | Complete |
+| SW Registration | `ZSWRegBridge` | `swreg:` | Complete |
 
 - **CMake Flags** (for two-version build):
   - `ENABLE_WEBSQL=OFF` — Disables WebSQL source compilation
   - `ENABLE_APPLICATION_CACHE=OFF` — Disables ApplicationCache source compilation
   - `ENABLE_PRIVATE_CLICK_MEASUREMENT=OFF` — Disables PCM source compilation
 - **Removed from build**: `find_package(SQLite3)` in `OptionsWPE.cmake` (commented out), SQLite headers from `Headers.cmake`, SQLite source files from `Sources.txt`.
-- **Note**: `PushDatabase.cpp` and `SWRegistrationDatabase.cpp` do not exist in WPE WebKit 2.42.5, so Push and SW Registration phases were skipped.

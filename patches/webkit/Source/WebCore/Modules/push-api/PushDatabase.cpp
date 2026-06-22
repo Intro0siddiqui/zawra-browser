@@ -724,8 +724,21 @@ void PushDatabase::removeRecordsBySubscriptionSet(const PushSubscriptionSetIdent
         });
 
         Vector<RemovedPushRecord> removedPushRecords;
+        Vector<String> securityOriginsToDelete;
         SQLiteTransaction transaction(m_db);
         transaction.begin();
+
+        {
+            auto sql = bindStatementOnQueue(
+                "SELECT DISTINCT ss.securityOrigin "
+                "FROM SubscriptionSets ss "
+                "WHERE ss.bundleID = ? AND ss.pushPartition = ? AND ss.dataStoreUUID = ?"_s,
+                bindSubscriptionSetParameters(subscriptionSetIdentifier));
+            if (sql) {
+                while (sql->step() == SQLITE_ROW)
+                    securityOriginsToDelete.append(sql->columnText(0));
+            }
+        }
 
         {
             auto sql = bindStatementOnQueue(
@@ -769,9 +782,11 @@ void PushDatabase::removeRecordsBySubscriptionSet(const PushSubscriptionSetIdent
 
         transaction.commit();
 
-        uint64_t originHi = 0, originLo = 0;
-        computeOriginHash(subscriptionSetIdentifier.securityOrigin, originHi, originLo);
-        ZPushBridge::deleteSubscription(originHi, originLo);
+        for (const auto& securityOrigin : securityOriginsToDelete) {
+            uint64_t originHi = 0, originLo = 0;
+            computeOriginHash(securityOrigin, originHi, originLo);
+            ZPushBridge::deleteSubscription(originHi, originLo);
+        }
 
         scope.release();
         completeOnMainQueue(WTFMove(completionHandler), WTFMove(removedPushRecords));

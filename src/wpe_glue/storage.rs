@@ -1792,6 +1792,178 @@ pub unsafe extern "C" fn Z_Push_DeleteAll() -> i32 {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Service Worker Registration Bridge
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Store a service worker registration.
+///
+/// # Safety
+/// `scope` and `data` must point to valid byte slices of the given lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_StoreRegistration(
+    scope: *const u8, scope_len: u32,
+    data: *const u8, data_len: u32,
+) -> i32 {
+    if scope.is_null() || data.is_null() { return NS_ERROR_INVALID_ARG; }
+    let scope_data = unsafe { std::slice::from_raw_parts(scope, scope_len as usize) };
+    let reg_data = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let scope_str = match std::str::from_utf8(scope_data) {
+        Ok(s) => s.to_owned(),
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let encoded = {
+        let mut s = String::with_capacity(reg_data.len() * 4 / 3 + 4);
+        encode_base64_into(reg_data, &mut s);
+        s
+    };
+    let origin_hash: u128 = 0;
+    let key = format!("swreg:{}", scope_str);
+    let entry = LocalStoreEntry { origin_hash, key, value: encoded };
+    match db().localstore().insert(&entry) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_SWReg_StoreRegistration: stored scope={}", scope_str);
+            NS_OK
+        }
+        Err(e) => {
+            eprintln!("[ZAWRA-RUST] Z_SWReg_StoreRegistration FAILED: {}", e);
+            NS_ERROR_FAILURE
+        }
+    }
+}
+
+/// Retrieve a service worker registration by scope.
+///
+/// On success writes serialized data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_GetRegistration(
+    scope: *const u8, scope_len: u32,
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if scope.is_null() || result_buf.is_null() || result_written.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let scope_data = unsafe { std::slice::from_raw_parts(scope, scope_len as usize) };
+    let scope_str = match std::str::from_utf8(scope_data) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let origin_hash: u128 = 0;
+    let key = format!("swreg:{}", scope_str);
+    match db().localstore().get(origin_hash, &key) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(None) => {
+            unsafe { *result_written = 0; }
+            NS_ERROR_NOT_FOUND
+        }
+        Ok(Some(entry)) => {
+            let decoded = match decode_base64(entry.value.as_bytes()) {
+                Some(d) => d,
+                None => return NS_ERROR_FAILURE,
+            };
+            let len = std::cmp::min(decoded.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(decoded.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete a service worker registration by scope.
+///
+/// # Safety
+/// `scope` must point to `scope_len` valid UTF-8 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_DeleteRegistration(
+    scope: *const u8, scope_len: u32,
+) -> i32 {
+    if scope.is_null() { return NS_ERROR_INVALID_ARG; }
+    let scope_data = unsafe { std::slice::from_raw_parts(scope, scope_len as usize) };
+    let scope_str = match std::str::from_utf8(scope_data) {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    let origin_hash: u128 = 0;
+    let key = format!("swreg:{}", scope_str);
+    match db().localstore().remove(origin_hash, &key) {
+        Ok(_) => {
+            eprintln!("[ZAWRA-RUST] Z_SWReg_DeleteRegistration: deleted scope={}", scope_str);
+            NS_OK
+        }
+        Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Retrieve all service worker registrations.
+///
+/// On success writes serialized data into `result_buf` and sets `result_written`.
+///
+/// # Safety
+/// `result_buf` must have `result_buf_len` bytes of capacity.
+/// `result_written` must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_GetAll(
+    result_buf: *mut u8, result_buf_len: u32,
+    result_written: *mut u32,
+) -> i32 {
+    if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("swreg:"))
+        .execute() {
+        Err(_) => {
+            let empty = b"[]";
+            let len = std::cmp::min(empty.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(empty.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_ERROR_FAILURE
+        }
+        Ok(entries) => {
+            let mut items: Vec<String> = Vec::new();
+            for entry in &entries {
+                if let Some(decoded) = decode_base64(entry.value.as_bytes()) {
+                    if let Ok(s) = std::str::from_utf8(&decoded) {
+                        items.push(format!("\"{}\"", s));
+                    }
+                }
+            }
+            let json = format!("[{}]", items.join(","));
+            let bytes = json.as_bytes();
+            let len = std::cmp::min(bytes.len(), result_buf_len as usize);
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), result_buf, len);
+                *result_written = len as u32;
+            }
+            NS_OK
+        }
+    }
+}
+
+/// Delete all service worker registrations.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_SWReg_DeleteAll() -> i32 {
+    eprintln!("[ZAWRA-RUST] Z_SWReg_DeleteAll: clearing all SW registrations");
+    match db().localstore().query()
+        .filter(|e| e.key.starts_with("swreg:"))
+        .execute() {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            for entry in &entries {
+                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+            }
+            NS_OK
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

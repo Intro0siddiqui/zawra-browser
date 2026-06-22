@@ -2458,13 +2458,7 @@ platform/network/ResourceResponseBase.cpp
 platform/network/SameSiteInfo.cpp
 platform/network/SynchronousLoaderClient.cpp
 platform/network/TimingAllowOrigin.cpp
-platform/sql/SQLiteAuthorizer.cpp
-platform/sql/SQLiteDatabase.cpp
-platform/sql/SQLiteDatabaseTracker.cpp
-platform/sql/SQLiteFileSystem.cpp
-platform/sql/SQLiteStatement.cpp
-platform/sql/SQLiteStatementAutoResetScope.cpp
-platform/sql/SQLiteTransaction.cpp
+
 platform/text/BidiContext.cpp
 platform/text/DateTimeFormat.cpp
 platform/text/LocaleToScriptMapping.cpp

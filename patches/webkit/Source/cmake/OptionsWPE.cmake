@@ -21,7 +21,7 @@ find_package(LibEpoxy 1.4.0 REQUIRED)
 find_package(LibGcrypt 1.6.0 REQUIRED)
 find_package(LibXml2 2.8.0 REQUIRED)
 find_package(PNG REQUIRED)
-find_package(SQLite3 REQUIRED)
+# find_package(SQLite3 REQUIRED)  # Removed: BrowserDB replaces SQLite
 find_package(Threads REQUIRED)
 find_package(Unifdef REQUIRED)
 find_package(WebP REQUIRED COMPONENTS demux)

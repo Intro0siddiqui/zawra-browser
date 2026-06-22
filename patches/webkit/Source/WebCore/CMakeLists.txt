@@ -1840,7 +1840,7 @@ set(WebCore_PLUG_INS_RESOURCES
 set(WebCore_LIBRARIES
     ICU::uc
     LibXml2::LibXml2
-    SQLite::SQLite3
+    # SQLite::SQLite3  # Removed: BrowserDB replaces SQLite
     ZLIB::ZLIB
 )
 set(WebCore_FRAMEWORKS

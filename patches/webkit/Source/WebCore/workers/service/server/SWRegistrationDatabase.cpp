@@ -451,7 +451,7 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
         scriptStorage().clear(registration);
 
         // Also delete from BrowserDB bridge
-        auto scopeStr = registration.scopeURL().string().utf8();
+        auto scopeStr = registration.scope().string().utf8();
         ZSWRegBridge::deleteRegistration(reinterpret_cast<const uint8_t*>(scopeStr.data()), scopeStr.length());
     }
 
@@ -500,7 +500,7 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
 
     // Also store registrations via BrowserDB bridge
     for (auto&& data : registrationsToUpdate) {
-        auto scopeStr = data.registration.scopeURL().string().utf8();
+        auto scopeStr = data.registration.scopeURL.string().utf8();
         // Store a minimal representation: key + scopeURL + scriptURL + workerType
         auto storeData = makeString(data.registration.key.toDatabaseKey(), "|"_s,
             data.registration.scopeURL.protocolHostAndPort(), "|"_s,

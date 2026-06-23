@@ -120,11 +120,9 @@ set(WebKit_PRIVATE_INCLUDE_DIRECTORIES
     "${CMAKE_SOURCE_DIR}/WebKitLibraries"
 )
 
-if (ENABLE_PRIVATE_CLICK_MEASUREMENT)
-    list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES
-        "${WEBKIT_DIR}/NetworkProcess/PrivateClickMeasurement"
-    )
-endif ()
+list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES
+    "${WEBKIT_DIR}/NetworkProcess/PrivateClickMeasurement"
+)
 
 set(PROTOCOL_GENERATOR_SCRIPTS_DIR "${JAVASCRIPTCORE_DIR}/inspector/scripts")
 

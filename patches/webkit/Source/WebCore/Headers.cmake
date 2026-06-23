@@ -2216,14 +2216,14 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     platform/network/SynchronousLoaderClient.h
     platform/network/TimingAllowOrigin.h
 
-    # platform/sql/SQLValue.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteDatabase.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteDatabaseTracker.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteDatabaseTrackerClient.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteFileSystem.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteStatement.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteStatementAutoResetScope.h  # Removed: BrowserDB replaces SQLite
-    # platform/sql/SQLiteTransaction.h  # Removed: BrowserDB replaces SQLite
+    platform/sql/SQLValue.h
+    platform/sql/SQLiteDatabase.h
+    platform/sql/SQLiteDatabaseTracker.h
+    platform/sql/SQLiteDatabaseTrackerClient.h
+    platform/sql/SQLiteFileSystem.h
+    platform/sql/SQLiteStatement.h
+    platform/sql/SQLiteStatementAutoResetScope.h
+    platform/sql/SQLiteTransaction.h
 
     platform/text/CharacterProperties.h
     platform/text/BidiContext.h

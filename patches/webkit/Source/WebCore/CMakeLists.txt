@@ -1421,7 +1421,6 @@ list(APPEND WebCore_NON_SVG_IDL_FILES
     Modules/webdatabase/SQLTransaction.idl
     Modules/webdatabase/SQLTransactionCallback.idl
     Modules/webdatabase/SQLTransactionErrorCallback.idl
-    loader/appcache/DOMApplicationCache.idl
 )
 
 set(WebCore_SVG_IDL_FILES
@@ -1827,7 +1826,7 @@ set(WebCore_PLUG_INS_RESOURCES
 set(WebCore_LIBRARIES
     ICU::uc
     LibXml2::LibXml2
-    # SQLite::SQLite3  # Removed: BrowserDB replaces SQLite
+    SQLite::SQLite3
     ZLIB::ZLIB
 )
 set(WebCore_FRAMEWORKS
@@ -2762,6 +2761,9 @@ if (ENABLE_WEBSQL)
     )
 endif ()
 if (ENABLE_APPLICATION_CACHE)
+    list(APPEND WebCore_NON_SVG_IDL_FILES
+        loader/appcache/DOMApplicationCache.idl
+    )
     list(APPEND WebCore_SOURCES
         loader/appcache/ApplicationCache.cpp
         loader/appcache/ApplicationCacheGroup.cpp

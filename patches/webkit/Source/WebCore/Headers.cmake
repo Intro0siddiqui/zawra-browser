@@ -425,8 +425,8 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     Modules/indexeddb/server/IndexValueStore.h
     Modules/indexeddb/server/MemoryBackingStoreTransaction.h
     Modules/indexeddb/server/MemoryIDBBackingStore.h
-    # Modules/indexeddb/server/SQLiteIDBBackingStore.h  # Removed: BrowserDB replaces SQLite
-    # Modules/indexeddb/server/SQLiteIDBTransaction.h  # Removed: BrowserDB replaces SQLite
+     Modules/indexeddb/server/SQLiteIDBBackingStore.h
+     Modules/indexeddb/server/SQLiteIDBTransaction.h
     Modules/indexeddb/server/ServerOpenDBRequest.h
     Modules/indexeddb/server/UniqueIDBDatabase.h
     Modules/indexeddb/server/UniqueIDBDatabaseConnection.h

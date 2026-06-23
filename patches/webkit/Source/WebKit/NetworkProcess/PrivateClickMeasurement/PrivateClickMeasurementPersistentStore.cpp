@@ -86,10 +86,10 @@ void PersistentStore::insertPrivateClickMeasurement(WebCore::PrivateClickMeasure
 
         // Route through ZPCMBridge to BrowserDB
         if (attributionType == PrivateClickMeasurementAttributionType::Unattributed) {
-            auto utf8 = WTF::String("unattributed").utf8();
+            auto utf8 = "unattributed"_s.utf8();
             ZPCMBridge::storeUnattributed(utf8.data(), utf8.length());
         } else {
-            auto utf8 = WTF::String("attributed").utf8();
+            auto utf8 = "attributed"_s.utf8();
             ZPCMBridge::storeAttributed(utf8.data(), utf8.length());
         }
 

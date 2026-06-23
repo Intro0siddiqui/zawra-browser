@@ -36,6 +36,7 @@
 #include "WebProcessProxy.h"
 #include "WebsiteDataStore.h"
 #include "ZITPBridge.h"
+#include <wtf/text/StringToIntegerConversion.h>
 #include <JavaScriptCore/ConsoleTypes.h>
 #include <WebCore/DocumentStorageAccess.h>
 #include <WebCore/KeyedCoding.h>
@@ -2266,12 +2267,12 @@ Vector<ResourceLoadStatisticsDatabaseStore::DomainData> ResourceLoadStatisticsDa
             // Strip quotes
             auto stripped = trimmed.substring(1, trimmed.length() - 2);
             uint64_t hi = 0, lo = 0;
-            if (auto parsedHi = stripped.toUInt64())
-                hi = parsedHi;
+            if (auto parsedHi = parseInteger<uint64_t>(stripped))
+                hi = *parsedHi;
             auto colonPos = stripped.find(':');
             if (colonPos != notFound) {
-                hi = stripped.substring(0, colonPos).toUInt64();
-                lo = stripped.substring(colonPos + 1).toUInt64();
+                hi = parseInteger<uint64_t>(stripped.substring(0, colonPos)).value_or(0);
+                lo = parseInteger<uint64_t>(stripped.substring(colonPos + 1)).value_or(0);
             }
 
             char statsBuf[4096];
@@ -2286,10 +2287,10 @@ Vector<ResourceLoadStatisticsDatabaseStore::DomainData> ResourceLoadStatisticsDa
 
                 auto json = String::fromUTF8(statsBuf, statsWritten);
                 // Simple field extraction from JSON
-                auto domainIdx = json.find("\"domain\":\"");
+                auto domainIdx = json.find("\"domain\":\""_s);
                 if (domainIdx != notFound) {
                     auto start = domainIdx + 10;
-                    auto end = json.find("\"", start);
+                    auto end = json.find('"', start);
                     if (end != notFound)
                         domain = json.substring(start, end - start);
                 }

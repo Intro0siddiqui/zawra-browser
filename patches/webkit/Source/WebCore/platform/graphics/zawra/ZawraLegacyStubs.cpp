@@ -18,9 +18,7 @@
 #include <wtf/text/WTFString.h>
 #include "ZawraGraphicsBridge.h"
 
-#if USE(GBM)
-#include "GBMDevice.h"
-#endif
+
 
 namespace WebCore {
 
@@ -179,18 +177,48 @@ std::unique_ptr<GLContext> GLContext::createSharing(PlatformDisplay& platformDis
     return makeUnique<GLContext>(platformDisplay, context, surface, config, PbufferSurface);
 }
 
-#endif // USE(EGL)
-
-#if USE(GBM)
-
-GBMDevice& GBMDevice::singleton() {
-    static GBMDevice* device = new GBMDevice();
-    return *device;
+GLContext::ScopedGLContextCurrent::ScopedGLContextCurrent(GLContext& context)
+    : m_context(context)
+{
+    auto eglContext = eglGetCurrentContext();
+    m_previous.glContext = *currentContext();
+    if (!m_previous.glContext || m_previous.glContext->platformContext() != eglContext) {
+        m_previous.context = eglContext;
+        m_previous.display = eglGetCurrentDisplay();
+        m_previous.readSurface = eglGetCurrentSurface(EGL_READ);
+        m_previous.drawSurface = eglGetCurrentSurface(EGL_DRAW);
+    }
+    m_context.makeContextCurrent();
 }
 
-void GBMDevice::initialize(const WTF::String&) {}
-GBMDevice::~GBMDevice() = default;
+GLContext::ScopedGLContextCurrent::~ScopedGLContextCurrent()
+{
+    if (m_previous.glContext && m_previous.context == EGL_NO_CONTEXT) {
+        m_previous.glContext->makeContextCurrent();
+        return;
+    }
 
-#endif // USE(GBM)
+    if (m_previous.context)
+        eglMakeCurrent(m_previous.display, m_previous.drawSurface, m_previous.readSurface, m_previous.context);
+    else
+        m_context.unmakeContextCurrent();
+
+    *currentContext() = m_previous.glContext;
+}
+
+bool GLContext::unmakeContextCurrent()
+{
+    if (this != *currentContext())
+        return false;
+
+    eglMakeCurrent(m_display.eglDisplay(), EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    *currentContext() = nullptr;
+
+    return true;
+}
+
+#endif // USE(EGL)
+
+
 
 } // namespace WebCore

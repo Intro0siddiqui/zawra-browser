@@ -2726,27 +2726,27 @@ list(APPEND WebCore_SOURCES ${WebCore_DERIVED_SOURCES_DIR}/Namespace.cpp)
 
 WEBKIT_COMPUTE_SOURCES(WebCore)
 
+list(APPEND WebCore_SOURCES
+    Modules/webdatabase/ChangeVersionWrapper.cpp
+    Modules/webdatabase/Database.cpp
+    Modules/webdatabase/DatabaseAuthorizer.cpp
+    Modules/webdatabase/DatabaseContext.cpp
+    Modules/webdatabase/DatabaseManager.cpp
+    Modules/webdatabase/DatabaseTask.cpp
+    Modules/webdatabase/DatabaseThread.cpp
+    Modules/webdatabase/DatabaseTracker.cpp
+    Modules/webdatabase/LocalDOMWindowWebDatabase.cpp
+    Modules/webdatabase/OriginLock.cpp
+    Modules/webdatabase/SQLResultSet.cpp
+    Modules/webdatabase/SQLResultSetRowList.cpp
+    Modules/webdatabase/SQLStatement.cpp
+    Modules/webdatabase/SQLTransaction.cpp
+    Modules/webdatabase/SQLTransactionBackend.cpp
+    Modules/webdatabase/SQLTransactionCoordinator.cpp
+    Modules/webdatabase/SQLTransactionStateMachine.cpp
+    Modules/webdatabase/ZWebSQLBridge.cpp
+)
 if (ENABLE_WEBSQL)
-    list(APPEND WebCore_SOURCES
-        Modules/webdatabase/ChangeVersionWrapper.cpp
-        Modules/webdatabase/Database.cpp
-        Modules/webdatabase/DatabaseAuthorizer.cpp
-        Modules/webdatabase/DatabaseContext.cpp
-        Modules/webdatabase/DatabaseManager.cpp
-        Modules/webdatabase/DatabaseTask.cpp
-        Modules/webdatabase/DatabaseThread.cpp
-        Modules/webdatabase/DatabaseTracker.cpp
-        Modules/webdatabase/LocalDOMWindowWebDatabase.cpp
-        Modules/webdatabase/OriginLock.cpp
-        Modules/webdatabase/SQLResultSet.cpp
-        Modules/webdatabase/SQLResultSetRowList.cpp
-        Modules/webdatabase/SQLStatement.cpp
-        Modules/webdatabase/SQLTransaction.cpp
-        Modules/webdatabase/SQLTransactionBackend.cpp
-        Modules/webdatabase/SQLTransactionCoordinator.cpp
-        Modules/webdatabase/SQLTransactionStateMachine.cpp
-        Modules/webdatabase/ZWebSQLBridge.cpp
-    )
     list(APPEND WebCore_SOURCES
         ${WebCore_DERIVED_SOURCES_DIR}/JSDatabase.cpp
         ${WebCore_DERIVED_SOURCES_DIR}/JSDatabaseCallback.cpp
@@ -2760,20 +2760,20 @@ if (ENABLE_WEBSQL)
         ${WebCore_DERIVED_SOURCES_DIR}/JSSQLTransactionErrorCallback.cpp
     )
 endif ()
+list(APPEND WebCore_SOURCES
+    loader/appcache/ApplicationCache.cpp
+    loader/appcache/ApplicationCacheGroup.cpp
+    loader/appcache/ApplicationCacheHost.cpp
+    loader/appcache/ApplicationCacheManifestParser.cpp
+    loader/appcache/ApplicationCacheResource.cpp
+    loader/appcache/ApplicationCacheResourceLoader.cpp
+    loader/appcache/ApplicationCacheStorage.cpp
+    loader/appcache/DOMApplicationCache.cpp
+    loader/appcache/ZAppCacheBridge.cpp
+)
 if (ENABLE_APPLICATION_CACHE)
     list(APPEND WebCore_NON_SVG_IDL_FILES
         loader/appcache/DOMApplicationCache.idl
-    )
-    list(APPEND WebCore_SOURCES
-        loader/appcache/ApplicationCache.cpp
-        loader/appcache/ApplicationCacheGroup.cpp
-        loader/appcache/ApplicationCacheHost.cpp
-        loader/appcache/ApplicationCacheManifestParser.cpp
-        loader/appcache/ApplicationCacheResource.cpp
-        loader/appcache/ApplicationCacheResourceLoader.cpp
-        loader/appcache/ApplicationCacheStorage.cpp
-        loader/appcache/DOMApplicationCache.cpp
-        loader/appcache/ZAppCacheBridge.cpp
     )
     list(APPEND WebCore_SOURCES
         ${WebCore_DERIVED_SOURCES_DIR}/JSDOMApplicationCache.cpp

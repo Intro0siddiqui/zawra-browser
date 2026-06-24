@@ -128,6 +128,9 @@ if (USE_ATSPI)
 endif ()
 
 if (USE_GBM)
+    list(APPEND WebCore_SOURCES
+        platform/graphics/gbm/GBMBufferSwapchain.cpp
+    )
     list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
         ${LIBDRM_INCLUDE_DIR}
     )

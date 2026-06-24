@@ -74,6 +74,10 @@ platform/graphics/wpe/SystemFontDatabaseWPE.cpp
 platform/graphics/libwpe/PlatformDisplayLibWPE.cpp
 platform/graphics/zawra/ZawraGraphicsBridge.cpp
 platform/graphics/zawra/ZawraLegacyStubs.cpp
+
+platform/graphics/gbm/GBMBufferSwapchain.cpp
+platform/graphics/gbm/GBMDevice.cpp
+
 platform/network/zawra/Z_IDBStore.cpp
 platform/network/zawra/ZawraStorageBridge.cpp
 

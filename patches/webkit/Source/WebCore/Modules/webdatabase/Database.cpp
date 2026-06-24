@@ -60,6 +60,11 @@
 #include <wtf/RobinHoodHashMap.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/StringToIntegerConversion.h>
+
+extern "C" {
+    void Z_Hash_String(const char* input, uint64_t* out_hi, uint64_t* out_lo);
+}
 
 namespace WebCore {
 
@@ -359,11 +364,9 @@ ExceptionOr<void> Database::performOpenAndVerify(bool shouldSetVersionInNewDatab
                 m_new = true;
                 if (shouldSetVersionInNewDatabase || !m_expectedVersion.isEmpty()) {
                     // Parse expected version as integer for BrowserDB storage.
-                    bool ok = false;
-                    int expectedVersionInt = m_expectedVersion.toInt(&ok);
-                    if (!ok)
-                        expectedVersionInt = 1;
-                    ZWebSQLBridge::setVersion(originHashHi, originHashLo, m_name, expectedVersionInt);
+                    auto expectedVersionInt = parseInteger<int>(m_expectedVersion);
+                    int versionVal = expectedVersionInt.value_or(1);
+                    ZWebSQLBridge::setVersion(originHashHi, originHashLo, m_name, versionVal);
                     currentVersion = m_expectedVersion;
                 }
             }
@@ -453,10 +456,8 @@ bool Database::setVersionInDatabase(const String& version, bool shouldCacheVersi
     uint64_t originHashHi = 0, originHashLo = 0;
     Z_Hash_String(securityOrigin().securityOrigin()->toString().utf8().data(), &originHashHi, &originHashLo);
 
-    bool ok = false;
-    int versionInt = version.toInt(&ok);
-    if (!ok)
-        versionInt = 1;
+    auto parsedVersion = parseInteger<int>(version);
+    int versionInt = parsedVersion.value_or(1);
 
     int result = ZWebSQLBridge::setVersion(originHashHi, originHashLo, m_name, versionInt);
     if (result == 0) {

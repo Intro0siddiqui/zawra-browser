@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2013, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,575 +26,122 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// Zawra no-op: WebSQL replaced by BrowserDB. All methods are stubs.
+
 #include "config.h"
 #include "Database.h"
 
-#include "ChangeVersionData.h"
-#include "ChangeVersionWrapper.h"
 #include "DatabaseAuthorizer.h"
-#include "DatabaseCallback.h"
 #include "DatabaseContext.h"
 #include "DatabaseManager.h"
 #include "DatabaseTask.h"
 #include "DatabaseThread.h"
-#include "DatabaseTracker.h"
 #include "Document.h"
-#include "JSLocalDOMWindow.h"
-#include "LocalDOMWindow.h"
-#include "Logging.h"
-#include "SQLError.h"
+#include "SecurityOrigin.h"
+#include "SecurityOriginData.h"
 #include "SQLTransaction.h"
 #include "SQLTransactionCallback.h"
 #include "SQLTransactionErrorCallback.h"
-#include "SQLiteDatabaseTracker.h"
-#include "SQLiteStatement.h"
-#include "SQLiteTransaction.h"
-#include "ScriptExecutionContext.h"
-#include "SecurityOrigin.h"
 #include "VoidCallback.h"
-#include "WindowEventLoop.h"
-#include "ZWebSQLBridge.h"
-#include <wtf/Lock.h>
-#include <wtf/NeverDestroyed.h>
-#include <wtf/RefPtr.h>
-#include <wtf/RobinHoodHashMap.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringToIntegerConversion.h>
-
-extern "C" {
-    void Z_Hash_String(const char* input, uint64_t* out_hi, uint64_t* out_lo);
-}
 
 namespace WebCore {
 
-// Registering "opened" databases with the DatabaseTracker
-// =======================================================
-// The DatabaseTracker maintains a list of databases that have been
-// "opened" so that the client can call interrupt or delete on every database
-// associated with a DatabaseContext.
-//
-// We will only call DatabaseTracker::addOpenDatabase() to add the database
-// to the tracker as opened when we've succeeded in opening the database,
-// and will set m_opened to true. Similarly, we only call
-// DatabaseTracker::removeOpenDatabase() to remove the database from the
-// tracker when we set m_opened to false in closeDatabase(). This sets up
-// a simple symmetry between open and close operations, and a direct
-// correlation to adding and removing databases from the tracker's list,
-// thus ensuring that we have a correct list for the interrupt and
-// delete operations to work on.
-//
-// The only databases instances not tracked by the tracker's open database
-// list are the ones that have not been added yet, or the ones that we
-// attempted an open on but failed to. Such instances only exist in the
-// factory functions for creating database backends.
-//
-// The factory functions will either call openAndVerifyVersion() or
-// performOpenAndVerify(). These methods will add the newly instantiated
-// database backend if they succeed in opening the requested database.
-// In the case of failure to open the database, the factory methods will
-// simply discard the newly instantiated database backend when they return.
-// The ref counting mechanims will automatically destruct the un-added
-// (and un-returned) databases instances.
-
-static const char versionKey[] = "WebKitDatabaseVersionKey";
-static constexpr auto unqualifiedInfoTableName = "__WebKitDatabaseInfoTable__"_s;
-const unsigned long long quotaIncreaseSize = 5 * 1024 * 1024;
-
-static const String& fullyQualifiedInfoTableName()
-{
-    static LazyNeverDestroyed<String> qualifiedName;
-    static std::once_flag onceFlag;
-    std::call_once(onceFlag, [] {
-        qualifiedName.construct(MAKE_STATIC_STRING_IMPL("main.__WebKitDatabaseInfoTable__"));
-    });
-    return qualifiedName;
-}
-
-static String formatErrorMessage(const char* message, int sqliteErrorCode, const char* sqliteErrorMessage)
-{
-    return makeString(message, " (", sqliteErrorCode, ' ', sqliteErrorMessage, ')');
-}
-
-static bool setTextValueInDatabase(SQLiteDatabase& db, StringView query, const String& value)
-{
-    auto statement = db.prepareStatementSlow(query);
-    if (!statement) {
-        LOG_ERROR("Failed to prepare statement to set value in database (%s)", query.utf8().data());
-        return false;
-    }
-
-    statement->bindText(1, value);
-
-    if (statement->step() != SQLITE_DONE) {
-        LOG_ERROR("Failed to step statement to set value in database (%s)", query.utf8().data());
-        return false;
-    }
-
-    return true;
-}
-
-static bool retrieveTextResultFromDatabase(SQLiteDatabase& db, StringView query, String& resultString)
-{
-    auto statement = db.prepareStatementSlow(query);
-    if (!statement) {
-        LOG_ERROR("Error (%i) preparing statement to read text result from database (%s)", statement.error(), query.utf8().data());
-        return false;
-    }
-
-    int result = statement->step();
-    if (result == SQLITE_ROW) {
-        resultString = statement->columnText(0);
-        return true;
-    }
-    if (result == SQLITE_DONE) {
-        resultString = String();
-        return true;
-    }
-
-    LOG_ERROR("Error (%i) reading text result from database (%s)", result, query.utf8().data());
-    return false;
-}
-
-// FIXME: move all guid-related functions to a DatabaseVersionTracker class.
-static Lock guidLock;
-
-static HashMap<DatabaseGUID, String>& guidToVersionMap() WTF_REQUIRES_LOCK(guidLock)
-{
-    static NeverDestroyed<HashMap<DatabaseGUID, String>> map;
-    return map;
-}
-
-static inline void updateGUIDVersionMap(DatabaseGUID guid, const String& newVersion) WTF_REQUIRES_LOCK(guidLock)
-{
-    // Note: It is not safe to put an empty string into the guidToVersionMap() map.
-    // That's because the map is cross-thread, but empty strings are per-thread.
-    // The copy() function makes a version of the string you can use on the current
-    // thread, but we need a string we can keep in a cross-thread data structure.
-    // FIXME: This is a quite-awkward restriction to have to program with.
-
-    // Map empty string to null string (see comment above).
-    guidToVersionMap().set(guid, newVersion.isEmpty() ? String() : newVersion.isolatedCopy());
-}
-
-static HashMap<DatabaseGUID, HashSet<Database*>>& guidToDatabaseMap() WTF_REQUIRES_LOCK(guidLock)
-{
-    static NeverDestroyed<HashMap<DatabaseGUID, HashSet<Database*>>> map;
-    return map;
-}
-
-static inline DatabaseGUID guidForOriginAndName(const String& origin, const String& name) WTF_REQUIRES_LOCK(guidLock)
-{
-    static MainThreadNeverDestroyed<MemoryCompactRobinHoodHashMap<String, DatabaseGUID>> map;
-    return map.get().ensure(makeString(origin, '/', name), [] {
-        static DatabaseGUID lastUsedGUID;
-        return ++lastUsedGUID;
-    }).iterator->value;
-}
-
 Database::Database(DatabaseContext& context, const String& name, const String& expectedVersion, const String& displayName, unsigned long long estimatedSize)
     : m_document(*context.document())
-    , m_contextThreadSecurityOrigin(m_document->securityOrigin().isolatedCopy())
-    , m_databaseThreadSecurityOrigin(m_document->securityOrigin().isolatedCopy())
+    , m_contextThreadSecurityOrigin(context.document()->securityOrigin())
+    , m_databaseThreadSecurityOrigin(context.document()->securityOrigin())
     , m_databaseContext(context)
-    , m_name((name.isNull() ? emptyString() : name).isolatedCopy())
-    , m_expectedVersion(expectedVersion.isolatedCopy())
-    , m_displayName(displayName.isolatedCopy())
+    , m_name(name)
+    , m_expectedVersion(expectedVersion)
+    , m_displayName(displayName)
     , m_estimatedSize(estimatedSize)
-    , m_filename(DatabaseManager::singleton().fullPathForDatabase(m_document->securityOrigin(), m_name))
-    , m_databaseAuthorizer(DatabaseAuthorizer::create(unqualifiedInfoTableName))
+    , m_guid(0)
+    , m_databaseAuthorizer(DatabaseAuthorizer::create("ZawraStub"_s))
 {
-    {
-        Locker locker { guidLock };
-
-        m_guid = guidForOriginAndName(securityOrigin().securityOrigin()->toString(), name);
-        guidToDatabaseMap().ensure(m_guid, [] {
-            return HashSet<Database*>();
-        }).iterator->value.add(this);
-    }
-
-    m_databaseContext->databaseThread();
-
-    ASSERT(m_databaseContext->existingDatabaseThread());
 }
 
-DatabaseThread& Database::databaseThread()
+Database::~Database() = default;
+
+ExceptionOr<void> Database::openAndVerifyVersion(bool)
 {
-    ASSERT(m_databaseContext->existingDatabaseThread());
-    return *m_databaseContext->existingDatabaseThread();
-}
-
-Database::~Database()
-{
-    // The reference to the Document needs to be cleared on the JavaScript thread. If we're on that thread already, we can just let the RefPtr's destruction do the dereffing.
-    if (!isMainThread())
-        callOnMainThread([document = WTFMove(m_document), databaseContext = WTFMove(m_databaseContext)] { });
-
-    // SQLite is "multi-thread safe", but each database handle can only be used
-    // on a single thread at a time.
-    //
-    // For DatabaseBackend, we open the SQLite database on the DatabaseThread,
-    // and hence we should also close it on that same thread. This means that the
-    // SQLite database need to be closed by another mechanism (see
-    // DatabaseContext::stopDatabases()). By the time we get here, the SQLite
-    // database should have already been closed.
-
-    ASSERT(!m_opened);
-}
-
-ExceptionOr<void> Database::openAndVerifyVersion(bool setVersionInNewDatabase)
-{
-    DatabaseTaskSynchronizer synchronizer;
-    auto& thread = databaseThread();
-    if (thread.terminationRequested(&synchronizer))
-        return Exception { InvalidStateError };
-
-    ExceptionOr<void> result;
-    auto task = makeUnique<DatabaseOpenTask>(*this, setVersionInNewDatabase, synchronizer, result);
-    thread.scheduleImmediateTask(WTFMove(task));
-    synchronizer.waitForTaskCompletion();
-
-    return result;
-}
-
-void Database::interrupt()
-{
-    // Zawra: No-op for BrowserDB bridge (no SQLite to interrupt).
+    return { };
 }
 
 void Database::close()
 {
-    auto& thread = databaseThread();
-
-    DatabaseTaskSynchronizer synchronizer;
-    if (thread.terminationRequested(&synchronizer)) {
-        LOG(StorageAPI, "Database handle %p is on a terminated DatabaseThread, cannot be marked for normal closure\n", this);
-        return;
-    }
-
-    thread.scheduleImmediateTask(makeUnique<DatabaseCloseTask>(*this, synchronizer));
-
-    // FIXME: iOS depends on this function blocking until the database is closed as part
-    // of closing all open databases from a process assertion expiration handler.
-    // See <https://bugs.webkit.org/show_bug.cgi?id=157184>.
-    synchronizer.waitForTaskCompletion();
 }
 
-void Database::performClose()
+void Database::interrupt()
 {
-    ASSERT(databaseThread().getThread() == &Thread::current());
-
-    {
-        Locker locker { m_transactionInProgressLock };
-
-        // Clean up transactions that have not been scheduled yet:
-        // Transaction phase 1 cleanup. See comment on "What happens if a
-        // transaction is interrupted?" at the top of SQLTransactionBackend.cpp.
-        while (!m_transactionQueue.isEmpty())
-            m_transactionQueue.takeFirst()->notifyDatabaseThreadIsShuttingDown();
-
-        m_isTransactionQueueEnabled = false;
-        m_transactionInProgress = false;
-    }
-
-    closeDatabase();
-
-    // DatabaseThread keeps databases alive by referencing them in its
-    // m_openDatabaseSet. DatabaseThread::recordDatabaseClose() will remove
-    // this database from that set (which effectively deref's it). We hold on
-    // to it with a local pointer here for a liitle longer, so that we can
-    // unschedule any DatabaseTasks that refer to it before the database gets
-    // deleted.
-    Ref<Database> protectedThis(*this);
-    auto& thread = databaseThread();
-    thread.recordDatabaseClosed(*this);
-    thread.unscheduleDatabaseTasks(*this);
 }
 
-class DoneCreatingDatabaseOnExitCaller {
-public:
-    DoneCreatingDatabaseOnExitCaller(Database& database)
-        : m_database(database)
-    {
-    }
-
-    ~DoneCreatingDatabaseOnExitCaller()
-    {
-        DatabaseTracker::singleton().doneCreatingDatabase(m_database);
-    }
-
-private:
-    Database& m_database;
-};
-
-ExceptionOr<void> Database::performOpenAndVerify(bool shouldSetVersionInNewDatabase)
+unsigned long long Database::maximumSize()
 {
-    DoneCreatingDatabaseOnExitCaller onExitCaller(*this);
-
-    // Zawra: Route WebSQL through BrowserDB via ZWebSQLBridge.
-    // Hash origin from security origin.
-    uint64_t originHashHi = 0, originHashLo = 0;
-    Z_Hash_String(securityOrigin().securityOrigin()->toString().utf8().data(), &originHashHi, &originHashLo);
-
-    // Open the database through the bridge.
-    auto nameUtf8 = m_name.isolatedCopy().utf8();
-    int openResult = ZWebSQLBridge::openDatabase(originHashHi, originHashLo, m_name, 0);
-    if (openResult != 0) {
-        return Exception { InvalidStateError, "unable to open database via BrowserDB bridge"_s };
-    }
-
-    // Check cached version first.
-    String currentVersion;
-    {
-        Locker locker { guidLock };
-
-        auto entry = guidToVersionMap().find(m_guid);
-        if (entry != guidToVersionMap().end()) {
-            currentVersion = entry->value.isNull() ? emptyString() : entry->value.isolatedCopy();
-            LOG(StorageAPI, "Current cached version for guid %i is %s", m_guid, currentVersion.ascii().data());
-        } else {
-            LOG(StorageAPI, "No cached version for guid %i", m_guid);
-
-            // Query version from BrowserDB bridge.
-            int storedVersion = ZWebSQLBridge::getVersion(originHashHi, originHashLo, m_name);
-            if (storedVersion >= 0) {
-                currentVersion = String::number(storedVersion);
-            } else {
-                // No stored version - this is a new database.
-                m_new = true;
-                if (shouldSetVersionInNewDatabase || !m_expectedVersion.isEmpty()) {
-                    // Parse expected version as integer for BrowserDB storage.
-                    auto expectedVersionInt = parseInteger<int>(m_expectedVersion);
-                    int versionVal = expectedVersionInt.value_or(1);
-                    ZWebSQLBridge::setVersion(originHashHi, originHashLo, m_name, versionVal);
-                    currentVersion = m_expectedVersion;
-                }
-            }
-
-            if (currentVersion.length()) {
-                LOG(StorageAPI, "Retrieved current version %s from database %s", currentVersion.ascii().data(), databaseDebugName().ascii().data());
-            } else if (!m_new || shouldSetVersionInNewDatabase) {
-                LOG(StorageAPI, "Setting version %s in database %s", m_expectedVersion.ascii().data(), databaseDebugName().ascii().data());
-            }
-            updateGUIDVersionMap(m_guid, currentVersion);
-        }
-    }
-
-    if (currentVersion.isNull()) {
-        LOG(StorageAPI, "Database %s does not have its version set", databaseDebugName().ascii().data());
-        currentVersion = emptyString();
-    }
-
-    // If the expected version isn't the empty string, ensure that the current database version we have matches that version.
-    if ((!m_new || shouldSetVersionInNewDatabase) && m_expectedVersion.length() && m_expectedVersion != currentVersion) {
-        return Exception { InvalidStateError, "unable to open database, version mismatch, '" + m_expectedVersion + "' does not match the currentVersion of '" + currentVersion + "'" };
-    }
-
-    m_sqliteDatabase.setAuthorizer(m_databaseAuthorizer.get());
-
-    DatabaseTracker::singleton().addOpenDatabase(*this);
-    m_opened = true;
-
-    if (m_new && !shouldSetVersionInNewDatabase)
-        m_expectedVersion = emptyString();
-
-    databaseThread().recordDatabaseOpen(*this);
-
-    return { };
+    return 0;
 }
 
-void Database::closeDatabase()
+void Database::scheduleTransactionStep(SQLTransaction&)
 {
-    if (!m_opened)
-        return;
-
-    // Zawra: Route close through BrowserDB bridge.
-    uint64_t originHashHi = 0, originHashLo = 0;
-    Z_Hash_String(securityOrigin().securityOrigin()->toString().utf8().data(), &originHashHi, &originHashLo);
-    ZWebSQLBridge::closeDatabase(originHashHi, originHashLo, m_name);
-
-    m_sqliteDatabase.close();
-    m_opened = false;
-
-    // See comment at the top this file regarding calling removeOpenDatabase().
-    DatabaseTracker::singleton().removeOpenDatabase(*this);
-
-    {
-        Locker locker { guidLock };
-
-        auto it = guidToDatabaseMap().find(m_guid);
-        ASSERT(it != guidToDatabaseMap().end());
-        ASSERT(it->value.contains(this));
-        it->value.remove(this);
-        if (it->value.isEmpty()) {
-            guidToDatabaseMap().remove(it);
-            guidToVersionMap().remove(m_guid);
-        }
-    }
-}
-
-bool Database::getVersionFromDatabase(String& version, bool shouldCacheVersion)
-{
-    // Zawra: Route through BrowserDB bridge instead of SQLite.
-    uint64_t originHashHi = 0, originHashLo = 0;
-    Z_Hash_String(securityOrigin().securityOrigin()->toString().utf8().data(), &originHashHi, &originHashLo);
-
-    int storedVersion = ZWebSQLBridge::getVersion(originHashHi, originHashLo, m_name);
-    if (storedVersion >= 0) {
-        version = String::number(storedVersion);
-        if (shouldCacheVersion)
-            setCachedVersion(version);
-        return true;
-    }
-    version = emptyString();
-    return true;
-}
-
-bool Database::setVersionInDatabase(const String& version, bool shouldCacheVersion)
-{
-    // Zawra: Route through BrowserDB bridge instead of SQLite.
-    uint64_t originHashHi = 0, originHashLo = 0;
-    Z_Hash_String(securityOrigin().securityOrigin()->toString().utf8().data(), &originHashHi, &originHashLo);
-
-    auto parsedVersion = parseInteger<int>(version);
-    int versionInt = parsedVersion.value_or(1);
-
-    int result = ZWebSQLBridge::setVersion(originHashHi, originHashLo, m_name, versionInt);
-    if (result == 0) {
-        if (shouldCacheVersion)
-            setCachedVersion(version);
-        return true;
-    }
-    LOG_ERROR("Failed to set version %s via BrowserDB bridge", version.ascii().data());
-    return false;
-}
-
-void Database::setExpectedVersion(const String& version)
-{
-    m_expectedVersion = version.isolatedCopy();
-}
-
-String Database::getCachedVersion() const
-{
-    Locker locker { guidLock };
-
-    return guidToVersionMap().get(m_guid).isolatedCopy();
-}
-
-void Database::setCachedVersion(const String& actualVersion)
-{
-    Locker locker { guidLock };
-
-    updateGUIDVersionMap(m_guid, actualVersion);
-}
-
-bool Database::getActualVersionForTransaction(String &actualVersion)
-{
-    ASSERT(m_sqliteDatabase.transactionInProgress());
-
-    // Note: In multi-process browsers the cached value may be inaccurate.
-    // So we retrieve the value from the database and update the cached value here.
-    return getVersionFromDatabase(actualVersion, true);
-}
-
-void Database::scheduleTransaction()
-{
-    ASSERT(m_transactionInProgressLock.isHeld());
-
-    if (!m_isTransactionQueueEnabled || m_transactionQueue.isEmpty()) {
-        m_transactionInProgress = false;
-        return;
-    }
-
-    m_transactionInProgress = true;
-
-    auto transaction = m_transactionQueue.takeFirst();
-    auto task = makeUnique<DatabaseTransactionTask>(WTFMove(transaction));
-    LOG(StorageAPI, "Scheduling DatabaseTransactionTask %p for transaction %p\n", task.get(), task->transaction());
-    databaseThread().scheduleTask(WTFMove(task));
-}
-
-void Database::scheduleTransactionStep(SQLTransaction& transaction)
-{
-    auto& thread = databaseThread();
-
-    auto task = makeUnique<DatabaseTransactionTask>(&transaction);
-    LOG(StorageAPI, "Scheduling DatabaseTransactionTask %p for the transaction step\n", task.get());
-    thread.scheduleTask(WTFMove(task));
 }
 
 void Database::inProgressTransactionCompleted()
 {
-    Locker locker { m_transactionInProgressLock };
-    m_transactionInProgress = false;
-    scheduleTransaction();
 }
 
 bool Database::hasPendingTransaction()
 {
-    Locker locker { m_transactionInProgressLock };
-    return m_transactionInProgress || !m_transactionQueue.isEmpty();
+    return false;
+}
+
+void Database::didCommitWriteTransaction()
+{
+}
+
+bool Database::didExceedQuota()
+{
+    return false;
 }
 
 SQLTransactionCoordinator* Database::transactionCoordinator()
 {
-    return databaseThread().transactionCoordinator();
+    return nullptr;
 }
 
 String Database::version() const
 {
-    if (m_deleted)
-        return String();
-
-    // Note: In multi-process browsers the cached value may be accurate, but we cannot read the
-    // actual version from the database without potentially inducing a deadlock.
-    // FIXME: Add an async version getter to the DatabaseAPI.
-    return getCachedVersion();
+    return emptyString();
 }
 
-void Database::markAsDeletedAndClose()
+void Database::changeVersion(String&&, String&&, RefPtr<SQLTransactionCallback>&&, RefPtr<SQLTransactionErrorCallback>&&, RefPtr<VoidCallback>&& successCallback)
 {
-    if (m_deleted)
-        return;
-
-    LOG(StorageAPI, "Marking %s (%p) as deleted", stringIdentifierIsolatedCopy().ascii().data(), this);
-    m_deleted = true;
-
-    close();
+    if (successCallback)
+        successCallback->handleEvent();
 }
 
-void Database::changeVersion(String&& oldVersion, String&& newVersion, RefPtr<SQLTransactionCallback>&& callback, RefPtr<SQLTransactionErrorCallback>&& errorCallback, RefPtr<VoidCallback>&& successCallback)
+void Database::transaction(RefPtr<SQLTransactionCallback>&&, RefPtr<SQLTransactionErrorCallback>&&, RefPtr<VoidCallback>&& successCallback)
 {
-    runTransaction(WTFMove(callback), WTFMove(errorCallback), WTFMove(successCallback), ChangeVersionWrapper::create(WTFMove(oldVersion), WTFMove(newVersion)), false);
+    if (successCallback)
+        successCallback->handleEvent();
 }
 
-void Database::transaction(RefPtr<SQLTransactionCallback>&& callback, RefPtr<SQLTransactionErrorCallback>&& errorCallback, RefPtr<VoidCallback>&& successCallback)
+void Database::readTransaction(RefPtr<SQLTransactionCallback>&&, RefPtr<SQLTransactionErrorCallback>&&, RefPtr<VoidCallback>&& successCallback)
 {
-    RELEASE_LOG_FAULT(SQLDatabase, "Database::transaction: Web SQL is deprecated.");
-    runTransaction(WTFMove(callback), WTFMove(errorCallback), WTFMove(successCallback), nullptr, false);
-}
-
-void Database::readTransaction(RefPtr<SQLTransactionCallback>&& callback, RefPtr<SQLTransactionErrorCallback>&& errorCallback, RefPtr<VoidCallback>&& successCallback)
-{
-    RELEASE_LOG_FAULT(SQLDatabase, "Database::readTransaction: Web SQL is deprecated.");
-    runTransaction(WTFMove(callback), WTFMove(errorCallback), WTFMove(successCallback), nullptr, true);
+    if (successCallback)
+        successCallback->handleEvent();
 }
 
 String Database::stringIdentifierIsolatedCopy() const
 {
-    // Return a deep copy for ref counting thread safety
     return m_name.isolatedCopy();
 }
 
 String Database::displayNameIsolatedCopy() const
 {
-    // Return a deep copy for ref counting thread safety
     return m_displayName.isolatedCopy();
 }
 
 String Database::expectedVersionIsolatedCopy() const
 {
-    // Return a deep copy for ref counting thread safety
     return m_expectedVersion.isolatedCopy();
 }
 
@@ -603,22 +150,14 @@ unsigned long long Database::estimatedSize() const
     return m_estimatedSize;
 }
 
-void Database::setEstimatedSize(unsigned long long estimatedSize)
-{
-    m_estimatedSize = estimatedSize;
-    DatabaseTracker::singleton().setDatabaseDetails(securityOrigin(), m_name, m_displayName, m_estimatedSize);
-}
-
 String Database::fileNameIsolatedCopy() const
 {
-    // Return a deep copy for ref counting thread safety
     return m_filename.isolatedCopy();
 }
 
 DatabaseDetails Database::details() const
 {
-    // This code path is only used for database quota delegate calls, so file dates are irrelevant and left uninitialized.
-    return DatabaseDetails(stringIdentifierIsolatedCopy(), displayNameIsolatedCopy(), estimatedSize(), 0, std::nullopt, std::nullopt);
+    return DatabaseDetails();
 }
 
 void Database::disableAuthorizer()
@@ -661,114 +200,114 @@ void Database::resetAuthorizer()
     m_databaseAuthorizer->reset();
 }
 
-void Database::runTransaction(RefPtr<SQLTransactionCallback>&& callback, RefPtr<SQLTransactionErrorCallback>&& errorCallback, RefPtr<VoidCallback>&& successCallback, RefPtr<SQLTransactionWrapper>&& wrapper, bool readOnly)
+DatabaseThread& Database::databaseThread()
 {
-    ASSERT(isMainThread());
-    Locker locker { m_transactionInProgressLock };
-    if (!m_isTransactionQueueEnabled) {
-        if (errorCallback) {
-            m_document->eventLoop().queueTask(TaskSource::Networking, [errorCallback = Ref { *errorCallback }]() {
-                errorCallback->handleEvent(SQLError::create(SQLError::UNKNOWN_ERR, "database has been closed"_s));
-            });
-        }
-        return;
-    }
-
-    m_transactionQueue.append(SQLTransaction::create(*this, WTFMove(callback), WTFMove(successCallback), errorCallback.copyRef(), WTFMove(wrapper), readOnly));
-    if (!m_transactionInProgress)
-        scheduleTransaction();
+    if (auto* thread = m_databaseContext->existingDatabaseThread())
+        return *thread;
+    static auto thread = DatabaseThread::create();
+    return thread.get();
 }
 
-void Database::scheduleTransactionCallback(SQLTransaction* transaction)
+void Database::logErrorMessage(const String&)
 {
-    callOnMainThread([this, protectedThis = Ref { *this }, transaction = RefPtr { transaction }]() mutable {
-        m_document->eventLoop().queueTask(TaskSource::Networking, [transaction = WTFMove(transaction)] {
-            transaction->performPendingCallback();
-        });
-    });
-}
-
-Vector<String> Database::performGetTableNames()
-{
-    // Zawra: Table names are managed by BrowserDB, not SQLite.
-    return Vector<String>();
-}
-
-void Database::incrementalVacuumIfNeeded()
-{
-    SQLiteTransactionInProgressAutoCounter transactionCounter;
-
-    int64_t freeSpaceSize = m_sqliteDatabase.freeSpaceSize();
-    int64_t totalSize = m_sqliteDatabase.totalSize();
-    if (totalSize <= 10 * freeSpaceSize) {
-        int result = m_sqliteDatabase.runIncrementalVacuumCommand();
-        if (result != SQLITE_OK)
-            logErrorMessage(formatErrorMessage("error vacuuming database", result, m_sqliteDatabase.lastErrorMsg()));
-    }
-}
-
-void Database::logErrorMessage(const String& message)
-{
-    m_document->addConsoleMessage(MessageSource::Storage, MessageLevel::Error, message);
 }
 
 Vector<String> Database::tableNames()
 {
-    // FIXME: Not using isolatedCopy on these strings looks ok since threads take strict turns
-    // in dealing with them. However, if the code changes, this may not be true anymore.
-    Vector<String> result;
-    DatabaseTaskSynchronizer synchronizer;
-    auto& thread = databaseThread();
-    if (thread.terminationRequested(&synchronizer))
-        return result;
-
-    auto task = makeUnique<DatabaseTableNamesTask>(*this, synchronizer, result);
-    thread.scheduleImmediateTask(WTFMove(task));
-    synchronizer.waitForTaskCompletion();
-
-    return result;
+    return { };
 }
 
 SecurityOriginData Database::securityOrigin()
 {
-    if (isMainThread())
-        return m_contextThreadSecurityOrigin->data();
-    if (databaseThread().getThread() == &Thread::current())
-        return m_databaseThreadSecurityOrigin->data();
-    RELEASE_ASSERT_NOT_REACHED();
+    return { };
 }
 
-unsigned long long Database::maximumSize()
+void Database::markAsDeletedAndClose()
 {
-    return DatabaseTracker::singleton().maximumSize(*this);
+    m_deleted = true;
 }
 
-void Database::didCommitWriteTransaction()
+void Database::scheduleTransactionCallback(SQLTransaction*)
 {
-    DatabaseTracker::singleton().scheduleNotifyDatabaseChanged(securityOrigin(), stringIdentifierIsolatedCopy());
 }
 
-bool Database::didExceedQuota()
+void Database::incrementalVacuumIfNeeded()
 {
-    ASSERT(isMainThread());
-    auto& tracker = DatabaseTracker::singleton();
-    auto oldQuota = tracker.quota(securityOrigin());
-    if (estimatedSize() <= oldQuota) {
-        // The expected usage provided by the page is now smaller than the actual database size so we bump the expected usage to
-        // oldQuota + 5MB so that the client actually increases the quota.
-        setEstimatedSize(oldQuota + quotaIncreaseSize);
-    }
-    databaseContext().databaseExceededQuota(stringIdentifierIsolatedCopy(), details());
-    return tracker.quota(securityOrigin()) > oldQuota;
+}
+
+ExceptionOr<void> Database::performOpenAndVerify(bool)
+{
+    m_opened = true;
+    return { };
+}
+
+Vector<String> Database::performGetTableNames()
+{
+    return { };
+}
+
+void Database::performClose()
+{
+    m_opened = false;
+}
+
+// Private methods
+
+void Database::closeDatabase()
+{
+}
+
+bool Database::getVersionFromDatabase(String& version, bool)
+{
+    version = m_expectedVersion;
+    return true;
+}
+
+bool Database::setVersionInDatabase(const String& version, bool)
+{
+    m_expectedVersion = version;
+    return true;
+}
+
+void Database::setExpectedVersion(const String& version)
+{
+    m_expectedVersion = version;
+}
+
+String Database::getCachedVersion() const
+{
+    return m_expectedVersion;
+}
+
+void Database::setCachedVersion(const String& version)
+{
+    m_expectedVersion = version;
+}
+
+bool Database::getActualVersionForTransaction(String& version)
+{
+    version = m_expectedVersion;
+    return true;
+}
+
+void Database::setEstimatedSize(unsigned long long size)
+{
+    m_estimatedSize = size;
+}
+
+void Database::scheduleTransaction()
+{
+}
+
+void Database::runTransaction(RefPtr<SQLTransactionCallback>&&, RefPtr<SQLTransactionErrorCallback>&&, RefPtr<VoidCallback>&&, RefPtr<SQLTransactionWrapper>&&, bool)
+{
 }
 
 #if !LOG_DISABLED || !ERROR_DISABLED
-
 String Database::databaseDebugName() const
 {
-    return m_contextThreadSecurityOrigin->toString() + "::" + m_name;
+    return m_name;
 }
-
 #endif
 
 } // namespace WebCore

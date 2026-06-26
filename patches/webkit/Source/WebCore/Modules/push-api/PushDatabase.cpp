@@ -29,9 +29,6 @@
 #if ENABLE(SERVICE_WORKER)
 
 #include "Logging.h"
-#include "SQLValue.h"
-#include "SQLiteFileSystem.h"
-#include "SQLiteTransaction.h"
 #include "SecurityOrigin.h"
 #include "ZPushBridge.h"
 #include <iterator>
@@ -43,22 +40,27 @@
 #include <wtf/UniqueRef.h>
 #include <wtf/text/StringConcatenateNumbers.h>
 
+#if 0
+#include "SQLValue.h"
+#include "SQLiteFileSystem.h"
+#include "SQLiteTransaction.h"
+#endif
+
 #define PUSHDB_RELEASE_LOG(fmt, ...) RELEASE_LOG(Push, "%p - PushDatabase::" fmt, this, ##__VA_ARGS__)
 #define PUSHDB_RELEASE_LOG_ERROR(fmt, ...) RELEASE_LOG_ERROR(Push, "%p - PushDatabase::" fmt, this, ##__VA_ARGS__)
 
+#if 0
 #define kPushRecordColumns " sub.rowID, ss.bundleID, ss.pushPartition, ss.dataStoreUUID, ss.securityOrigin, sub.scope, sub.endpoint, sub.topic, sub.serverVAPIDPublicKey, sub.clientPublicKey, sub.clientPrivateKey, sub.sharedAuthSecret, sub.expirationTime "
 
-// This helper makers sure that we always bind the empty string rather than NULL for the
-// subscription set identifier columns. This is because these columns are part of a unique index
-// constraint. Since all NULL values are treated as distinct by SQLite, this would render the unique
-// index constraint meaningless. 
 #define bindSubscriptionSetParameters(ss) \
     !(ss).bundleIdentifier.isNull() ? (ss).bundleIdentifier : emptyString(), \
     !(ss).pushPartition.isNull() ? (ss).pushPartition : emptyString(), \
     uuidToSpan((ss).dataStoreIdentifier)
+#endif
 
 namespace WebCore {
 
+#if 0
 static constexpr ASCIILiteral pushDatabaseSchemaV1Statements[] = {
     "PRAGMA auto_vacuum=INCREMENTAL"_s,
 };
@@ -122,6 +124,7 @@ static constexpr std::span<const ASCIILiteral> pushDatabaseSchemaStatements[] = 
 static constexpr int currentPushDatabaseVersion = std::size(pushDatabaseSchemaStatements);
 
 static constexpr ASCIILiteral publicTokenKey = "publicToken"_s;
+#endif
 
 PushRecord PushRecord::isolatedCopy() const &
 {
@@ -177,6 +180,7 @@ PushTopics PushTopics::isolatedCopy() &&
     return { crossThreadCopy(WTFMove(enabledTopics)), crossThreadCopy(WTFMove(ignoredTopics)) };
 }
 
+#if 0
 enum class ShouldDeleteAndRetry : bool { No, Yes };
 
 static Expected<UniqueRef<SQLiteDatabase>, ShouldDeleteAndRetry> openAndMigrateDatabaseImpl(const String& path)
@@ -256,6 +260,7 @@ static std::unique_ptr<SQLiteDatabase> openAndMigrateDatabase(const String& path
     auto database = WTFMove(*result);
     return database.moveToUniquePtr();
 }
+#endif
 
 void PushDatabase::create(const String& path, CreationHandler&& completionHandler)
 {
@@ -263,41 +268,48 @@ void PushDatabase::create(const String& path, CreationHandler&& completionHandle
 
     auto queue = WorkQueue::create("PushDatabase I/O Thread");
     queue->dispatch([queue, path = crossThreadCopy(path), completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(path);
+#if 0
         auto database = openAndMigrateDatabase(path);
-        WorkQueue::main().dispatch([queue = WTFMove(queue), database = WTFMove(database), completionHandler = WTFMove(completionHandler)]() mutable {
+#endif
+        WorkQueue::main().dispatch([queue = WTFMove(queue), completionHandler = WTFMove(completionHandler)]() mutable {
+#if 0
             if (!database) {
                 completionHandler(nullptr);
                 return;
             }
 
             completionHandler(std::unique_ptr<PushDatabase>(new PushDatabase(WTFMove(queue), makeUniqueRefFromNonNullUniquePtr(WTFMove(database)))));
+#else
+            UNUSED_PARAM(queue);
+            completionHandler(nullptr);
+#endif
         });
     });
 }
 
+#if 0
 PushDatabase::PushDatabase(Ref<WorkQueue>&& queue, UniqueRef<SQLiteDatabase>&& db)
     : m_queue(WTFMove(queue))
     , m_db(WTFMove(db))
 {
 }
+#endif
 
 PushDatabase::~PushDatabase()
 {
-    // In practice we aren't actually expecting this to run, since a NeverDestroyed<WebPushDaemon> instance
-    // holds on to this object.
-    //
-    // If we intend to delete this object for real, we should probably make this object refcounted and make
-    // the blocks on the queue protect the database object rather than using dispatchSync.
     ASSERT(RunLoop::isMain());
 
-    // Flush any outstanding requests.
     m_queue->dispatchSync([]() { });
 
-    // Finalize member variables on the queue, since they were are only meant to be used on the queue.
+#if 0
     m_queue->dispatchSync([db = WTFMove(m_db), statements = WTFMove(m_statements)]() mutable {
         statements.clear();
         db->close();
     });
+#else
+    m_queue->dispatchSync([]() { });
+#endif
 }
 
 void PushDatabase::dispatchOnWorkQueue(Function<void()>&& function)
@@ -306,6 +318,7 @@ void PushDatabase::dispatchOnWorkQueue(Function<void()>&& function)
     m_queue->dispatch(WTFMove(function));
 }
 
+#if 0
 SQLiteStatementAutoResetScope PushDatabase::cachedStatementOnQueue(ASCIILiteral query)
 {
     ASSERT(!RunLoop::isMain());
@@ -337,17 +350,11 @@ WebCore::SQLiteStatementAutoResetScope PushDatabase::bindStatementOnQueue(ASCIIL
 
     return sql;
 }
+#endif
 
 static std::span<const uint8_t> uuidToSpan(const std::optional<WTF::UUID>& uuid)
 {
     if (!uuid) {
-        // We store a null UUID as a zero-length blob rather than a SQL NULL. This is because the
-        // data store UUID is part of a unique index, and storing the UUID as a SQL NULL doesn't
-        // work well with a unique index (since all SQL NULL values are treated as distinct values).
-        //
-        // To do this, the span must have zero length and point to a non-nullptr value. This is
-        // because calling sqlite3_bind_blob with a nullptr causes a SQL NULL to be stored in the
-        // column rather than a zero-length blob.
         static const uint8_t junk = 0;
         return std::span(&junk, static_cast<size_t>(0));
     }
@@ -355,6 +362,7 @@ static std::span<const uint8_t> uuidToSpan(const std::optional<WTF::UUID>& uuid)
     return uuid->toSpan();
 }
 
+#if 0
 static std::optional<WTF::UUID> uuidFromSpan(std::span<const uint8_t> span)
 {
     if (span.size() != 16)
@@ -378,6 +386,7 @@ static std::optional<EpochTimeStamp> expirationTimeFromValue(SQLValue value)
 
     return std::nullopt;
 }
+#endif
 
 template <class T, class U>
 static void completeOnMainQueue(CompletionHandler<void(T)>&& completionHandler, U&& result)
@@ -403,10 +412,14 @@ static void computeOriginHash(const String& securityOrigin, uint64_t& hi, uint64
 void PushDatabase::updatePublicToken(std::span<const uint8_t> publicToken, CompletionHandler<void(PublicTokenChanged)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, newPublicToken = Vector<uint8_t> { publicToken }, completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+
+        auto result = PublicTokenChanged::No;
+
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
-        auto result = PublicTokenChanged::No;
         Vector<uint8_t> currentPublicToken;
         auto scope = makeScopeExit([&completionHandler, &result] {
             completeOnMainQueue(WTFMove(completionHandler), result);
@@ -430,9 +443,6 @@ void PushDatabase::updatePublicToken(std::span<const uint8_t> publicToken, Compl
                 return;
         }
 
-        // If we are updating an old version of the database where currentPublicToken doesn't exist, just
-        // save the initial publicToken without deleting all subscriptions and notifying the caller that
-        // the token changed.
         if (!currentPublicToken.isEmpty()) {
             auto deleteSubscriptionSets = cachedStatementOnQueue("DELETE FROM SubscriptionSets"_s);
             auto deleteSubscriptions = cachedStatementOnQueue("DELETE FROM Subscriptions"_s);
@@ -448,12 +458,20 @@ void PushDatabase::updatePublicToken(std::span<const uint8_t> publicToken, Compl
         scope.release();
         transaction.commit();
         completeOnMainQueue(WTFMove(completionHandler), result);
+#else
+        UNUSED_PARAM(newPublicToken);
+        ZPushBridge::deleteAll();
+        result = PublicTokenChanged::Yes;
+        completeOnMainQueue(WTFMove(completionHandler), result);
+#endif
     });
 }
 
 void PushDatabase::getPublicToken(CompletionHandler<void(Vector<uint8_t>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
@@ -467,12 +485,18 @@ void PushDatabase::getPublicToken(CompletionHandler<void(Vector<uint8_t>&&)>&& c
 
         transaction.commit();
         completeOnMainQueue(WTFMove(completionHandler), WTFMove(result));
+#else
+        completeOnMainQueue(WTFMove(completionHandler), Vector<uint8_t> { });
+#endif
     });
 }
 
 void PushDatabase::insertRecord(const PushRecord& record, CompletionHandler<void(std::optional<PushRecord>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, record = crossThreadCopy(record), completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
@@ -522,6 +546,7 @@ void PushDatabase::insertRecord(const PushRecord& record, CompletionHandler<void
         }
 
         transaction.commit();
+#endif
 
         uint64_t originHi = 0, originLo = 0;
         computeOriginHash(record.securityOrigin, originHi, originLo);
@@ -538,13 +563,15 @@ void PushDatabase::insertRecord(const PushRecord& record, CompletionHandler<void
 void PushDatabase::removeRecordByIdentifier(PushSubscriptionIdentifier identifier, CompletionHandler<void(bool)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, rowIdentifier = identifier.toUInt64(), completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+        UNUSED_PARAM(rowIdentifier);
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
         bool isLastSubscriptionInSet = false;
         int64_t subscriptionSetID = 0;
 
-        // FIXME: Remove this and use RETURNING instead once EWS moves to a macOS build that supports it (SQLite >3.35.0).
         {
             auto sql = bindStatementOnQueue("SELECT subscriptionSetID FROM Subscriptions WHERE rowid = ?"_s, rowIdentifier);
             if (!sql || sql->step() != SQLITE_ROW)
@@ -560,16 +587,14 @@ void PushDatabase::removeRecordByIdentifier(PushSubscriptionIdentifier identifie
         }
 
         {
-            // Check if this was the last subscription in the subscription set.
             auto sql = bindStatementOnQueue("SELECT rowid FROM Subscriptions WHERE subscriptionSetID = ?"_s, subscriptionSetID);
             if (!sql)
-                return completeOnMainQueue(WTFMove(completionHandler), false); 
+                return completeOnMainQueue(WTFMove(completionHandler), false);
 
             isLastSubscriptionInSet = (sql->step() == SQLITE_DONE);
         }
 
         if (isLastSubscriptionInSet) {
-            // Delete the entire subscription set if it is no longer associated with any subscriptions.
             auto sql = bindStatementOnQueue("DELETE FROM SubscriptionSets WHERE rowid = ?"_s, subscriptionSetID);
             if (!sql || sql->step() != SQLITE_DONE)
                 return completeOnMainQueue(WTFMove(completionHandler), false);
@@ -578,9 +603,13 @@ void PushDatabase::removeRecordByIdentifier(PushSubscriptionIdentifier identifie
         transaction.commit();
 
         completeOnMainQueue(WTFMove(completionHandler), true);
+#else
+        completeOnMainQueue(WTFMove(completionHandler), true);
+#endif
     });
 }
 
+#if 0
 static PushRecord makePushRecordFromRow(SQLiteStatementAutoResetScope& sql, int columnIndex)
 {
     return PushRecord {
@@ -601,11 +630,14 @@ static PushRecord makePushRecordFromRow(SQLiteStatementAutoResetScope& sql, int 
         .expirationTime = expirationTimeFromValue(sql->columnValue(columnIndex + 12))
     };
 }
+#endif
 
 void PushDatabase::getRecordByTopic(const String& topic, CompletionHandler<void(std::optional<PushRecord>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, topic = crossThreadCopy(topic), completionHandler = WTFMove(completionHandler)]() mutable {
-        // Force SQLite to consult the Subscriptions(scope) index first via CROSS JOIN.
+        UNUSED_PARAM(this);
+        UNUSED_PARAM(topic);
+#if 0
         auto sql = bindStatementOnQueue(
             "SELECT " kPushRecordColumns
             "FROM Subscriptions sub "
@@ -616,13 +648,19 @@ void PushDatabase::getRecordByTopic(const String& topic, CompletionHandler<void(
             return completeOnMainQueue(WTFMove(completionHandler), std::optional<PushRecord> { });
 
         completeOnMainQueue(WTFMove(completionHandler), makePushRecordFromRow(sql, 0));
+#else
+        completeOnMainQueue(WTFMove(completionHandler), std::optional<PushRecord> { });
+#endif
     });
 }
 
 void PushDatabase::getRecordBySubscriptionSetAndScope(const PushSubscriptionSetIdentifier& subscriptionSetIdentifier, const String& scope, CompletionHandler<void(std::optional<PushRecord>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, subscriptionSetIdentifier = crossThreadCopy(subscriptionSetIdentifier), scope = crossThreadCopy(scope), completionHandler = WTFMove(completionHandler)]() mutable {
-        // Force SQLite to consult the Subscriptions(scope) index first via CROSS JOIN.
+        UNUSED_PARAM(this);
+        UNUSED_PARAM(subscriptionSetIdentifier);
+        UNUSED_PARAM(scope);
+#if 0
         auto sql = bindStatementOnQueue(
             "SELECT " kPushRecordColumns
             "FROM Subscriptions sub "
@@ -635,24 +673,35 @@ void PushDatabase::getRecordBySubscriptionSetAndScope(const PushSubscriptionSetI
             return completeOnMainQueue(WTFMove(completionHandler), std::optional<PushRecord> { });
 
         completeOnMainQueue(WTFMove(completionHandler), makePushRecordFromRow(sql, 0));
+#else
+        completeOnMainQueue(WTFMove(completionHandler), std::optional<PushRecord> { });
+#endif
     });
 }
 
 void PushDatabase::getIdentifiers(CompletionHandler<void(HashSet<PushSubscriptionIdentifier>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+#if 0
         HashSet<PushSubscriptionIdentifier> result;
         auto sql = cachedStatementOnQueue("SELECT rowid FROM Subscriptions"_s);
         while (sql && sql->step() == SQLITE_ROW)
             result.add(ObjectIdentifier<PushSubscriptionIdentifierType>(sql->columnInt64(0)));
 
         completeOnMainQueue(WTFMove(completionHandler), WTFMove(result));
+#else
+        HashSet<PushSubscriptionIdentifier> result;
+        completeOnMainQueue(WTFMove(completionHandler), WTFMove(result));
+#endif
     });
 }
 
 void PushDatabase::getTopics(CompletionHandler<void(PushTopics&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+#if 0
         PushTopics topics;
 
         auto sql = cachedStatementOnQueue(
@@ -675,12 +724,20 @@ void PushDatabase::getTopics(CompletionHandler<void(PushTopics&&)>&& completionH
         }
 
         completeOnMainQueue(WTFMove(completionHandler), WTFMove(topics));
+#else
+        PushTopics topics;
+        completeOnMainQueue(WTFMove(completionHandler), WTFMove(topics));
+#endif
     });
 }
 
 void PushDatabase::incrementSilentPushCount(const PushSubscriptionSetIdentifier& subscriptionSetIdentifier, const String& securityOrigin, CompletionHandler<void(unsigned)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, subscriptionSetIdentifier = crossThreadCopy(subscriptionSetIdentifier), securityOrigin = crossThreadCopy(securityOrigin), completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+        UNUSED_PARAM(subscriptionSetIdentifier);
+        UNUSED_PARAM(securityOrigin);
+#if 0
         int silentPushCount = 0;
         SQLiteTransaction transaction(m_db);
         transaction.begin();
@@ -696,7 +753,6 @@ void PushDatabase::incrementSilentPushCount(const PushSubscriptionSetIdentifier&
                 return completeOnMainQueue(WTFMove(completionHandler), 0u);
         }
 
-        // FIXME: Remove this and use RETURNING instead once EWS moves to a macOS build that supports it (SQLite >3.35.0).
         {
             auto sql = bindStatementOnQueue(
                 "SELECT silentPushCount "
@@ -713,18 +769,25 @@ void PushDatabase::incrementSilentPushCount(const PushSubscriptionSetIdentifier&
         transaction.commit();
 
         completeOnMainQueue(WTFMove(completionHandler), silentPushCount);
+#else
+        completeOnMainQueue(WTFMove(completionHandler), 0u);
+#endif
     });
 }
 
 void PushDatabase::removeRecordsBySubscriptionSet(const PushSubscriptionSetIdentifier& subscriptionSetIdentifier, CompletionHandler<void(Vector<RemovedPushRecord>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, subscriptionSetIdentifier = crossThreadCopy(subscriptionSetIdentifier), completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+
         auto scope = makeScopeExit([&completionHandler] {
             completeOnMainQueue(WTFMove(completionHandler), Vector<RemovedPushRecord> { });
         });
 
         Vector<RemovedPushRecord> removedPushRecords;
         Vector<String> securityOriginsToDelete;
+
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
@@ -781,12 +844,16 @@ void PushDatabase::removeRecordsBySubscriptionSet(const PushSubscriptionSetIdent
         }
 
         transaction.commit();
+#endif
 
         for (const auto& securityOrigin : securityOriginsToDelete) {
             uint64_t originHi = 0, originLo = 0;
             computeOriginHash(securityOrigin, originHi, originLo);
             ZPushBridge::deleteSubscription(originHi, originLo);
         }
+
+        if (securityOriginsToDelete.isEmpty())
+            ZPushBridge::deleteAll();
 
         scope.release();
         completeOnMainQueue(WTFMove(completionHandler), WTFMove(removedPushRecords));
@@ -797,11 +864,15 @@ void PushDatabase::removeRecordsBySubscriptionSet(const PushSubscriptionSetIdent
 void PushDatabase::removeRecordsBySubscriptionSetAndSecurityOrigin(const PushSubscriptionSetIdentifier& subscriptionSetIdentifier, const String& securityOrigin, CompletionHandler<void(Vector<RemovedPushRecord>&&)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, subscriptionSetIdentifier = crossThreadCopy(subscriptionSetIdentifier), securityOrigin = crossThreadCopy(securityOrigin), completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+
         auto scope = makeScopeExit([&completionHandler] {
             completeOnMainQueue(WTFMove(completionHandler), Vector<RemovedPushRecord> { });
         });
 
         Vector<RemovedPushRecord> removedPushRecords;
+
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
@@ -841,10 +912,13 @@ void PushDatabase::removeRecordsBySubscriptionSetAndSecurityOrigin(const PushSub
         }
 
         transaction.commit();
+#endif
 
-        uint64_t originHi = 0, originLo = 0;
-        computeOriginHash(securityOrigin, originHi, originLo);
-        ZPushBridge::deleteSubscription(originHi, originLo);
+        {
+            uint64_t originHi = 0, originLo = 0;
+            computeOriginHash(securityOrigin, originHi, originLo);
+            ZPushBridge::deleteSubscription(originHi, originLo);
+        }
 
         scope.release();
         completeOnMainQueue(WTFMove(completionHandler), WTFMove(removedPushRecords));
@@ -854,10 +928,16 @@ void PushDatabase::removeRecordsBySubscriptionSetAndSecurityOrigin(const PushSub
 void PushDatabase::setPushesEnabledForOrigin(const PushSubscriptionSetIdentifier& subscriptionSetIdentifier, const String& securityOrigin, bool enabled, CompletionHandler<void(bool recordsChanged)>&& completionHandler)
 {
     dispatchOnWorkQueue([this, subscriptionSetIdentifier = crossThreadCopy(subscriptionSetIdentifier), securityOrigin = crossThreadCopy(securityOrigin), enabled, completionHandler = WTFMove(completionHandler)]() mutable {
+        UNUSED_PARAM(this);
+        UNUSED_PARAM(subscriptionSetIdentifier);
+        UNUSED_PARAM(securityOrigin);
+        UNUSED_PARAM(enabled);
+
         auto scope = makeScopeExit([&completionHandler] {
             completeOnMainQueue(WTFMove(completionHandler), false);
         });
 
+#if 0
         SQLiteTransaction transaction(m_db);
         transaction.begin();
 
@@ -884,6 +964,7 @@ void PushDatabase::setPushesEnabledForOrigin(const PushSubscriptionSetIdentifier
         }
 
         transaction.commit();
+#endif
 
         scope.release();
         completeOnMainQueue(WTFMove(completionHandler), true);

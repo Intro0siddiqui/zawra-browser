@@ -54,11 +54,13 @@
 #include "WebsiteDataStoreParameters.h"
 #include <WebCore/ApplicationCacheStorage.h>
 #include <WebCore/CredentialStorage.h>
+#if ENABLE(WEBSQL)
 #include <WebCore/DatabaseTracker.h>
+#include <WebCore/OriginLock.h>
+#endif
 #include <WebCore/HTMLMediaElement.h>
 #include <WebCore/NetworkStorageSession.h>
 #include <WebCore/NotificationResources.h>
-#include <WebCore/OriginLock.h>
 #include <WebCore/RegistrableDomain.h>
 #include <WebCore/ResourceRequest.h>
 #include <WebCore/SearchPopupMenu.h>
@@ -404,12 +406,14 @@ void WebsiteDataStore::resolveDirectoriesIfNecessary()
     }
 
     // Clear data of deprecated types asynchronously.
+#if ENABLE(WEBSQL)
     if (auto webSQLDirectory = m_configuration->webSQLDatabaseDirectory(); !webSQLDirectory.isEmpty()) {
         m_queue->dispatch([webSQLDirectory = webSQLDirectory.isolatedCopy()]() {
             WebCore::DatabaseTracker::trackerWithDatabasePath(webSQLDirectory)->deleteAllDatabasesImmediately();
             FileSystem::deleteEmptyDirectory(webSQLDirectory);
         });
     }
+#endif
 }
 
 static WebsiteDataStore::ProcessAccessType computeNetworkProcessAccessTypeForDataFetch(OptionSet<WebsiteDataType> dataTypes, bool isNonPersistentStore)

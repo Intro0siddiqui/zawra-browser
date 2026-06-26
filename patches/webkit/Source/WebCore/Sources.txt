@@ -180,9 +180,7 @@ Modules/indexeddb/server/MemoryIndexCursor.cpp
 Modules/indexeddb/server/MemoryObjectStore.cpp
 Modules/indexeddb/server/MemoryObjectStoreCursor.cpp
 Modules/indexeddb/server/ServerOpenDBRequest.cpp
-Modules/indexeddb/server/SQLiteIDBBackingStore.cpp
-Modules/indexeddb/server/SQLiteIDBCursor.cpp
-Modules/indexeddb/server/SQLiteIDBTransaction.cpp
+
 Modules/indexeddb/server/UniqueIDBDatabase.cpp
 Modules/indexeddb/server/UniqueIDBDatabaseConnection.cpp
 Modules/indexeddb/server/UniqueIDBDatabaseTransaction.cpp
@@ -2462,14 +2460,6 @@ platform/network/SameSiteInfo.cpp
 platform/network/SynchronousLoaderClient.cpp
 platform/network/TimingAllowOrigin.cpp
 
-platform/sql/SQLiteAuthorizer.cpp
-platform/sql/SQLiteDatabase.cpp
-platform/sql/SQLiteDatabaseTracker.cpp
-platform/sql/SQLiteFileSystem.cpp
-platform/sql/SQLiteStatement.cpp
-platform/sql/SQLiteStatementAutoResetScope.cpp
-platform/sql/SQLiteTransaction.cpp
-
 platform/text/BidiContext.cpp
 platform/text/DateTimeFormat.cpp
 platform/text/LocaleToScriptMapping.cpp
@@ -3356,8 +3346,8 @@ JSDataCue.cpp
 JSDataTransfer.cpp
 JSDataTransferItem.cpp
 JSDataTransferItemList.cpp
-// DISABLED_WEBSQL: JSDatabase.cpp
-// DISABLED_WEBSQL: JSDatabaseCallback.cpp
+JSDatabase.cpp
+JSDatabaseCallback.cpp
 JSDecompressionStream.cpp
 JSDecompressionStreamDecoder.cpp
 JSDedicatedWorkerGlobalScope.cpp
@@ -4051,14 +4041,14 @@ JSRsaKeyGenParams.cpp
 JSRsaOaepParams.cpp
 JSRsaOtherPrimesInfo.cpp
 JSRsaPssParams.cpp
-// DISABLED_WEBSQL: JSSQLError.cpp
-// DISABLED_WEBSQL: JSSQLResultSet.cpp
-// DISABLED_WEBSQL: JSSQLResultSetRowList.cpp
-// DISABLED_WEBSQL: JSSQLStatementCallback.cpp
-// DISABLED_WEBSQL: JSSQLStatementErrorCallback.cpp
-// DISABLED_WEBSQL: JSSQLTransaction.cpp
-// DISABLED_WEBSQL: JSSQLTransactionCallback.cpp
-// DISABLED_WEBSQL: JSSQLTransactionErrorCallback.cpp
+JSSQLError.cpp
+JSSQLResultSet.cpp
+JSSQLResultSetRowList.cpp
+JSSQLStatementCallback.cpp
+JSSQLStatementErrorCallback.cpp
+JSSQLTransaction.cpp
+JSSQLTransactionCallback.cpp
+JSSQLTransactionErrorCallback.cpp
 JSSVGAElement.cpp
 JSSVGAngle.cpp
 JSSVGAnimateColorElement.cpp

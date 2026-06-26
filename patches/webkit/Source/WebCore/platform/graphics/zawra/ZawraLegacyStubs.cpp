@@ -4,14 +4,6 @@
 #include "GLContext.h"
 #include "PlatformDisplay.h"
 
-#if USE(LIBEPOXY)
-#include "EpoxyEGL.h"
-#else
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES2/gl2.h>
-#endif
-
 #include <cstring>
 #include <mutex>
 #include <wtf/ThreadSpecific.h>
@@ -39,20 +31,10 @@ GLContext::GLContext(PlatformDisplay& display, EGLContext context, EGLSurface su
     , m_config(config)
     , m_type(type)
 {
-    RELEASE_ASSERT(m_display.eglDisplay() != EGL_NO_DISPLAY);
-    RELEASE_ASSERT(context != EGL_NO_CONTEXT);
 }
 
 GLContext::~GLContext()
 {
-    EGLDisplay display = m_display.eglDisplay();
-    if (m_context) {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroyContext(display, m_context);
-    }
-    if (m_surface)
-        eglDestroySurface(display, m_surface);
     if (this == *currentContext())
         *currentContext() = nullptr;
 }
@@ -64,11 +46,8 @@ GLContext* GLContext::current()
 
 bool GLContext::makeContextCurrent()
 {
-    ASSERT(m_context);
     *currentContext() = this;
-    if (eglGetCurrentContext() == m_context)
-        return true;
-    return eglMakeCurrent(m_display.eglDisplay(), m_surface, m_surface, m_context);
+    return true;
 }
 
 bool GLContext::isExtensionSupported(const char* extensionList, const char* extension)
@@ -92,26 +71,7 @@ GCGLContext GLContext::platformContext() const
 
 const char* GLContext::lastErrorString()
 {
-    switch (eglGetError()) {
-#define CASE_RETURN_STRING(name) case name: return #name
-        CASE_RETURN_STRING(EGL_SUCCESS);
-        CASE_RETURN_STRING(EGL_NOT_INITIALIZED);
-        CASE_RETURN_STRING(EGL_BAD_ACCESS);
-        CASE_RETURN_STRING(EGL_BAD_ALLOC);
-        CASE_RETURN_STRING(EGL_BAD_ATTRIBUTE);
-        CASE_RETURN_STRING(EGL_BAD_CONFIG);
-        CASE_RETURN_STRING(EGL_BAD_CONTEXT);
-        CASE_RETURN_STRING(EGL_BAD_CURRENT_SURFACE);
-        CASE_RETURN_STRING(EGL_BAD_DISPLAY);
-        CASE_RETURN_STRING(EGL_BAD_SURFACE);
-        CASE_RETURN_STRING(EGL_BAD_MATCH);
-        CASE_RETURN_STRING(EGL_BAD_PARAMETER);
-        CASE_RETURN_STRING(EGL_BAD_NATIVE_PIXMAP);
-        CASE_RETURN_STRING(EGL_BAD_NATIVE_WINDOW);
-        CASE_RETURN_STRING(EGL_CONTEXT_LOST);
-#undef CASE_RETURN_STRING
-    default: return "Unknown EGL error";
-    }
+    return "No error (Vulkan backend)";
 }
 
 std::unique_ptr<GLContext> GLContext::create(GLNativeWindowType window, PlatformDisplay& platformDisplay)
@@ -124,85 +84,34 @@ void GLContext::swapBuffers()
 {
     if (m_type == Surfaceless)
         return;
-    ASSERT(m_surface);
-    eglSwapBuffers(m_display.eglDisplay(), m_surface);
     ZawraGraphicsBridge::singleton().presentFrame();
 }
 
 std::unique_ptr<GLContext> GLContext::createSharing(PlatformDisplay& platformDisplay)
 {
-    EGLDisplay display = platformDisplay.eglDisplay();
-    if (display == EGL_NO_DISPLAY) {
-        WTFLogAlways("ZawraLegacyStubs: No EGL display available");
-        return nullptr;
-    }
-
-    if (eglBindAPI(EGL_OPENGL_ES_API) == EGL_FALSE) {
-        WTFLogAlways("ZawraLegacyStubs: Failed to bind EGL OpenGL ES API");
-        return nullptr;
-    }
-
-    EGLConfig config;
-    EGLint configCount;
-    EGLint configAttribs[] = {
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
-        EGL_ALPHA_SIZE, 8,
-        EGL_STENCIL_SIZE, 8,
-        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_NONE
-    };
-    if (!eglChooseConfig(display, configAttribs, &config, 1, &configCount) || !configCount) {
-        WTFLogAlways("ZawraLegacyStubs: Cannot find EGL config: %s", lastErrorString());
-        return nullptr;
-    }
-
-    EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
-    EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttribs);
-    if (context == EGL_NO_CONTEXT) {
-        WTFLogAlways("ZawraLegacyStubs: Cannot create EGL context: %s", lastErrorString());
-        return nullptr;
-    }
-
-    EGLint surfaceAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
-    EGLSurface surface = eglCreatePbufferSurface(display, config, surfaceAttribs);
-    if (surface == EGL_NO_SURFACE) {
-        WTFLogAlways("ZawraLegacyStubs: Cannot create EGL pbuffer surface: %s", lastErrorString());
-        eglDestroyContext(display, context);
-        return nullptr;
-    }
-
-    return makeUnique<GLContext>(platformDisplay, context, surface, config, PbufferSurface);
+    UNUSED_PARAM(platformDisplay);
+    return makeUnique<GLContext>(platformDisplay, nullptr, nullptr, nullptr, PbufferSurface);
 }
 
 GLContext::ScopedGLContextCurrent::ScopedGLContextCurrent(GLContext& context)
     : m_context(context)
 {
-    auto eglContext = eglGetCurrentContext();
     m_previous.glContext = *currentContext();
-    if (!m_previous.glContext || m_previous.glContext->platformContext() != eglContext) {
-        m_previous.context = eglContext;
-        m_previous.display = eglGetCurrentDisplay();
-        m_previous.readSurface = eglGetCurrentSurface(EGL_READ);
-        m_previous.drawSurface = eglGetCurrentSurface(EGL_DRAW);
-    }
+    m_previous.context = nullptr;
+    m_previous.display = nullptr;
+    m_previous.readSurface = nullptr;
+    m_previous.drawSurface = nullptr;
     m_context.makeContextCurrent();
 }
 
 GLContext::ScopedGLContextCurrent::~ScopedGLContextCurrent()
 {
-    if (m_previous.glContext && m_previous.context == EGL_NO_CONTEXT) {
+    if (m_previous.glContext) {
         m_previous.glContext->makeContextCurrent();
         return;
     }
 
-    if (m_previous.context)
-        eglMakeCurrent(m_previous.display, m_previous.drawSurface, m_previous.readSurface, m_previous.context);
-    else
-        m_context.unmakeContextCurrent();
-
+    m_context.unmakeContextCurrent();
     *currentContext() = m_previous.glContext;
 }
 
@@ -211,7 +120,6 @@ bool GLContext::unmakeContextCurrent()
     if (this != *currentContext())
         return false;
 
-    eglMakeCurrent(m_display.eglDisplay(), EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     *currentContext() = nullptr;
 
     return true;

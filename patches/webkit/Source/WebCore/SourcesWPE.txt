@@ -95,3 +95,7 @@ platform/unix/LoggingUnix.cpp
 platform/wpe/PlatformScreenWPE.cpp
 
 platform/xdg/MIMETypeRegistryXdg.cpp
+
+Modules/indexeddb/server/SQLiteIDBBackingStore.cpp
+
+platform/sql/SQLiteFileSystem.cpp

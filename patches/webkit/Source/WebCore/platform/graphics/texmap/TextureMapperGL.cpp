@@ -25,20 +25,73 @@
 #include "PlatformDisplay.h"
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <cstring>
 
 #define ZLOG(msg, ...) do { \
     fprintf(stderr, "[ZAWRA-BRIDGE pid=%d tid=%d] " msg "\n", getpid(), (int)syscall(SYS_gettid), ##__VA_ARGS__); \
     fflush(stderr); \
 } while(0)
 
-#if USE(LIBEPOXY)
-#include "EpoxyEGL.h"
-#else
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
-#endif
+extern "C" {
+    bool ZawraGraphics_Initialize();
+    void* ZawraGraphics_CreateSurface(void* window, unsigned int width, unsigned int height);
+    void ZawraGraphics_DestroySurface(void* handle);
+    void ZawraGraphics_SwapBuffers(void* handle);
+    int ZawraGraphics_ExportSurfaceFD(void* handle);
+
+    void* ZawraGraphics_BeginCommandBuffer(void* handle);
+    void ZawraGraphics_CmdClearColor(void* cmd, float r, float g, float b, float a);
+    void ZawraGraphics_SubmitCommandBuffer(void* handle, void* cmd);
+
+    void* ZawraGraphics_CreatePipeline(void* handle, const void* desc);
+    void ZawraGraphics_DestroyPipeline(void* handle, void* pipeline);
+    void ZawraGraphics_CmdBindPipeline(void* cmd, void* pipeline);
+
+    void* ZawraGraphics_CreateBuffer(void* handle, size_t size, unsigned int buffer_type);
+    void ZawraGraphics_DestroyBuffer(void* handle, void* buffer);
+    bool ZawraGraphics_UploadBuffer(void* handle, void* buffer, const void* data, size_t dataLen);
+    void ZawraGraphics_CmdBindVertexBuffer(void* cmd, void* buffer, size_t offset);
+
+    void ZawraGraphics_CmdDraw(void* cmd, unsigned int vertex_count, unsigned int instance_count, unsigned int first_vertex, unsigned int first_instance);
+
+    void ZawraGraphics_CmdSetViewport(void* cmd, float x, float y, float width, float height, float min_depth, float max_depth);
+    void ZawraGraphics_CmdSetScissor(void* cmd, int x, int y, unsigned int width, unsigned int height);
+
+    void* ZawraGraphics_CreateTexture(void* handle, const void* desc);
+    void ZawraGraphics_DestroyTexture(void* handle, void* texture);
+    bool ZawraGraphics_UploadTexture(void* handle, void* texture, const void* data, size_t dataLen);
+    void ZawraGraphics_BindTexture(void* cmd, void* texture, unsigned int binding);
+    void* ZawraGraphics_ImportTextureFD(void* handle, int fd, const void* desc);
+
+    void* ZawraGraphics_CreateUniformBuffer(void* handle, size_t size);
+    bool ZawraGraphics_UploadUniformBuffer(void* handle, void* buffer, const void* data, size_t len);
+    void ZawraGraphics_BindUniformBuffer(void* cmd, void* buffer, unsigned int binding, uint64_t offset);
+
+    void* ZawraGraphics_CreateShaderModule(void* handle, const void* spirv, size_t spirv_len);
+    void ZawraGraphics_DestroyShaderModule(void* handle, void* module);
+    void* ZawraGraphics_CreatePipelineFromShaders(void* handle, void* vert, void* frag);
+}
+
+struct ZGraphicsPipelineDesc {
+    const void* vertexShader;
+    size_t vertexShaderLen;
+    const void* fragmentShader;
+    size_t fragmentShaderLen;
+    uint32_t blendEnable;
+    uint32_t srcColorBlendFactor;
+    uint32_t dstColorBlendFactor;
+    uint32_t colorBlendOp;
+    uint32_t srcAlphaBlendFactor;
+    uint32_t dstAlphaBlendFactor;
+    uint32_t alphaBlendOp;
+};
+
+struct ZGraphicsTextureDesc {
+    uint32_t format;
+    uint32_t width;
+    uint32_t height;
+    void* externalHandle;
+};
 
 #if USE(TEXTURE_MAPPER_GL)
 
@@ -69,6 +122,42 @@
 
 namespace WebCore {
 
+struct ZGraphicsUniformData {
+    float modelViewMatrix[16];
+    float projectionMatrix[16];
+    float textureSpaceMatrix[16];
+    float textureColorSpaceMatrix[16];
+    float color[4];
+    float yuvToRgbMatrix[16];
+    float opacity;
+    float filterAmount;
+    float blurRadius[2];
+    float shadowOffset[2];
+    int32_t roundedRectCount;
+    float roundedRects[96];
+    float roundedRectInverseTransforms[384];
+};
+
+static void transformationMatrixToFloats(const TransformationMatrix& m, float out[16])
+{
+    out[0]  = static_cast<float>(m.m11());
+    out[1]  = static_cast<float>(m.m21());
+    out[2]  = static_cast<float>(m.m31());
+    out[3]  = static_cast<float>(m.m41());
+    out[4]  = static_cast<float>(m.m12());
+    out[5]  = static_cast<float>(m.m22());
+    out[6]  = static_cast<float>(m.m32());
+    out[7]  = static_cast<float>(m.m42());
+    out[8]  = static_cast<float>(m.m13());
+    out[9]  = static_cast<float>(m.m23());
+    out[10] = static_cast<float>(m.m33());
+    out[11] = static_cast<float>(m.m43());
+    out[12] = static_cast<float>(m.m14());
+    out[13] = static_cast<float>(m.m24());
+    out[14] = static_cast<float>(m.m34());
+    out[15] = static_cast<float>(m.m44());
+}
+
 class TextureMapperGLData {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -76,75 +165,55 @@ public:
     ~TextureMapperGLData();
 
     void initializeStencil();
-    GLuint getStaticVBO(GLenum target, GLsizeiptr, const void* data);
-    GLuint getVAO();
-    Ref<TextureMapperShaderProgram> getShaderProgram(TextureMapperShaderProgram::Options);
+    void* getStaticVBO(const void* data, size_t size);
+    void bindUniformData(const ZGraphicsUniformData& uniforms);
+
+    Ref<TextureMapperShaderProgram> getShaderProgram(TextureMapperShaderProgram::Options options)
+    {
+        uint32_t key = options.toRaw();
+        auto addResult = m_shaderPrograms.ensure(key,
+            [options] { return TextureMapperShaderProgram::create(options); });
+        return addResult.iterator->value;
+    }
+
+    void* surfaceHandle() const { return m_surfaceHandle; }
+    void setSurfaceHandle(void* h) { m_surfaceHandle = h; }
+    void* cmdBuffer() const { return m_cmdBuffer; }
+    void setCmdBuffer(void* cmd) { m_cmdBuffer = cmd; }
 
     TransformationMatrix projectionMatrix;
     TextureMapper::PaintFlags PaintFlags { 0 };
-    GLint previousProgram { 0 };
-    GLint previousVAO { 0 };
-    GLint targetFrameBuffer { 0 };
+    void* targetFrameBuffer { nullptr };
     bool didModifyStencil { false };
-    GLint previousScissorState { 0 };
-    GLint previousDepthState { 0 };
-    GLint viewport[4] { 0, };
-    GLint previousScissor[4] { 0, };
+    int viewport[4] { 0, };
     double zNear { 0 };
     double zFar { 0 };
     RefPtr<BitmapTexture> currentSurface;
     const BitmapTextureGL::FilterInfo* filterInfo { nullptr };
+    void* importedTexture { nullptr };
 
 private:
-    class SharedGLData : public RefCounted<SharedGLData> {
-    public:
-        static Ref<SharedGLData> currentSharedGLData(void* platformContext)
-        {
-            auto it = contextDataMap().find(platformContext);
-            if (it != contextDataMap().end())
-                return *it->value;
-
-            Ref<SharedGLData> data = adoptRef(*new SharedGLData);
-            contextDataMap().add(platformContext, data.ptr());
-            return data;
-        }
-
-        ~SharedGLData()
-        {
-            ASSERT(std::any_of(contextDataMap().begin(), contextDataMap().end(),
-                [this](auto& entry) { return entry.value == this; }));
-            contextDataMap().removeIf([this](auto& entry) { return entry.value == this; });
-        }
-
-    private:
-        friend class TextureMapperGLData;
-
-        using GLContextDataMap = HashMap<void*, SharedGLData*>;
-        static GLContextDataMap& contextDataMap()
-        {
-            static NeverDestroyed<GLContextDataMap> map;
-            return map;
-        }
-
-        SharedGLData() = default;
-
-        HashMap<unsigned, RefPtr<TextureMapperShaderProgram>> m_programs;
-    };
-
-    Ref<SharedGLData> m_sharedGLData;
-    HashMap<const void*, GLuint> m_vbos;
-    GLuint m_vao { 0 };
+    void* m_surfaceHandle { nullptr };
+    void* m_cmdBuffer { nullptr };
+    void* m_uniformBuffer { nullptr };
+    size_t m_uniformBufferSize { 0 };
+    HashMap<const void*, void*> m_vbos;
+    HashMap<uint32_t, Ref<TextureMapperShaderProgram>> m_shaderPrograms;
 };
 
 TextureMapperGLData::TextureMapperGLData(void* platformContext)
-    : m_sharedGLData(SharedGLData::currentSharedGLData(platformContext))
+    : m_surfaceHandle(nullptr)
 {
 }
 
 TextureMapperGLData::~TextureMapperGLData()
 {
-    for (auto& entry : m_vbos)
-        glDeleteBuffers(1, &entry.value);
+    if (m_surfaceHandle) {
+        for (auto& entry : m_vbos)
+            ZawraGraphics_DestroyBuffer(m_surfaceHandle, entry.value);
+        if (m_uniformBuffer)
+            ZawraGraphics_DestroyBuffer(m_surfaceHandle, m_uniformBuffer);
+    }
 }
 
 void TextureMapperGLData::initializeStencil()
@@ -157,35 +226,39 @@ void TextureMapperGLData::initializeStencil()
     if (didModifyStencil)
         return;
 
-    glClearStencil(0);
-    glClear(GL_STENCIL_BUFFER_BIT);
     didModifyStencil = true;
 }
 
-GLuint TextureMapperGLData::getStaticVBO(GLenum target, GLsizeiptr size, const void* data)
+void* TextureMapperGLData::getStaticVBO(const void* data, size_t size)
 {
     auto addResult = m_vbos.ensure(data,
-        [target, size, data] {
-            GLuint vbo = 0;
-            glGenBuffers(1, &vbo);
-            glBindBuffer(target, vbo);
-            glBufferData(target, size, data, GL_STATIC_DRAW);
+        [this, data, size] {
+            if (!m_surfaceHandle) return (void*)nullptr;
+            void* vbo = ZawraGraphics_CreateBuffer(m_surfaceHandle, size, 1);
+            if (vbo)
+                ZawraGraphics_UploadBuffer(m_surfaceHandle, vbo, data, size);
             return vbo;
         });
     return addResult.iterator->value;
 }
 
-GLuint TextureMapperGLData::getVAO()
+void TextureMapperGLData::bindUniformData(const ZGraphicsUniformData& uniforms)
 {
-    return m_vao;
-}
+    if (!m_surfaceHandle || !m_cmdBuffer)
+        return;
 
-Ref<TextureMapperShaderProgram> TextureMapperGLData::getShaderProgram(TextureMapperShaderProgram::Options options)
-{
-    ASSERT(!options.isEmpty());
-    auto addResult = m_sharedGLData->m_programs.ensure(options.toRaw(),
-        [options] { return TextureMapperShaderProgram::create(options); });
-    return *addResult.iterator->value;
+    size_t needed = sizeof(ZGraphicsUniformData);
+    if (!m_uniformBuffer || m_uniformBufferSize < needed) {
+        if (m_uniformBuffer)
+            ZawraGraphics_DestroyBuffer(m_surfaceHandle, m_uniformBuffer);
+        m_uniformBuffer = ZawraGraphics_CreateUniformBuffer(m_surfaceHandle, needed);
+        m_uniformBufferSize = needed;
+    }
+
+    if (m_uniformBuffer) {
+        ZawraGraphics_UploadUniformBuffer(m_surfaceHandle, m_uniformBuffer, &uniforms, sizeof(ZGraphicsUniformData));
+        ZawraGraphics_BindUniformBuffer(m_cmdBuffer, m_uniformBuffer, 0, 0);
+    }
 }
 
 TextureMapperGL::TextureMapperGL()
@@ -216,173 +289,87 @@ ClipStack& TextureMapperGL::clipStack()
 
 void TextureMapperGL::beginPainting(PaintFlags flags, BitmapTexture* surface)
 {
-    glGetIntegerv(GL_CURRENT_PROGRAM, &data().previousProgram);
-    data().previousScissorState = glIsEnabled(GL_SCISSOR_TEST);
-    data().previousDepthState = glIsEnabled(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glEnable(GL_SCISSOR_TEST);
     data().didModifyStencil = false;
-    glGetIntegerv(GL_VIEWPORT, data().viewport);
-    glGetIntegerv(GL_SCISSOR_BOX, data().previousScissor);
-    m_clipStack.reset(IntRect(0, 0, data().viewport[2], data().viewport[3]), flags & PaintingMirrored ? ClipStack::YAxisMode::Default : ClipStack::YAxisMode::Inverted);
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &data().targetFrameBuffer);
 
-    ZLOG("beginPainting: surface=%p, viewport=%dx%d, defaultFBO=%d",
-        surface, data().viewport[2], data().viewport[3], data().targetFrameBuffer);
+    ZLOG("beginPainting: surface=%p", surface);
 
-    // Zawra Graphics Hook: Import DMA-BUF FD as EGLImage, then create an FBO from it
-    // so WebKit's TextureMapper draws directly into the z-graphics RHI surface.
-    //
-    // Hook Logic & FD Lifecycle:
-    // 1. We retrieve the compositor's file descriptor via exportCompositorFD().
-    // 2. We verify the FD and construct the EGL attributes (EGL_LINUX_DMA_BUF_EXT).
-    // 3. We invoke platformDisplay.createEGLImage() to register the DMA-BUF with EGL.
-    // 4. Important: The EGL implementation duplicates/takes ownership of the underlying
-    //    DMA-BUF resource. Therefore, we must call close(fd) on our local descriptor
-    //    handle to avoid leaking file descriptors, regardless of whether EGL import
-    //    succeeded or failed.
-    // 5. If successful, we bind the EGLImage to GL_TEXTURE_2D and attach it to a new
-    //    FBO, redirecting WebKit's rendering target to the RHI surface.
     if (!surface) {
         int fd = ZawraGraphicsBridge::singleton().exportCompositorFD();
-        fprintf(stderr, "[ZAWRA-BRIDGE] exportCompositorFD returned fd=%d\n", fd);
-        fflush(stderr);
+        ZLOG("exportCompositorFD returned fd=%d", fd);
         if (fd >= 0) {
-            struct stat st;
-            if (fstat(fd, &st) == 0)
-                fprintf(stderr, "[ZAWRA-BRIDGE] fd valid, st.st_size=%ld, st.st_mode=%o\n", st.st_size, st.st_mode);
-            else
-                fprintf(stderr, "[ZAWRA-BRIDGE] fd fstat failed, errno=%d (%s)\n", errno, strerror(errno));
+            void* bridgeHandle = nullptr;
 
             auto& platformDisplay = PlatformDisplay::sharedDisplay();
-            EGLDisplay eglDisplay = platformDisplay.eglDisplay();
-            fprintf(stderr, "[ZAWRA-BRIDGE] eglDisplay=%p, EGL_NO_DISPLAY=%p\n", eglDisplay, EGL_NO_DISPLAY);
-            fprintf(stderr, "[ZAWRA-BRIDGE] EXT_image_dma_buf_import=%d\n", platformDisplay.eglExtensions().EXT_image_dma_buf_import);
-            fprintf(stderr, "[ZAWRA-BRIDGE] current EGL context=%p\n", eglGetCurrentContext());
-            fprintf(stderr, "[ZAWRA-BRIDGE] current EGL display=%p\n", eglGetCurrentDisplay());
-            fflush(stderr);
+            UNUSED_PARAM(platformDisplay);
 
-            if (eglDisplay != EGL_NO_DISPLAY && platformDisplay.eglExtensions().EXT_image_dma_buf_import) {
-                int width = ZawraGraphicsBridge::singleton().compositorWidth();
-                int height = ZawraGraphicsBridge::singleton().compositorHeight();
-                fprintf(stderr, "[ZAWRA-BRIDGE] compositor size=%dx%d\n", width, height);
+            int width = ZawraGraphicsBridge::singleton().compositorWidth();
+            int height = ZawraGraphicsBridge::singleton().compositorHeight();
+            ZLOG("compositor size=%dx%d", width, height);
 
-#ifndef EGL_LINUX_DMA_BUF_EXT
-#define EGL_LINUX_DMA_BUF_EXT          0x3270
-#endif
-#ifndef EGL_LINUX_DRM_FOURCC_EXT
-#define EGL_LINUX_DRM_FOURCC_EXT       0x3271
-#endif
-#ifndef EGL_DMA_BUF_PLANE0_FD_EXT
-#define EGL_DMA_BUF_PLANE0_FD_EXT      0x3272
-#endif
-#ifndef EGL_DMA_BUF_PLANE0_OFFSET_EXT
-#define EGL_DMA_BUF_PLANE0_OFFSET_EXT  0x3273
-#endif
-#ifndef EGL_DMA_BUF_PLANE0_PITCH_EXT
-#define EGL_DMA_BUF_PLANE0_PITCH_EXT   0x3274
-#endif
+            data().viewport[0] = 0;
+            data().viewport[1] = 0;
+            data().viewport[2] = width;
+            data().viewport[3] = height;
 
-                // DRM_FORMAT_RGBA8888 = fourcc_code('R','G','B','A') = 0x41424752
-                // z-graphics uses VK_FORMAT_R8G8B8A8_UNORM: memory layout R,G,B,A
-                // DRM_FORMAT_RGBA8888 describes exactly this memory layout.
-                const uint32_t drmFormat = 0x41424752;
-                int stride = width * 4;
+            ZGraphicsTextureDesc texDesc;
+            texDesc.format = 0;
+            texDesc.width = static_cast<uint32_t>(width);
+            texDesc.height = static_cast<uint32_t>(height);
+            texDesc.externalHandle = nullptr;
 
-                fprintf(stderr, "[ZAWRA-BRIDGE] Creating EGLImage: drmFormat=0x%08x, stride=%d, size=%dx%d\n",
-                    drmFormat, stride, width, height);
+            ZLOG("ImportTextureFD: fd=%d, size=%dx%d", fd, width, height);
 
-                Vector<EGLAttrib> attribs;
-                attribs.append(EGL_WIDTH); attribs.append(width);
-                attribs.append(EGL_HEIGHT); attribs.append(height);
-                attribs.append(EGL_LINUX_DRM_FOURCC_EXT); attribs.append(static_cast<EGLAttrib>(drmFormat));
-                attribs.append(EGL_DMA_BUF_PLANE0_FD_EXT); attribs.append(static_cast<EGLAttrib>(fd));
-                attribs.append(EGL_DMA_BUF_PLANE0_OFFSET_EXT); attribs.append(0);
-                attribs.append(EGL_DMA_BUF_PLANE0_PITCH_EXT); attribs.append(static_cast<EGLAttrib>(stride));
-                attribs.append(EGL_NONE);
-
-                EGLImage image = platformDisplay.createEGLImage(
-                    EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
-
-                EGLint eglErr = eglGetError();
-                fprintf(stderr, "[ZAWRA-BRIDGE] createEGLImage result=%p, EGL error=0x%04x\n", image, eglErr);
-
-                if (image != EGL_NO_IMAGE) {
-                    GLuint texture = 0;
-                    glGenTextures(1, &texture);
-                    glBindTexture(GL_TEXTURE_2D, texture);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-                    auto* imageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
-                        eglGetProcAddress("glEGLImageTargetTexture2DOES"));
-                    if (imageTargetTexture2DOES) {
-                        imageTargetTexture2DOES(GL_TEXTURE_2D, image);
-                        fprintf(stderr, "[ZAWRA-BRIDGE] glEGLImageTargetTexture2DOES OK, GL error=0x%04x\n", glGetError());
-                    } else {
-                        fprintf(stderr, "[ZAWRA-BRIDGE] WARNING: glEGLImageTargetTexture2DOES not found!\n");
-                    }
-
-                    GLuint fbo = 0;
-                    glGenFramebuffers(1, &fbo);
-                    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
-                    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-                    fprintf(stderr, "[ZAWRA-BRIDGE] FBO created=%d, status=0x%04x (want 0x8CD5=COMPLETE), GL error=0x%04x\n",
-                        fbo, fboStatus, glGetError());
-
-                    // Restore original FBO, then replace the saved value
-                    glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
-                    data().targetFrameBuffer = fbo;
-                } else {
-                    fprintf(stderr, "[ZAWRA-BRIDGE] FAILED to create EGLImage! GL error=0x%04x\n", glGetError());
-                }
-            } else {
-                fprintf(stderr, "[ZAWRA-BRIDGE] EGL display not ready or dma_buf_import not supported\n");
+            if (data().importedTexture) {
+                void* handle = data().surfaceHandle();
+                if (handle)
+                    ZawraGraphics_DestroyTexture(handle, data().importedTexture);
+                data().importedTexture = nullptr;
             }
+
+            void* importedTex = ZawraGraphics_ImportTextureFD(bridgeHandle, fd, &texDesc);
+            ZLOG("ImportTextureFD returned %p", importedTex);
+            data().importedTexture = importedTex;
+
             close(fd);
+
+            if (importedTex) {
+                void* cmd = ZawraGraphics_BeginCommandBuffer(bridgeHandle);
+                ZLOG("BeginCommandBuffer returned %p", cmd);
+                data().setCmdBuffer(cmd);
+                data().setSurfaceHandle(bridgeHandle);
+
+                if (cmd) {
+                    ZawraGraphics_CmdSetViewport(cmd, 0, 0, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f);
+                    ZawraGraphics_CmdSetScissor(cmd, 0, 0, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+                }
+            }
         } else {
-            fprintf(stderr, "[ZAWRA-BRIDGE] exportCompositorFD FAILED (returned -1)\n");
+            ZLOG("exportCompositorFD FAILED (returned -1)");
         }
     }
 
     data().PaintFlags = flags;
     bindSurface(surface);
-    fprintf(stderr, "[ZAWRA-BRIDGE] beginPainting done: targetFBO=%d\n", data().targetFrameBuffer);
+    ZLOG("beginPainting done");
 }
 
 void TextureMapperGL::endPainting()
 {
-    fprintf(stderr, "[ZAWRA-BRIDGE] endPainting: targetFBO=%d, glError=0x%04x\n",
-        data().targetFrameBuffer, glGetError());
-    glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
-    if (data().didModifyStencil) {
-        glClearStencil(1);
-        glClear(GL_STENCIL_BUFFER_BIT);
+    void* cmd = data().cmdBuffer();
+    void* handle = data().surfaceHandle();
+    ZLOG("endPainting: cmd=%p, handle=%p", cmd, handle);
+
+    if (cmd && handle) {
+        ZawraGraphics_SubmitCommandBuffer(handle, cmd);
+        data().setCmdBuffer(nullptr);
     }
 
-    glUseProgram(data().previousProgram);
-
-    glScissor(data().previousScissor[0], data().previousScissor[1], data().previousScissor[2], data().previousScissor[3]);
-    if (data().previousScissorState)
-        glEnable(GL_SCISSOR_TEST);
-    else
-        glDisable(GL_SCISSOR_TEST);
-
-    if (data().previousDepthState)
-        glEnable(GL_DEPTH_TEST);
-    else
-        glDisable(GL_DEPTH_TEST);
-
-    // Zawra Graphics Hook: Present the composed frame
     if (ZawraGraphicsBridge::singleton().exportCompositorFD() >= 0) {
-        fprintf(stderr, "[ZAWRA-BRIDGE] calling presentFrame()\n");
+        ZLOG("calling presentFrame()");
         ZawraGraphicsBridge::singleton().presentFrame();
-        fprintf(stderr, "[ZAWRA-BRIDGE] presentFrame done\n");
+        ZLOG("presentFrame done");
     } else {
-        fprintf(stderr, "[ZAWRA-BRIDGE] skipping presentFrame() (no valid compositor FD)\n");
+        ZLOG("skipping presentFrame() (no valid compositor FD)");
     }
 }
 
@@ -392,30 +379,29 @@ void TextureMapperGL::drawBorder(const Color& color, float width, const FloatRec
         return;
 
     Ref<TextureMapperShaderProgram> program = data().getShaderProgram(TextureMapperShaderProgram::SolidColor);
-    glUseProgram(program->programID());
 
     auto [r, g, b, a] = premultiplied(color.toColorTypeLossy<SRGBA<float>>()).resolved();
-    glUniform4f(program->colorLocation(), r, g, b, a);
-    glLineWidth(width);
+    UNUSED_PARAM(r);
+    UNUSED_PARAM(g);
+    UNUSED_PARAM(b);
+    UNUSED_PARAM(a);
+    UNUSED_PARAM(width);
 
-    draw(targetRect, modelViewMatrix, program.get(), GL_LINE_LOOP, !color.isOpaque() ? ShouldBlend : 0);
+    draw(targetRect, modelViewMatrix, program.get(), 0x0004, !color.isOpaque() ? ShouldBlend : 0);
 }
 
-// FIXME: drawNumber() should save a number texture-atlas and re-use whenever possible.
 void TextureMapperGL::drawNumber(int number, const Color& color, const FloatPoint& targetPoint, const TransformationMatrix& modelViewMatrix)
 {
     int pointSize = 8;
 
 #if USE(CAIRO)
     CString counterString = String::number(number).ascii();
-    // cairo_text_extents() requires a cairo_t, so dimensions need to be guesstimated.
     int width = counterString.length() * pointSize * 1.2;
     int height = pointSize * 1.5;
 
     cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     cairo_t* cr = cairo_create(surface);
 
-    // Since we won't swap R+B when uploading a texture, paint with the swapped R+B color.
     auto [r, g, b, a] = color.toColorTypeLossy<SRGBA<float>>().resolved();
     cairo_set_source_rgba(cr, b, g, r, a);
 
@@ -480,7 +466,6 @@ static TextureMapperShaderProgram::Options optionsForFilterType(FilterOperation:
     }
 }
 
-// Create a normal distribution of 21 values between -2 and 2.
 static const unsigned GaussianKernelHalfWidth = 11;
 static const float GaussianKernelStep = 0.2;
 
@@ -504,7 +489,6 @@ static float* gaussianKernel()
         sum += 2 * kernel[i];
     }
 
-    // Normalize the kernel.
     float scale = 1 / sum;
     for (unsigned i = 0; i < GaussianKernelHalfWidth; ++i)
         kernel[i] *= scale;
@@ -515,65 +499,15 @@ static float* gaussianKernel()
 
 static void prepareFilterProgram(TextureMapperShaderProgram& program, const FilterOperation& operation, unsigned pass, const IntSize& size, GLuint contentTexture)
 {
-    glUseProgram(program.programID());
-
-    switch (operation.type()) {
-    case FilterOperation::Type::Grayscale:
-    case FilterOperation::Type::Sepia:
-    case FilterOperation::Type::Saturate:
-    case FilterOperation::Type::HueRotate:
-        glUniform1f(program.filterAmountLocation(), static_cast<const BasicColorMatrixFilterOperation&>(operation).amount());
-        break;
-    case FilterOperation::Type::Invert:
-    case FilterOperation::Type::Brightness:
-    case FilterOperation::Type::Contrast:
-    case FilterOperation::Type::Opacity:
-        glUniform1f(program.filterAmountLocation(), static_cast<const BasicComponentTransferFilterOperation&>(operation).amount());
-        break;
-    case FilterOperation::Type::Blur: {
-        const BlurFilterOperation& blur = static_cast<const BlurFilterOperation&>(operation);
-        FloatSize radius;
-
-        // Blur is done in two passes, first horizontally and then vertically. The same shader is used for both.
-        if (pass)
-            radius.setHeight(floatValueForLength(blur.stdDeviation(), size.height()) / size.height());
-        else
-            radius.setWidth(floatValueForLength(blur.stdDeviation(), size.width()) / size.width());
-
-        glUniform2f(program.blurRadiusLocation(), radius.width(), radius.height());
-        glUniform1fv(program.gaussianKernelLocation(), GaussianKernelHalfWidth, gaussianKernel());
-        break;
-    }
-    case FilterOperation::Type::DropShadow: {
-        const DropShadowFilterOperation& shadow = static_cast<const DropShadowFilterOperation&>(operation);
-        glUniform1fv(program.gaussianKernelLocation(), GaussianKernelHalfWidth, gaussianKernel());
-        switch (pass) {
-        case 0:
-            // First pass: horizontal alpha blur.
-            glUniform2f(program.blurRadiusLocation(), shadow.stdDeviation() / float(size.width()), 0);
-            glUniform2f(program.shadowOffsetLocation(), float(shadow.location().x()) / float(size.width()), float(shadow.location().y()) / float(size.height()));
-            break;
-        case 1:
-            // Second pass: we need the shadow color and the content texture for compositing.
-            auto [r, g, b, a] = premultiplied(shadow.color().toColorTypeLossy<SRGBA<float>>()).resolved();
-            glUniform4f(program.colorLocation(), r, g, b, a);
-            glUniform2f(program.blurRadiusLocation(), 0, shadow.stdDeviation() / float(size.height()));
-            glUniform2f(program.shadowOffsetLocation(), 0, 0);
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, contentTexture);
-            glUniform1i(program.contentTextureLocation(), 1);
-            break;
-        }
-        break;
-    }
-    default:
-        break;
-    }
+    UNUSED_PARAM(program);
+    UNUSED_PARAM(operation);
+    UNUSED_PARAM(pass);
+    UNUSED_PARAM(size);
+    UNUSED_PARAM(contentTexture);
 }
 
 static TransformationMatrix colorSpaceMatrixForFlags(TextureMapperGL::Flags flags)
 {
-    // The matrix is initially the identity one, which means no color conversion.
     TransformationMatrix matrix;
     if (flags & TextureMapperGL::ShouldConvertTextureBGRAToRGBA)
         matrix.setMatrix(0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
@@ -585,11 +519,10 @@ static TransformationMatrix colorSpaceMatrixForFlags(TextureMapperGL::Flags flag
 
 static void prepareRoundedRectClip(TextureMapperShaderProgram& program, const float* rects, const float* transforms, int nRects)
 {
-    glUseProgram(program.programID());
-
-    glUniform1i(program.roundedRectNumberLocation(), nRects);
-    glUniform4fv(program.roundedRectLocation(), 3 * nRects, rects);
-    glUniformMatrix4fv(program.roundedRectInverseTransformMatrixLocation(), nRects, false, transforms);
+    UNUSED_PARAM(program);
+    UNUSED_PARAM(rects);
+    UNUSED_PARAM(transforms);
+    UNUSED_PARAM(nRects);
 }
 
 void TextureMapperGL::drawTexture(const BitmapTexture& texture, const FloatRect& targetRect, const TransformationMatrix& matrix, float opacity, unsigned exposedEdges)
@@ -729,8 +662,18 @@ void TextureMapperGL::drawTexturePlanarYUV(const std::array<GLuint, 3>& textures
     if (alphaPlane)
         texturesAndSamplers.append({*alphaPlane, program->samplerALocation() });
 
-    glUseProgram(program->programID());
-    glUniformMatrix4fv(program->yuvToRgbLocation(), 1, GL_FALSE, static_cast<const GLfloat *>(&yuvToRgbMatrix[0]));
+    void* cmd = data().cmdBuffer();
+    if (cmd) {
+        ZGraphicsUniformData uniforms;
+        memset(&uniforms, 0, sizeof(uniforms));
+        memcpy(uniforms.yuvToRgbMatrix, yuvToRgbMatrix.data(), sizeof(float) * 16);
+        uniforms.opacity = opacity;
+        data().bindUniformData(uniforms);
+
+        for (unsigned i = 0; i < texturesAndSamplers.size(); ++i)
+            ZawraGraphics_BindTexture(cmd, reinterpret_cast<void*>(static_cast<uintptr_t>(texturesAndSamplers[i].first)), i);
+    }
+
     drawTexturedQuadWithProgram(program.get(), texturesAndSamplers, flags, targetRect, modelViewMatrix, opacity);
 }
 
@@ -782,8 +725,18 @@ void TextureMapperGL::drawTextureSemiPlanarYUV(const std::array<GLuint, 2>& text
         { textures[1], program->samplerULocation() }
     };
 
-    glUseProgram(program->programID());
-    glUniformMatrix4fv(program->yuvToRgbLocation(), 1, GL_FALSE, static_cast<const GLfloat *>(&yuvToRgbMatrix[0]));
+    void* cmd = data().cmdBuffer();
+    if (cmd) {
+        ZGraphicsUniformData uniforms;
+        memset(&uniforms, 0, sizeof(uniforms));
+        memcpy(uniforms.yuvToRgbMatrix, yuvToRgbMatrix.data(), sizeof(float) * 16);
+        uniforms.opacity = opacity;
+        data().bindUniformData(uniforms);
+
+        for (unsigned i = 0; i < texturesAndSamplers.size(); ++i)
+            ZawraGraphics_BindTexture(cmd, reinterpret_cast<void*>(static_cast<uintptr_t>(texturesAndSamplers[i].first)), i);
+    }
+
     drawTexturedQuadWithProgram(program.get(), texturesAndSamplers, flags, targetRect, modelViewMatrix, opacity);
 }
 
@@ -833,8 +786,17 @@ void TextureMapperGL::drawTexturePackedYUV(GLuint texture, const std::array<GLfl
         { texture, program->samplerLocation() }
     };
 
-    glUseProgram(program->programID());
-    glUniformMatrix4fv(program->yuvToRgbLocation(), 1, GL_FALSE, static_cast<const GLfloat *>(&yuvToRgbMatrix[0]));
+    void* cmd = data().cmdBuffer();
+    if (cmd) {
+        ZGraphicsUniformData uniforms;
+        memset(&uniforms, 0, sizeof(uniforms));
+        memcpy(uniforms.yuvToRgbMatrix, yuvToRgbMatrix.data(), sizeof(float) * 16);
+        uniforms.opacity = opacity;
+        data().bindUniformData(uniforms);
+
+        ZawraGraphics_BindTexture(cmd, reinterpret_cast<void*>(static_cast<uintptr_t>(texture)), 0);
+    }
+
     drawTexturedQuadWithProgram(program.get(), texturesAndSamplers, flags, targetRect, modelViewMatrix, opacity);
 }
 
@@ -853,137 +815,133 @@ void TextureMapperGL::drawSolidColor(const FloatRect& rect, const Transformation
     }
 
     Ref<TextureMapperShaderProgram> program = data().getShaderProgram(options);
-    glUseProgram(program->programID());
 
     if (clipStack().isRoundedRectClipEnabled())
         prepareRoundedRectClip(program.get(), clipStack().roundedRectComponents(), clipStack().roundedRectInverseTransformComponents(), clipStack().roundedRectCount());
 
     auto [r, g, b, a] = premultiplied(color.toColorTypeLossy<SRGBA<float>>()).resolved();
-    glUniform4f(program->colorLocation(), r, g, b, a);
+
+    ZGraphicsUniformData uniforms;
+    memset(&uniforms, 0, sizeof(uniforms));
+    uniforms.color[0] = r;
+    uniforms.color[1] = g;
+    uniforms.color[2] = b;
+    uniforms.color[3] = a;
+    data().bindUniformData(uniforms);
+
     if (a < 1 && isBlendingAllowed)
         flags |= ShouldBlend;
 
-    draw(rect, matrix, program.get(), GL_TRIANGLE_FAN, flags);
+    draw(rect, matrix, program.get(), 0x0004, flags);
 }
 
 void TextureMapperGL::clearColor(const Color& color)
 {
     auto [r, g, b, a] = color.toColorTypeLossy<SRGBA<float>>().resolved();
-    glClearColor(r, g, b, a);
-    glClear(GL_COLOR_BUFFER_BIT);
+    void* cmd = data().cmdBuffer();
+    if (cmd)
+        ZawraGraphics_CmdClearColor(cmd, r, g, b, a);
 }
 
 void TextureMapperGL::drawEdgeTriangles(TextureMapperShaderProgram& program)
 {
-    const GLfloat left = 0;
-    const GLfloat top = 0;
-    const GLfloat right = 1;
-    const GLfloat bottom = 1;
-    const GLfloat center = 0.5;
+    UNUSED_PARAM(program);
 
-// Each 4d triangle consists of a center point and two edge points, where the zw coordinates
-// of each vertex equals the nearest point to the vertex on the edge.
-#define SIDE_TRIANGLE_DATA(x1, y1, x2, y2) \
-    x1, y1, x1, y1, \
-    x2, y2, x2, y2, \
-    center, center, (x1 + x2) / 2, (y1 + y2) / 2
-
-    static const GLfloat unitRectSideTriangles[] = {
-        SIDE_TRIANGLE_DATA(left, top, right, top),
-        SIDE_TRIANGLE_DATA(left, top, left, bottom),
-        SIDE_TRIANGLE_DATA(right, top, right, bottom),
-        SIDE_TRIANGLE_DATA(left, bottom, right, bottom)
+    static const float unitRectSideTriangles[] = {
+        0, 0, 0, 0,  1, 0, 1, 0,  0.5f, 0.5f, 0.5f, 0,
+        0, 0, 0, 0,  0, 1, 0, 1,  0.5f, 0.5f, 0, 0.5f,
+        1, 0, 1, 0,  1, 1, 1, 1,  0.5f, 0.5f, 1, 0.5f,
+        0, 1, 0, 1,  1, 1, 1, 1,  0.5f, 0.5f, 0.5f, 1
     };
-#undef SIDE_TRIANGLE_DATA
 
-    GLuint vbo = data().getStaticVBO(GL_ARRAY_BUFFER, sizeof(GCGLfloat) * 48, unitRectSideTriangles);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glVertexAttribPointer(program.vertexLocation(), 4, GL_FLOAT, false, 0, 0);
-    glDrawArrays(GL_TRIANGLES, 0, 12);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    void* vbo = data().getStaticVBO(unitRectSideTriangles, sizeof(unitRectSideTriangles));
+    void* cmd = data().cmdBuffer();
+    if (cmd && vbo) {
+        ZawraGraphics_CmdBindVertexBuffer(cmd, vbo, 0);
+        ZawraGraphics_CmdDraw(cmd, 12, 1, 0, 0);
+    }
 }
 
 void TextureMapperGL::drawUnitRect(TextureMapperShaderProgram& program, GLenum drawingMode)
 {
-    static const GLfloat unitRect[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
-    GLuint vbo = data().getStaticVBO(GL_ARRAY_BUFFER, sizeof(GLfloat) * 8, unitRect);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glVertexAttribPointer(program.vertexLocation(), 2, GL_FLOAT, false, 0, 0);
-    glDrawArrays(drawingMode, 0, 4);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    UNUSED_PARAM(program);
+    UNUSED_PARAM(drawingMode);
+
+    static const float unitRect[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
+    void* vbo = data().getStaticVBO(unitRect, sizeof(unitRect));
+    void* cmd = data().cmdBuffer();
+    if (cmd && vbo) {
+        ZawraGraphics_CmdBindVertexBuffer(cmd, vbo, 0);
+        ZawraGraphics_CmdDraw(cmd, 4, 1, 0, 0);
+    }
 }
 
 void TextureMapperGL::draw(const FloatRect& rect, const TransformationMatrix& modelViewMatrix, TextureMapperShaderProgram& program, GLenum drawingMode, Flags flags)
 {
+    UNUSED_PARAM(program);
+    UNUSED_PARAM(drawingMode);
+
     TransformationMatrix matrix(modelViewMatrix);
     matrix.multiply(TransformationMatrix::rectToRect(FloatRect(0, 0, 1, 1), rect));
 
-    glEnableVertexAttribArray(program.vertexLocation());
-    program.setMatrix(program.modelViewMatrixLocation(), matrix);
-    program.setMatrix(program.projectionMatrixLocation(), data().projectionMatrix);
+    ZGraphicsUniformData uniforms;
+    memset(&uniforms, 0, sizeof(uniforms));
+
+    transformationMatrixToFloats(matrix, uniforms.modelViewMatrix);
+    transformationMatrixToFloats(data().projectionMatrix, uniforms.projectionMatrix);
 
     if (isInMaskMode()) {
-        glBlendFunc(GL_ZERO, GL_SRC_ALPHA);
-        glEnable(GL_BLEND);
-    } else {
-        if (flags & ShouldBlend) {
-            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-            glEnable(GL_BLEND);
-        } else
-            glDisable(GL_BLEND);
+        uniforms.opacity = 0.0f;
+    } else if (flags & ShouldBlend) {
+        uniforms.opacity = 1.0f;
     }
+
+    data().bindUniformData(uniforms);
 
     if (flags & ShouldAntialias)
         drawEdgeTriangles(program);
     else
         drawUnitRect(program, drawingMode);
-
-    glDisableVertexAttribArray(program.vertexLocation());
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_BLEND);
 }
 
 void TextureMapperGL::drawTexturedQuadWithProgram(TextureMapperShaderProgram& program, const Vector<std::pair<GLuint, GLuint> >& texturesAndSamplers, Flags flags, const FloatRect& rect, const TransformationMatrix& modelViewMatrix, float opacity)
 {
-    glUseProgram(program.programID());
+    UNUSED_PARAM(program);
+
+    void* cmd = data().cmdBuffer();
+    if (!cmd) {
+        ZLOG("drawTexturedQuadWithProgram: no command buffer");
+        return;
+    }
 
     bool repeatWrap = wrapMode() == RepeatWrap && m_contextAttributes.supportsNPOTTextures;
-    GLenum target = GLenum(GL_TEXTURE_2D);
-    if (flags & ShouldUseExternalOESTextureRect)
-        target = GLenum(GL_TEXTURE_EXTERNAL_OES);
+    UNUSED_PARAM(repeatWrap);
 
     for (unsigned i = 0; i < texturesAndSamplers.size(); ++i) {
         auto& textureAndSampler = texturesAndSamplers[i];
-
-        glActiveTexture(GL_TEXTURE0 + i);
-        glBindTexture(target, textureAndSampler.first);
-        glUniform1i(textureAndSampler.second, i);
-
-        if (repeatWrap) {
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        }
+        ZawraGraphics_BindTexture(cmd, reinterpret_cast<void*>(static_cast<uintptr_t>(textureAndSampler.first)), i);
     }
 
     TransformationMatrix patternTransform = this->patternTransform();
     prepareTransformationMatrixWithFlags(patternTransform, flags);
 
-    program.setMatrix(program.textureSpaceMatrixLocation(), patternTransform);
-    program.setMatrix(program.textureColorSpaceMatrixLocation(), colorSpaceMatrixForFlags(flags));
-    glUniform1f(program.opacityLocation(), opacity);
+    TransformationMatrix matrix(modelViewMatrix);
+    matrix.multiply(TransformationMatrix::rectToRect(FloatRect(0, 0, 1, 1), rect));
+
+    ZGraphicsUniformData uniforms;
+    memset(&uniforms, 0, sizeof(uniforms));
+    transformationMatrixToFloats(matrix, uniforms.modelViewMatrix);
+    transformationMatrixToFloats(data().projectionMatrix, uniforms.projectionMatrix);
+    transformationMatrixToFloats(patternTransform, uniforms.textureSpaceMatrix);
+    TransformationMatrix csm = colorSpaceMatrixForFlags(flags);
+    transformationMatrixToFloats(csm, uniforms.textureColorSpaceMatrix);
+    uniforms.opacity = opacity;
+    data().bindUniformData(uniforms);
 
     if (opacity < 1)
         flags |= ShouldBlend;
 
-    draw(rect, modelViewMatrix, program, GL_TRIANGLE_FAN, flags);
-
-    if (repeatWrap) {
-        for (auto& textureAndSampler : texturesAndSamplers) {
-            glBindTexture(target, textureAndSampler.first);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        }
-    }
+    draw(rect, modelViewMatrix, program, 0x0004, flags);
 }
 
 void TextureMapperGL::drawTexturedQuadWithProgram(TextureMapperShaderProgram& program, uint32_t texture, Flags flags, const FloatRect& rect, const TransformationMatrix& modelViewMatrix, float opacity)
@@ -993,7 +951,6 @@ void TextureMapperGL::drawTexturedQuadWithProgram(TextureMapperShaderProgram& pr
 
 void TextureMapperGL::drawFiltered(const BitmapTexture& sampler, const BitmapTexture* contentTexture, const FilterOperation& filter, int pass)
 {
-    // For standard filters, we always draw the whole texture without transformations.
     TextureMapperShaderProgram::Options options = optionsForFilterType(filter.type(), pass);
     Ref<TextureMapperShaderProgram> program = data().getShaderProgram(options);
 
@@ -1019,10 +976,10 @@ TextureMapperGL::~TextureMapperGL()
 
 void TextureMapperGL::bindDefaultSurface()
 {
-    glBindFramebuffer(GL_FRAMEBUFFER, data().targetFrameBuffer);
     auto& viewport = data().viewport;
-    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-    glDisable(GL_DEPTH_TEST);
+    void* cmd = data().cmdBuffer();
+    if (cmd)
+        ZawraGraphics_CmdSetViewport(cmd, viewport[0], viewport[1], viewport[2], viewport[3], 0.0f, 1.0f);
     m_clipStack.apply();
     data().currentSurface = nullptr;
     updateProjectionMatrix();
@@ -1047,15 +1004,12 @@ BitmapTexture* TextureMapperGL::currentSurface()
 
 bool TextureMapperGL::beginScissorClip(const TransformationMatrix& modelViewMatrix, const FloatRect& targetRect)
 {
-    // 3D transforms are currently not supported in scissor clipping
-    // resulting in cropped surfaces when z>0.
     if (!modelViewMatrix.isAffine())
         return false;
 
     FloatQuad quad = modelViewMatrix.projectQuad(targetRect);
     IntRect rect = quad.enclosingBoundingBox();
 
-    // Only use scissors on rectilinear clips.
     if (!quad.isRectilinear() || rect.isEmpty())
         return false;
 
@@ -1066,19 +1020,6 @@ bool TextureMapperGL::beginScissorClip(const TransformationMatrix& modelViewMatr
 
 bool TextureMapperGL::beginRoundedRectClip(const TransformationMatrix& modelViewMatrix, const FloatRoundedRect& targetRect)
 {
-    // This is implemented by telling the fragment shader to check whether each pixel is inside the rounded rectangle
-    // before painting it.
-    //
-    // Inside the shader, the math to check whether a point is inside the rounded rectangle requires the rectangle to
-    // be aligned to the X and Y axis, which is not guaranteed if the transformation matrix includes rotations. In order
-    // to avoid this, instead of applying the transformation to the rounded rectangle, we calculate the inverse
-    // of the transformation and apply it to the pixels before checking whether they are inside the rounded rectangle.
-    // This works fine as long as the transformation matrix is invertible.
-    //
-    // There is a limit to the number of rounded rectangle clippings that can be done, that happens because the GLSL
-    // arrays must have a predefined size. The limit is defined inside ClipStack, and that's why we need to call
-    // clipStack().isRoundedRectClipAllowed() before trying to add a new clip.
-
     if (!targetRect.isRounded() || !targetRect.isRenderable() || targetRect.isEmpty() || !modelViewMatrix.isInvertible() || !clipStack().isRoundedRectClipAllowed())
         return false;
 
@@ -1105,13 +1046,6 @@ void TextureMapperGL::beginClip(const TransformationMatrix& modelViewMatrix, con
 
     Ref<TextureMapperShaderProgram> program = data().getShaderProgram(TextureMapperShaderProgram::SolidColor);
 
-    glUseProgram(program->programID());
-    glEnableVertexAttribArray(program->vertexLocation());
-    const GLfloat unitRect[] = {0, 0, 1, 0, 1, 1, 0, 1};
-    GLuint vbo = data().getStaticVBO(GL_ARRAY_BUFFER, sizeof(GLfloat) * 8, unitRect);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glVertexAttribPointer(program->vertexLocation(), 2, GL_FLOAT, false, 0, 0);
-
     TransformationMatrix matrix(modelViewMatrix);
     matrix.multiply(TransformationMatrix::rectToRect(FloatRect(0, 0, 1, 1), targetRect.rect()));
 
@@ -1119,32 +1053,26 @@ void TextureMapperGL::beginClip(const TransformationMatrix& modelViewMatrix, con
 
     int stencilIndex = clipStack().getStencilIndex();
 
-    glEnable(GL_STENCIL_TEST);
+    ZGraphicsUniformData uniforms;
+    memset(&uniforms, 0, sizeof(uniforms));
+    transformationMatrixToFloats(fullProjectionMatrix, uniforms.projectionMatrix);
+    data().bindUniformData(uniforms);
 
-    // Make sure we don't do any actual drawing.
-    glStencilFunc(GL_NEVER, stencilIndex, stencilIndex);
+    static const float unitRect[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
+    void* vbo = data().getStaticVBO(unitRect, sizeof(unitRect));
+    void* cmd = data().cmdBuffer();
+    if (cmd && vbo) {
+        ZawraGraphics_CmdBindVertexBuffer(cmd, vbo, 0);
+        ZawraGraphics_CmdDraw(cmd, 4, 1, 0, 0);
 
-    // Operate only on the stencilIndex and above.
-    glStencilMask(0xff & ~(stencilIndex - 1));
+        ZGraphicsUniformData clipUniforms;
+        memset(&clipUniforms, 0, sizeof(clipUniforms));
+        transformationMatrixToFloats(data().projectionMatrix, clipUniforms.projectionMatrix);
+        transformationMatrixToFloats(matrix, clipUniforms.modelViewMatrix);
+        data().bindUniformData(clipUniforms);
+        ZawraGraphics_CmdDraw(cmd, 4, 1, 0, 0);
+    }
 
-    // First clear the entire buffer at the current index.
-    program->setMatrix(program->projectionMatrixLocation(), fullProjectionMatrix);
-    program->setMatrix(program->modelViewMatrixLocation(), TransformationMatrix());
-    glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
-    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-    // Now apply the current index to the new quad.
-    glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
-    program->setMatrix(program->projectionMatrixLocation(), data().projectionMatrix);
-    program->setMatrix(program->modelViewMatrixLocation(), matrix);
-    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-    // Clear the state.
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDisableVertexAttribArray(program->vertexLocation());
-    glStencilMask(0);
-
-    // Increase stencilIndex and apply stencil testing.
     clipStack().setStencilIndex(stencilIndex * 2);
     clipStack().applyIfNeeded();
 }

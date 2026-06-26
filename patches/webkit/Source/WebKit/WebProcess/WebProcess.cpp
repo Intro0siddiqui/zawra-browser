@@ -109,7 +109,9 @@
 #include <WebCore/CommonVM.h>
 #include <WebCore/CrossOriginPreflightResultCache.h>
 #include <WebCore/DNS.h>
+#if ENABLE(WEBSQL)
 #include <WebCore/DatabaseTracker.h>
+#endif
 #include <WebCore/DeprecatedGlobalSettings.h>
 #include <WebCore/DiagnosticLoggingClient.h>
 #include <WebCore/DiagnosticLoggingKeys.h>

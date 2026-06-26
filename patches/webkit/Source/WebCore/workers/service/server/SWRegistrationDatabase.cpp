@@ -31,11 +31,13 @@
 #include "ContentSecurityPolicyResponseHeaders.h"
 #include "CrossOriginEmbedderPolicy.h"
 #include "Logging.h"
+#if 0
 #include "SQLiteDatabase.h"
 #include "SQLiteFileSystem.h"
 #include "SQLiteStatement.h"
 #include "SQLiteStatementAutoResetScope.h"
 #include "SQLiteTransaction.h"
+#endif
 #include "SWScriptStorage.h"
 #include "ZSWRegBridge.h"
 #include "ServiceWorkerClientData.h"
@@ -48,6 +50,7 @@
 
 namespace WebCore {
 
+#if 0
 static constexpr auto scriptVersion = "V1"_s;
 #define RECORDS_TABLE_SCHEMA_PREFIX "CREATE TABLE "
 #define RECORDS_TABLE_SCHEMA_SUFFIX "(" \
@@ -74,6 +77,7 @@ static String databaseFilePath(const String& directory)
 
     return FileSystem::pathByAppendingComponent(directory, makeString("ServiceWorkerRegistrations-", SWRegistrationDatabase::schemaVersion, ".sqlite3"));
 }
+#endif
 
 static String scriptDirectoryPath(const String& directory)
 {
@@ -89,9 +93,10 @@ static String scriptVersionDirectoryPath(const String& directory)
     if (scriptDirectory.isEmpty())
         return emptyString();
 
-    return FileSystem::pathByAppendingComponent(scriptDirectory, scriptVersion);
+    return FileSystem::pathByAppendingComponent(scriptDirectory, "V1"_s);
 }
 
+#if 0
 static ASCIILiteral convertUpdateViaCacheToString(ServiceWorkerUpdateViaCache update)
 {
     switch (update) {
@@ -130,6 +135,7 @@ static ASCIILiteral convertWorkerTypeToString(WorkerType workerType)
     RELEASE_ASSERT_NOT_REACHED();
 }
 
+
 static std::optional<WorkerType> convertStringToWorkerType(const String& type)
 {
     if (type == "Classic"_s)
@@ -149,6 +155,7 @@ static ASCIILiteral currentRecordsTableSchemaAlternate()
 {
     return RECORDS_TABLE_SCHEMA_PREFIX "\"Records\"" RECORDS_TABLE_SCHEMA_SUFFIX;
 }
+#endif
 
 static HashMap<URL, ImportedScriptAttributes> stripScriptSources(const MemoryCompactRobinHoodHashMap<URL, ServiceWorkerContextData::ImportedScript>& map)
 {
@@ -172,6 +179,7 @@ static MemoryCompactRobinHoodHashMap<URL, ServiceWorkerContextData::ImportedScri
     return importedScripts;
 }
 
+#if 0
 ASCIILiteral SWRegistrationDatabase::statementString(StatementType type) const
 {
     switch (type) {
@@ -202,10 +210,13 @@ SQLiteStatementAutoResetScope SWRegistrationDatabase::cachedStatement(StatementT
 
     return SQLiteStatementAutoResetScope { m_cachedStatements[index].get() };
 }
+#endif
 
 SWRegistrationDatabase::SWRegistrationDatabase(const String& path)
     : m_directory(path)
+#if 0
     , m_cachedStatements(static_cast<size_t>(StatementType::Invalid))
+#endif
 {
     ASSERT(!isMainRunLoop());
     ASSERT(!m_directory.isEmpty());
@@ -220,9 +231,11 @@ void SWRegistrationDatabase::close()
 {
     ASSERT(!isMainRunLoop());
 
+#if 0
     for (size_t i = 0; i < static_cast<size_t>(StatementType::Invalid); ++i)
         m_cachedStatements[i] = nullptr;
     m_database = nullptr;
+#endif
     m_scriptStorage = nullptr;
 }
 
@@ -230,10 +243,11 @@ SWScriptStorage& SWRegistrationDatabase::scriptStorage()
 {
     if (!m_scriptStorage)
         m_scriptStorage = makeUnique<SWScriptStorage>(scriptVersionDirectoryPath(m_directory));
-        
+
     return *m_scriptStorage;
 }
 
+#if 0
 bool SWRegistrationDatabase::prepareDatabase(ShouldCreateIfNotExists shouldCreateIfNotExists)
 {
     if (m_database && m_database->isOpen())
@@ -300,9 +314,11 @@ bool SWRegistrationDatabase::ensureValidRecordsTable()
 
     return true;
 }
+#endif
 
 std::optional<Vector<ServiceWorkerContextData>> SWRegistrationDatabase::importRegistrations()
 {
+#if 0
     if (!prepareDatabase(ShouldCreateIfNotExists::No))
         return std::nullopt;
 
@@ -420,8 +436,10 @@ std::optional<Vector<ServiceWorkerContextData>> SWRegistrationDatabase::importRe
 
     if (result != SQLITE_DONE)
         RELEASE_LOG_ERROR(Storage, "SWRegistrationDatabase::importRegistrations failed on executing statement (%d) - %s", m_database->lastError(), m_database->lastErrorMsg());
+#endif
 
-    // Also retrieve any registrations stored via BrowserDB bridge
+    // Retrieve registrations stored via BrowserDB bridge
+    Vector<ServiceWorkerContextData> registrations;
     {
         uint8_t bridgeBuf[65536];
         uint32_t bridgeWritten = 0;
@@ -436,6 +454,7 @@ std::optional<Vector<ServiceWorkerContextData>> SWRegistrationDatabase::importRe
 
 std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegistrations(const Vector<ServiceWorkerContextData>& registrationsToUpdate, const Vector<ServiceWorkerRegistrationKey>& registrationsToDelete)
 {
+#if 0
     if (!prepareDatabase(ShouldCreateIfNotExists::Yes))
         return std::nullopt;
 
@@ -449,12 +468,16 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
             return std::nullopt;
         }
         scriptStorage().clear(registration);
+#endif
 
-        // Also delete from BrowserDB bridge
+    // Delete registrations via BrowserDB bridge
+    for (auto& registration : registrationsToDelete) {
         auto scopeStr = registration.scope().string().utf8();
         ZSWRegBridge::deleteRegistration(reinterpret_cast<const uint8_t*>(scopeStr.data()), scopeStr.length());
+        scriptStorage().clear(registration);
     }
 
+#if 0
     for (auto&& data : registrationsToUpdate) {
         auto statement = cachedStatement(StatementType::InsertRecord);
         if (!statement) {
@@ -466,8 +489,6 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
         cspEncoder << data.contentSecurityPolicy;
         WTF::Persistence::Encoder coepEncoder;
         coepEncoder << data.crossOriginEmbedderPolicy;
-        // We don't actually encode the script sources to the database. They will be stored separately in the ScriptStorage.
-        // As a result, we need to strip the script sources here before encoding the scriptResourceMap.
         WTF::Persistence::Encoder scriptResourceMapEncoder;
         scriptResourceMapEncoder << stripScriptSources(data.scriptResourceMap);
         WTF::Persistence::Encoder certificateInfoEncoder;
@@ -497,11 +518,11 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
     
     transaction.commit();
     RELEASE_LOG(ServiceWorker, "SWRegistrationDatabase::updateRegistrations added/updated %zu registrations and removed %zu registrations", registrationsToUpdate.size(), registrationsToDelete.size());
+#endif
 
-    // Also store registrations via BrowserDB bridge
+    // Store registrations via BrowserDB bridge
     for (auto&& data : registrationsToUpdate) {
         auto scopeStr = data.registration.scopeURL.string().utf8();
-        // Store a minimal representation: key + scopeURL + scriptURL + workerType
         auto storeData = makeString(data.registration.key.toDatabaseKey(), "|"_s,
             data.registration.scopeURL.protocolHostAndPort(), "|"_s,
             data.registration.scopeURL.path().toString(), "|"_s,
@@ -521,7 +542,7 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
         if (!mainScript)
             continue;
         MemoryCompactRobinHoodHashMap<URL, ScriptBuffer> importedScripts;
-        
+
         for (auto& [scriptURL, script] : data.scriptResourceMap) {
             auto importedScript = scriptStorage().store(data.registration.key, scriptURL, script.script);
             if (importedScript)
@@ -536,7 +557,11 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
 void SWRegistrationDatabase::clearAllRegistrations()
 {
     close();
+#if 0
     SQLiteFileSystem::deleteDatabaseFile(databaseFilePath(m_directory));
+    FileSystem::deleteNonEmptyDirectory(scriptDirectoryPath(m_directory));
+    FileSystem::deleteEmptyDirectory(m_directory);
+#endif
     FileSystem::deleteNonEmptyDirectory(scriptDirectoryPath(m_directory));
     FileSystem::deleteEmptyDirectory(m_directory);
     ZSWRegBridge::deleteAll();

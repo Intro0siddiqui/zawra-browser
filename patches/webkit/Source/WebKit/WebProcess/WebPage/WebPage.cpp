@@ -187,7 +187,9 @@
 #include <WebCore/CrossOriginOpenerPolicy.h>
 #include <WebCore/DOMPasteAccess.h>
 #include <WebCore/DataTransfer.h>
+#if ENABLE(WEBSQL)
 #include <WebCore/DatabaseManager.h>
+#endif
 #include <WebCore/DeprecatedGlobalSettings.h>
 #include <WebCore/Document.h>
 #include <WebCore/DocumentFragment.h>
@@ -4559,7 +4561,9 @@ void WebPage::updatePreferences(const WebPreferencesStore& store)
 #endif
     settings.setPitchCorrectionAlgorithm(static_cast<MediaPlayerEnums::PitchCorrectionAlgorithm>(store.getUInt32ValueForKey(WebPreferencesKey::pitchCorrectionAlgorithmKey())));
 
+#if ENABLE(WEBSQL)
     DatabaseManager::singleton().setIsAvailable(store.getBoolValueForKey(WebPreferencesKey::databasesEnabledKey()));
+#endif
 
     m_tabToLinks = store.getBoolValueForKey(WebPreferencesKey::tabsToLinksKey());
 

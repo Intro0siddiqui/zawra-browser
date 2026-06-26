@@ -42,9 +42,11 @@
 #include <WebCore/KeyedCoding.h>
 #include <WebCore/NetworkStorageSession.h>
 #include <WebCore/ResourceLoadStatistics.h>
+#if 0 // ZITPBridge: SQLite includes disabled
 #include <WebCore/SQLiteDatabase.h>
 #include <WebCore/SQLiteStatement.h>
 #include <WebCore/SQLiteStatementAutoResetScope.h>
+#endif // ZITPBridge
 #include <WebCore/UserGestureIndicator.h>
 #include <wtf/CallbackAggregator.h>
 #include <wtf/CrossThreadCopier.h>
@@ -61,6 +63,7 @@ using namespace WebCore;
 #define ITP_RELEASE_LOG(sessionID, fmt, ...) RELEASE_LOG(Network, "%p - ResourceLoadStatisticsDatabaseStore::" fmt, this, ##__VA_ARGS__)
 #define ITP_RELEASE_LOG_ERROR(sessionID, fmt, ...) RELEASE_LOG_ERROR(Network, "%p - ResourceLoadStatisticsDatabaseStore::" fmt, this, ##__VA_ARGS__)
 
+#if 0 // ZITPBridge: SQLite code disabled
 // COUNT Queries
 constexpr auto observedDomainCountQuery = "SELECT COUNT(*) FROM ObservedDomains"_s;
 constexpr auto countSubframeUnderTopFrameQuery = "SELECT COUNT(*) FROM SubframeUnderTopFrameDomains WHERE subFrameDomainID = ? AND topFrameDomainID = ?;"_s;
@@ -229,11 +232,13 @@ constexpr auto createUniqueIndexOperatingDates = "CREATE UNIQUE INDEX IF NOT EXI
 
 // Add one to the count of the above index queries to account for the ObservedDomains table, which has an index automatically created by SQLite because of its primary key.
 constexpr int expectedIndexCount = 13;
+#endif // ZITPBridge: SQLite code disabled
 
 static bool needsNewCreateTableSchema(const String& schema)
 {
     return schema.contains("REFERENCES TopLevelDomains"_s);
 }
+#if 0 // ZITPBridge: SQLite code disabled
 
 const MemoryCompactLookupOnlyRobinHoodHashMap<String, TableAndIndexPair>& ResourceLoadStatisticsDatabaseStore::expectedTableAndIndexQueries()
 {
@@ -275,6 +280,7 @@ std::span<const ASCIILiteral> ResourceLoadStatisticsDatabaseStore::sortedTables(
 
     return sortedTables;
 }
+#endif // ZITPBridge: SQLite code disabled
 
 template <typename ContainerType>
 static String buildList(const ContainerType& values)
@@ -304,21 +310,28 @@ ResourceLoadStatisticsDatabaseStore::ResourceLoadStatisticsDatabaseStore(WebReso
 {
     ASSERT(!RunLoop::isMain());
 
+#if 0 // ZITPBridge: SQLite initialization disabled
     openAndUpdateSchemaIfNecessary();
     enableForeignKeys();
     
     if (!m_database.turnOnIncrementalAutoVacuum())
         RELEASE_LOG_ERROR(Network, "%p - ResourceLoadStatisticsDatabaseStore::turnOnIncrementalAutoVacuum failed, error message: %" PUBLIC_LOG_STRING, this, m_database.lastErrorMsg());
+#endif // ZITPBridge
 
     includeTodayAsOperatingDateIfNecessary();
     allStores().add(this);
 }
 
+
 ResourceLoadStatisticsDatabaseStore::~ResourceLoadStatisticsDatabaseStore()
 {
+#if 0 // ZITPBridge: SQLite close disabled
     close();
+#endif // ZITPBridge
     allStores().remove(this);
 }
+
+#if 0 // ZITPBridge: SQLite code disabled
 
 void ResourceLoadStatisticsDatabaseStore::openITPDatabase()
 {
@@ -876,16 +889,19 @@ void ResourceLoadStatisticsDatabaseStore::mergeStatistic(const ResourceLoadStati
 
     merge(scopedStatement.get(), statistic);
 }
-
+#endif // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::mergeStatistics(Vector<ResourceLoadStatistics>&& statistics)
 {
     ASSERT(!RunLoop::isMain());
     if (statistics.isEmpty())
         return;
 
+#if 0 // ZITPBridge: SQLite transaction disabled
     auto transactionScope = beginTransactionIfNecessary();
+#endif // ZITPBridge
 
     for (auto& statistic : statistics) {
+#if 0 // ZITPBridge: SQLite merge disabled
         if (!domainID(statistic.registrableDomain)) {
             auto result = insertObservedDomain(statistic);
             if (!result) {
@@ -894,6 +910,7 @@ void ResourceLoadStatisticsDatabaseStore::mergeStatistics(Vector<ResourceLoadSta
             }
         } else
             mergeStatistic(statistic);
+#endif // ZITPBridge
 
         uint64_t hi, lo;
         ZITPBridge::hashDomain(statistic.registrableDomain.string(), hi, lo);
@@ -915,12 +932,15 @@ void ResourceLoadStatisticsDatabaseStore::mergeStatistics(Vector<ResourceLoadSta
         ZITPBridge::storeStatistics(hi, lo, utf8.data(), utf8.length());
     }
 
+#if 0 // ZITPBridge: SQLite relationship insertion disabled
     // Make a separate pass for inter-domain relationships so we
     // can refer to the ObservedDomain table entries.
     for (auto& statistic : statistics)
         insertDomainRelationships(statistic);
+#endif // ZITPBridge
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 static ASCIILiteral joinSubStatisticsForSorting()
 {
     return "SELECT domainID,"
@@ -959,11 +979,13 @@ Vector<WebResourceLoadStatisticsStore::ThirdPartyDataForSpecificFirstParty> Reso
     return thirdPartyDataForSpecificFirstPartyDomains;
 }
 
+#endif // ZITPBridge: SQLite code disabled
 static bool hasBeenThirdParty(unsigned timesUnderFirstParty)
 {
     return timesUnderFirstParty > 0;
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 Vector<WebResourceLoadStatisticsStore::ThirdPartyData> ResourceLoadStatisticsDatabaseStore::aggregatedThirdPartyData() const
 {
     ASSERT(!RunLoop::isMain());
@@ -987,6 +1009,8 @@ Vector<WebResourceLoadStatisticsStore::ThirdPartyData> ResourceLoadStatisticsDat
     return thirdPartyDataList;
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::incrementRecordsDeletedCountForDomains(HashSet<RegistrableDomain>&& domains)
 {
     ASSERT(!RunLoop::isMain());
@@ -1177,49 +1201,16 @@ void ResourceLoadStatisticsDatabaseStore::runIncrementalVacuumCommand()
     m_database.runIncrementalVacuumCommand();
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 bool ResourceLoadStatisticsDatabaseStore::hasStorageAccess(const TopFrameDomain& topFrameDomain, const SubFrameDomain& subFrameDomain) const
 {
     auto scopedStatement = this->scopedStatement(m_storageAccessExistsStatement, storageAccessExistsQuery, "hasStorageAccess"_s);
     return relationshipExists(scopedStatement, domainID(subFrameDomain), topFrameDomain);
 }
 
-void ResourceLoadStatisticsDatabaseStore::hasStorageAccess(SubFrameDomain&& subFrameDomain, TopFrameDomain&& topFrameDomain, std::optional<FrameIdentifier> frameID, PageIdentifier pageID, CompletionHandler<void(bool)>&& completionHandler)
-{
-    ASSERT(!RunLoop::isMain());
-
-    auto result = ensureResourceStatisticsForRegistrableDomain(subFrameDomain);
-    if (!result.second) {
-        ITP_RELEASE_LOG_ERROR(m_sessionID, "%p - ResourceLoadStatisticsDatabaseStore::hasStorageAccess was not completed due to failed insert attempt", this);
-        return;
-    }
-
-    switch (cookieAccess(subFrameDomain, topFrameDomain)) {
-    case CookieAccess::CannotRequest:
-        completionHandler(false);
-        return;
-    case CookieAccess::BasedOnCookiePolicy:
-        RunLoop::main().dispatch([store = Ref { store() }, subFrameDomain = WTFMove(subFrameDomain).isolatedCopy(), completionHandler = WTFMove(completionHandler)]() mutable {
-            store->hasCookies(subFrameDomain, [store, completionHandler = WTFMove(completionHandler)](bool result) mutable {
-                store->statisticsQueue().dispatch([completionHandler = WTFMove(completionHandler), result] () mutable {
-                    completionHandler(result);
-                });
-            });
-        });
-        return;
-    case CookieAccess::OnlyIfGranted:
-        // Handled below.
-        break;
-    };
-
-    RunLoop::main().dispatch([store = Ref { store() }, subFrameDomain = WTFMove(subFrameDomain).isolatedCopy(), topFrameDomain = WTFMove(topFrameDomain).isolatedCopy(), frameID, pageID, completionHandler = WTFMove(completionHandler)]() mutable {
-        store->callHasStorageAccessForFrameHandler(subFrameDomain, topFrameDomain, frameID.value(), pageID, [store, completionHandler = WTFMove(completionHandler)](bool result) mutable {
-            store->statisticsQueue().dispatch([completionHandler = WTFMove(completionHandler), result] () mutable {
-                completionHandler(result);
-            });
-        });
-    });
-}
-
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::requestStorageAccess(SubFrameDomain&& subFrameDomain, TopFrameDomain&& topFrameDomain, FrameIdentifier frameID, PageIdentifier pageID, StorageAccessScope scope, CompletionHandler<void(StorageAccessStatus)>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -1282,6 +1273,7 @@ void ResourceLoadStatisticsDatabaseStore::requestStorageAccess(SubFrameDomain&& 
     });
 }
 
+#endif // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::requestStorageAccessUnderOpener(DomainInNeedOfStorageAccess&& domainInNeedOfStorageAccess, PageIdentifier openerPageID, OpenerDomain&& openerDomain)
 {
     ASSERT(domainInNeedOfStorageAccess != openerDomain);
@@ -1298,6 +1290,7 @@ void ResourceLoadStatisticsDatabaseStore::requestStorageAccessUnderOpener(Domain
     grantStorageAccessInternal(WTFMove(domainInNeedOfStorageAccess), WTFMove(openerDomain), std::nullopt, openerPageID, StorageAccessPromptWasShown::No, StorageAccessScope::PerPage, [](StorageAccessWasGranted) { });
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::grantStorageAccess(SubFrameDomain&& subFrameDomain, TopFrameDomain&& topFrameDomain, FrameIdentifier frameID, PageIdentifier pageID, StorageAccessPromptWasShown promptWasShown, StorageAccessScope scope, CompletionHandler<void(StorageAccessWasGranted)>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -1321,6 +1314,7 @@ void ResourceLoadStatisticsDatabaseStore::grantStorageAccess(SubFrameDomain&& su
     grantStorageAccessInternal(WTFMove(subFrameDomain), WTFMove(topFrameDomain), frameID, pageID, promptWasShown, scope, WTFMove(completionHandler));
 }
 
+#endif // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::grantStorageAccessInternal(SubFrameDomain&& subFrameDomain, TopFrameDomain&& topFrameDomain, std::optional<FrameIdentifier> frameID, PageIdentifier pageID, StorageAccessPromptWasShown promptWasShownNowOrEarlier, StorageAccessScope scope, CompletionHandler<void(StorageAccessWasGranted)>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -1330,6 +1324,7 @@ void ResourceLoadStatisticsDatabaseStore::grantStorageAccessInternal(SubFrameDom
         return;
     }
 
+#if 0 // ZITPBridge: SQLite code in grantStorageAccessInternal disabled
     if (promptWasShownNowOrEarlier == StorageAccessPromptWasShown::Yes) {
         auto transactionScope = beginTransactionIfNecessary();
 #ifndef NDEBUG
@@ -1347,6 +1342,7 @@ void ResourceLoadStatisticsDatabaseStore::grantStorageAccessInternal(SubFrameDom
 #endif
         setUserInteraction(subFrameDomain, true, WallTime::now() + m_timeAdvanceForTesting);
     }
+#endif // ZITPBridge
 
     RunLoop::main().dispatch([subFrameDomain = WTFMove(subFrameDomain).isolatedCopy(), topFrameDomain = WTFMove(topFrameDomain).isolatedCopy(), frameID, pageID, store = Ref { store() }, scope, completionHandler = WTFMove(completionHandler)]() mutable {
         store->callGrantStorageAccessHandler(subFrameDomain, topFrameDomain, frameID, pageID, scope, [completionHandler = WTFMove(completionHandler), store](StorageAccessWasGranted wasGranted) mutable {
@@ -1358,6 +1354,7 @@ void ResourceLoadStatisticsDatabaseStore::grantStorageAccessInternal(SubFrameDom
 
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::grandfatherDataForDomains(const HashSet<RegistrableDomain>& domains)
 {
     ASSERT(!RunLoop::isMain());
@@ -1495,6 +1492,8 @@ void ResourceLoadStatisticsDatabaseStore::logCrossSiteLoadWithLinkDecoration(con
         setIsScheduledForAllScriptWrittenStorageRemoval(toDomain, true);
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::clearTopFrameUniqueRedirectsToSinceSameSiteStrictEnforcement(const RegistrableDomain& domain, CompletionHandler<void()>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -1518,6 +1517,8 @@ void ResourceLoadStatisticsDatabaseStore::clearTopFrameUniqueRedirectsToSinceSam
     completionHandler();
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::setUserInteraction(const RegistrableDomain& domain, bool hadUserInteraction, WallTime mostRecentInteraction)
 {
     ASSERT(!RunLoop::isMain());
@@ -1533,6 +1534,8 @@ void ResourceLoadStatisticsDatabaseStore::setUserInteraction(const RegistrableDo
     }
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::logUserInteraction(const TopFrameDomain& domain, CompletionHandler<void()>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -1554,6 +1557,8 @@ void ResourceLoadStatisticsDatabaseStore::logUserInteraction(const TopFrameDomai
     updateCookieBlocking(WTFMove(completionHandler));
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::clearUserInteraction(const RegistrableDomain& domain, CompletionHandler<void()>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -1610,6 +1615,7 @@ bool ResourceLoadStatisticsDatabaseStore::hasHadUserInteraction(const Registrabl
     return hadUserInteraction;
 }
 
+#endif // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::setTimeAdvanceForTesting(Seconds time)
 {
     ASSERT(!RunLoop::isMain());
@@ -1620,6 +1626,7 @@ void ResourceLoadStatisticsDatabaseStore::setTimeAdvanceForTesting(Seconds time)
     }
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::setPrevalentResource(const RegistrableDomain& domain, ResourceLoadPrevalence newPrevalence)
 {
     ASSERT(!RunLoop::isMain());
@@ -1887,6 +1894,8 @@ bool ResourceLoadStatisticsDatabaseStore::isGrandfathered(const RegistrableDomai
     return predicateValueForDomain(scopedStatement, domain);
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::setSubframeUnderTopFrameDomain(const SubFrameDomain& subFrameDomain, const TopFrameDomain& topFrameDomain)
 {
     ASSERT(!RunLoop::isMain());
@@ -2007,19 +2016,23 @@ std::pair<ResourceLoadStatisticsDatabaseStore::AddedRecord, std::optional<unsign
     return { AddedRecord::Yes, domainID(domain).value() };
 }
 
+#endif // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::clearDatabaseContents()
 {
     ZITPBridge::deleteAll();
+#if 0 // ZITPBridge: SQLite clear disabled
     m_database.clearAllTables();
 
     if (!createSchema()) {
         RELEASE_LOG_ERROR(Network, "%p - ResourceLoadStatisticsDatabaseStore::clearDatabaseContents failed, error message: %" PRIVATE_LOG_STRING ", database path: %" PRIVATE_LOG_STRING, this, m_database.lastErrorMsg(), m_storageFilePath.utf8().data());
         return;
     }
+#endif // ZITPBridge
 }
 
 void ResourceLoadStatisticsDatabaseStore::removeDataForDomain(const RegistrableDomain& domain)
 {
+#if 0 // ZITPBridge: SQLite remove disabled
     auto domainIDToRemove = domainID(domain);
     if (!domainIDToRemove)
         return;
@@ -2030,12 +2043,14 @@ void ResourceLoadStatisticsDatabaseStore::removeDataForDomain(const RegistrableD
         || scopedStatement->step() != SQLITE_DONE) {
         ITP_RELEASE_LOG_ERROR(m_sessionID, "%p - ResourceLoadStatisticsDatabaseStore::removeDataForDomain failed, error message: %" PRIVATE_LOG_STRING, this, m_database.lastErrorMsg());
     }
+#endif // ZITPBridge
 
     uint64_t hi, lo;
     ZITPBridge::hashDomain(domain.string(), hi, lo);
     ZITPBridge::deleteStatistics(hi, lo);
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::allDomains() const
 {
     ASSERT(!RunLoop::isMain());
@@ -2050,6 +2065,7 @@ Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::allDomains() cons
     return domains;
 }
 
+#endif // ZITPBridge: SQLite code disabled
 HashMap<RegistrableDomain, WallTime> ResourceLoadStatisticsDatabaseStore::allDomainsWithLastAccessedTime() const
 {
     ASSERT(!RunLoop::isMain());
@@ -2089,6 +2105,7 @@ bool ResourceLoadStatisticsDatabaseStore::areAllThirdPartyCookiesBlockedUnder(co
     return false;
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 CookieAccess ResourceLoadStatisticsDatabaseStore::cookieAccess(const SubResourceDomain& subresourceDomain, const TopFrameDomain& topFrameDomain)
 {
     ASSERT(!RunLoop::isMain());
@@ -2194,6 +2211,7 @@ HashMap<TopFrameDomain, SubResourceDomain> ResourceLoadStatisticsDatabaseStore::
     return results;
 }
 
+#endif // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::updateCookieBlocking(CompletionHandler<void()>&& completionHandler)
 {
     ASSERT(!RunLoop::isMain());
@@ -2233,13 +2251,14 @@ void ResourceLoadStatisticsDatabaseStore::updateCookieBlocking(CompletionHandler
 Vector<ResourceLoadStatisticsDatabaseStore::DomainData> ResourceLoadStatisticsDatabaseStore::domains() const
 {
     ASSERT(!RunLoop::isMain());
-    
+
     Vector<DomainData> results;
+    HashSet<String> seenDomains;
+#if 0 // ZITPBridge: SQLite query disabled
     auto statement = m_database.prepareStatement("SELECT domainID, registrableDomain, mostRecentUserInteractionTime, mostRecentWebPushInteractionTime, hadUserInteraction, grandfathered, isScheduledForAllButCookieDataRemoval, countOfTopFrameRedirects FROM ObservedDomains LEFT JOIN (SELECT sourceDomainID, COUNT(*) as countOfTopFrameRedirects from TopFrameUniqueRedirectsToSinceSameSiteStrictEnforcement GROUP BY sourceDomainID) as z ON z.sourceDomainID = domainID"_s);
     if (!statement)
         return results;
-    
-    HashSet<String> seenDomains;
+
     while (statement->step() == SQLITE_ROW) {
         auto domain = RegistrableDomain::uncheckedCreateFromRegistrableDomainString(statement->columnText(1));
         seenDomains.add(domain.string());
@@ -2253,6 +2272,8 @@ Vector<ResourceLoadStatisticsDatabaseStore::DomainData> ResourceLoadStatisticsDa
             , static_cast<unsigned>(statement->columnInt(7))
         });
     }
+#endif // ZITPBridge
+
 
     // Read additional origins from BrowserDB that may not yet be in SQLite
     char originsBuf[8192];
@@ -2311,9 +2332,11 @@ Vector<ResourceLoadStatisticsDatabaseStore::DomainData> ResourceLoadStatisticsDa
         }
     }
 
+
     return results;
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::clearGrandfathering(Vector<unsigned>&& domainIDsToClear)
 {
     ASSERT(!RunLoop::isMain());
@@ -2332,6 +2355,7 @@ void ResourceLoadStatisticsDatabaseStore::clearGrandfathering(Vector<unsigned>&&
     }
 }
 
+#endif // ZITPBridge: SQLite code disabled
 bool ResourceLoadStatisticsDatabaseStore::hasHadRecentWebPushInteraction(const DomainData& resourceStatistic) const
 {
     return resourceStatistic.mostRecentWebPushInteractionTime && !hasStatisticsExpired(resourceStatistic.mostRecentWebPushInteractionTime, OperatingDatesWindow::Long);
@@ -2414,7 +2438,9 @@ RegistrableDomainsToDeleteOrRestrictWebsiteDataFor ResourceLoadStatisticsDatabas
     auto oldestUserInteraction = now;
     RegistrableDomainsToDeleteOrRestrictWebsiteDataFor toDeleteOrRestrictFor;
 
+#if 0 // ZITPBridge: SQLite transaction disabled
     auto transactionScope = beginTransactionIfNecessary();
+#endif // ZITPBridge
 
     Vector<DomainData> domains = this->domains();
     Vector<unsigned> domainIDsToClearGrandfathering;
@@ -2460,6 +2486,7 @@ RegistrableDomainsToDeleteOrRestrictWebsiteDataFor ResourceLoadStatisticsDatabas
     return toDeleteOrRestrictFor;
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::pruneStatisticsIfNeeded()
 {
     ASSERT(!RunLoop::isMain());
@@ -2578,6 +2605,8 @@ void ResourceLoadStatisticsDatabaseStore::updateDataRecordsRemoved(const Registr
     }
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 bool ResourceLoadStatisticsDatabaseStore::isCorrectSubStatisticsCount(const RegistrableDomain& subframeDomain, const TopFrameDomain& topFrameDomain)
 {
     auto subFrameUnderTopFrameCount = m_database.prepareStatement(countSubframeUnderTopFrameQuery);
@@ -2607,6 +2636,7 @@ bool ResourceLoadStatisticsDatabaseStore::isCorrectSubStatisticsCount(const Regi
     return (subFrameUnderTopFrameCount->columnInt(0) == 1 && subresourceUnderTopFrameCount->columnInt(0) == 1 && subresourceUniqueRedirectsTo->columnInt(0) == 1);
 }
 
+#endif // ZITPBridge: SQLite code disabled
 static void appendBoolean(StringBuilder& builder, ASCIILiteral label, bool flag)
 {
     builder.append("    ", label, ": ", flag ? "Yes" : "No");
@@ -2617,6 +2647,7 @@ static void appendNextEntry(StringBuilder& builder, const String& entry)
     builder.append("        ", entry, '\n');
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 String ResourceLoadStatisticsDatabaseStore::getDomainStringFromDomainID(unsigned domainID) const
 {
     auto result = emptyString();
@@ -2686,11 +2717,13 @@ void ResourceLoadStatisticsDatabaseStore::appendSubStatisticList(StringBuilder& 
     }
 }
 
+#endif // ZITPBridge: SQLite code disabled
 static bool hasHadRecentUserInteraction(WTF::Seconds interactionTimeSeconds)
 {
     return interactionTimeSeconds > Seconds(0) && WallTime::now().secondsSinceEpoch() - interactionTimeSeconds < 24_h;
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::resourceToString(StringBuilder& builder, const String& domain) const
 {
     auto scopedStatement = this->scopedStatement(m_getResourceDataByDomainNameStatement, getResourceDataByDomainNameQuery, "resourceToString"_s);
@@ -2745,6 +2778,8 @@ void ResourceLoadStatisticsDatabaseStore::resourceToString(StringBuilder& builde
     builder.append('\n');
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 bool ResourceLoadStatisticsDatabaseStore::domainIDExistsInDatabase(int domainID)
 {
     auto scopedLinkDecorationExistsStatement = this->scopedStatement(m_linkDecorationExistsStatement, linkDecorationExistsQuery, "domainIDExistsInDatabase"_s);
@@ -2788,6 +2823,8 @@ bool ResourceLoadStatisticsDatabaseStore::domainIDExistsInDatabase(int domainID)
     return m_linkDecorationExistsStatement->columnInt(0) || m_scriptLoadExistsStatement->columnInt(0) || m_subFrameExistsStatement->columnInt(0) || m_subResourceExistsStatement->columnInt(0) || m_uniqueRedirectExistsStatement->columnInt(0) || m_observedDomainsExistsStatement->columnInt(0);
 }
 
+#endif // ZITPBridge: SQLite code disabled
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::updateOperatingDatesParameters()
 {
     auto countOperatingDatesStatement = m_database.prepareStatement("SELECT COUNT(*) FROM OperatingDates;"_s);
@@ -2866,6 +2903,7 @@ void ResourceLoadStatisticsDatabaseStore::includeTodayAsOperatingDateIfNecessary
     updateOperatingDatesParameters();
 }
 
+#endif // ZITPBridge: SQLite code disabled
 bool ResourceLoadStatisticsDatabaseStore::hasStatisticsExpired(WallTime mostRecentUserInteractionTime, OperatingDatesWindow operatingDatesWindow) const
 {
     ASSERT(!RunLoop::isMain());
@@ -2893,6 +2931,7 @@ bool ResourceLoadStatisticsDatabaseStore::hasStatisticsExpired(WallTime mostRece
     return false;
 }
 
+#if 0 // ZITPBridge: SQLite code disabled
 void ResourceLoadStatisticsDatabaseStore::insertExpiredStatisticForTesting(const RegistrableDomain& domain, unsigned numberOfOperatingDaysPassed, bool hasUserInteraction, bool isScheduledForAllButCookieDataRemoval, bool isPrevalent)
 {
     // Populate the Operating Dates table with enough days to require pruning.
@@ -2943,6 +2982,82 @@ void ResourceLoadStatisticsDatabaseStore::insertExpiredStatisticForTesting(const
         return;
     }
 }
+
+#endif // ZITPBridge: SQLite code disabled
+// === ZITPBridge stubs for disabled SQLite virtual methods ===
+void ResourceLoadStatisticsDatabaseStore::classifyPrevalentResources() { }
+bool ResourceLoadStatisticsDatabaseStore::isEmpty() const { return true; }
+void ResourceLoadStatisticsDatabaseStore::dumpResourceLoadStatistics(CompletionHandler<void(String&&)>&& completionHandler) { completionHandler(String { }); }
+void ResourceLoadStatisticsDatabaseStore::runIncrementalVacuumCommand() { }
+const MemoryCompactLookupOnlyRobinHoodHashMap<String, TableAndIndexPair>& ResourceLoadStatisticsDatabaseStore::expectedTableAndIndexQueries()
+{
+    static NeverDestroyed<MemoryCompactLookupOnlyRobinHoodHashMap<String, TableAndIndexPair>> emptyMap;
+    return emptyMap;
+}
+std::span<const ASCIILiteral> ResourceLoadStatisticsDatabaseStore::sortedTables() { return { }; }
+bool ResourceLoadStatisticsDatabaseStore::createSchema() { return true; }
+void ResourceLoadStatisticsDatabaseStore::destroyStatements() { }
+bool ResourceLoadStatisticsDatabaseStore::createUniqueIndices() { return true; }
+bool ResourceLoadStatisticsDatabaseStore::needsUpdatedSchema() { return false; }
+String ResourceLoadStatisticsDatabaseStore::getDomainStringFromDomainID(unsigned domainID) const { return emptyString(); }
+bool ResourceLoadStatisticsDatabaseStore::domainIDExistsInDatabase(int domainID) { return false; }
+std::optional<Vector<String>> ResourceLoadStatisticsDatabaseStore::checkForMissingTablesInSchema() { return std::nullopt; }
+void ResourceLoadStatisticsDatabaseStore::pruneStatisticsIfNeeded() { }
+void ResourceLoadStatisticsDatabaseStore::interruptAllDatabases() { }
+
+// Getters — return defaults
+bool ResourceLoadStatisticsDatabaseStore::isPrevalentResource(const RegistrableDomain& domain) const { return false; }
+bool ResourceLoadStatisticsDatabaseStore::isVeryPrevalentResource(const RegistrableDomain& domain) const { return false; }
+bool ResourceLoadStatisticsDatabaseStore::isGrandfathered(const RegistrableDomain& domain) const { return false; }
+bool ResourceLoadStatisticsDatabaseStore::isRegisteredAsSubresourceUnder(const SubResourceDomain& subResource, const TopFrameDomain& topFrame) const { return false; }
+bool ResourceLoadStatisticsDatabaseStore::isRegisteredAsSubFrameUnder(const SubFrameDomain& subFrame, const TopFrameDomain& topFrame) const { return false; }
+bool ResourceLoadStatisticsDatabaseStore::isRegisteredAsRedirectingTo(const RedirectedFromDomain& redirectedFrom, const RedirectedToDomain& redirectedTo) const { return false; }
+
+Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::allDomains() const { return { }; }
+Vector<WebResourceLoadStatisticsStore::ThirdPartyData> ResourceLoadStatisticsDatabaseStore::aggregatedThirdPartyData() const { return { }; }
+HashMap<TopFrameDomain, SubResourceDomain> ResourceLoadStatisticsDatabaseStore::domainsWithStorageAccess() const { return { }; }
+Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::domainsWithUserInteractionAsFirstParty() const { return { }; }
+Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::domainsToBlockAndDeleteCookiesFor() const { return { }; }
+Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::domainsToBlockButKeepCookiesFor() const { return { }; }
+
+// Setters — no-op
+void ResourceLoadStatisticsDatabaseStore::setPrevalentResource(const RegistrableDomain& domain) { }
+void ResourceLoadStatisticsDatabaseStore::setVeryPrevalentResource(const RegistrableDomain& domain) { }
+void ResourceLoadStatisticsDatabaseStore::setGrandfathered(const RegistrableDomain& domain, bool value) { }
+void ResourceLoadStatisticsDatabaseStore::clearPrevalentResource(const RegistrableDomain& domain) { }
+void ResourceLoadStatisticsDatabaseStore::setLastSeen(const RegistrableDomain& domain, Seconds seconds) { }
+void ResourceLoadStatisticsDatabaseStore::setMostRecentWebPushInteractionTime(const RegistrableDomain& domain) { }
+void ResourceLoadStatisticsDatabaseStore::setSubframeUnderTopFrameDomain(const SubFrameDomain& subFrame, const TopFrameDomain& topFrame) { }
+void ResourceLoadStatisticsDatabaseStore::setSubresourceUnderTopFrameDomain(const SubResourceDomain& subResource, const TopFrameDomain& topFrame) { }
+void ResourceLoadStatisticsDatabaseStore::setSubresourceUniqueRedirectTo(const SubResourceDomain& subResource, const RedirectDomain& redirect) { }
+void ResourceLoadStatisticsDatabaseStore::setSubresourceUniqueRedirectFrom(const SubResourceDomain& subResource, const RedirectDomain& redirect) { }
+void ResourceLoadStatisticsDatabaseStore::setTopFrameUniqueRedirectTo(const TopFrameDomain& topFrame, const RedirectDomain& redirect) { }
+void ResourceLoadStatisticsDatabaseStore::setTopFrameUniqueRedirectFrom(const TopFrameDomain& topFrame, const RedirectDomain& redirect) { }
+void ResourceLoadStatisticsDatabaseStore::setIsScheduledForAllScriptWrittenStorageRemoval(const RegistrableDomain& domain, bool value) { }
+
+// Methods that return bool
+bool ResourceLoadStatisticsDatabaseStore::hasHadUserInteraction(const RegistrableDomain& domain, OperatingDatesWindow window) { return false; }
+bool ResourceLoadStatisticsDatabaseStore::isCorrectSubStatisticsCount(const RegistrableDomain& domain, const TopFrameDomain& topFrame) { return true; }
+
+// Methods with completion handlers
+void ResourceLoadStatisticsDatabaseStore::logUserInteraction(const RegistrableDomain& domain, CompletionHandler<void()>&& completionHandler) { completionHandler(); }
+void ResourceLoadStatisticsDatabaseStore::clearUserInteraction(const RegistrableDomain& domain, CompletionHandler<void()>&& completionHandler) { completionHandler(); }
+void ResourceLoadStatisticsDatabaseStore::logFrameNavigation(const NavigatedToDomain& navigatedTo, const TopFrameDomain& topFrame, const NavigatedFromDomain& navigatedFrom, bool isRedirect, bool isMainFrame, Seconds delayAfterMainFrameDocumentLoad, bool wasPotentiallyInitiatedByUser) { }
+void ResourceLoadStatisticsDatabaseStore::logCrossSiteLoadWithLinkDecoration(const NavigatedFromDomain& navigatedFrom, const NavigatedToDomain& navigatedTo) { }
+void ResourceLoadStatisticsDatabaseStore::clearTopFrameUniqueRedirectsToSinceSameSiteStrictEnforcement(const NavigatedToDomain& navigatedTo, CompletionHandler<void()>&& completionHandler) { completionHandler(); }
+void ResourceLoadStatisticsDatabaseStore::grandfatherDataForDomains(const HashSet<RegistrableDomain>& domains) { }
+void ResourceLoadStatisticsDatabaseStore::clearGrandfathering(Vector<unsigned>&&) { }
+
+// Storage access methods
+void ResourceLoadStatisticsDatabaseStore::requestStorageAccess(SubFrameDomain&& subFrame, TopFrameDomain&& topFrame, FrameIdentifier frameID, PageIdentifier pageID, StorageAccessScope scope, CompletionHandler<void(StorageAccessStatus)>&& completionHandler) { completionHandler(StorageAccessStatus::CannotRequestAccess); }
+void ResourceLoadStatisticsDatabaseStore::grantStorageAccess(SubFrameDomain&& subFrame, TopFrameDomain&& topFrame, FrameIdentifier frameID, PageIdentifier pageID, StorageAccessPromptWasShown promptWasShown, StorageAccessScope scope, CompletionHandler<void(StorageAccessWasGranted)>&& completionHandler) { completionHandler(StorageAccessWasGranted::No); }
+void ResourceLoadStatisticsDatabaseStore::hasStorageAccess(SubFrameDomain&& subFrame, TopFrameDomain&& topFrame, std::optional<FrameIdentifier> frameID, PageIdentifier pageID, CompletionHandler<void(bool)>&& completionHandler) { completionHandler(false); }
+
+// Debug/testing methods
+void ResourceLoadStatisticsDatabaseStore::insertExpiredStatisticForTesting(const RegistrableDomain& domain, unsigned numberOfOperatingDaysPassed, bool hasHadUserInteraction, bool isScheduledForAllButCookieDataRemoval, bool isPrevalent) { }
+void ResourceLoadStatisticsDatabaseStore::includeTodayAsOperatingDateIfNecessary() { }
+Vector<RegistrableDomain> ResourceLoadStatisticsDatabaseStore::ensurePrevalentResourcesForDebugMode() { return { }; }
+void ResourceLoadStatisticsDatabaseStore::incrementRecordsDeletedCountForDomains(HashSet<RegistrableDomain>&&) { }
 
 } // namespace WebKit
 

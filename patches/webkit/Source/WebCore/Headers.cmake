@@ -425,8 +425,6 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     Modules/indexeddb/server/IndexValueStore.h
     Modules/indexeddb/server/MemoryBackingStoreTransaction.h
     Modules/indexeddb/server/MemoryIDBBackingStore.h
-     Modules/indexeddb/server/SQLiteIDBBackingStore.h
-     Modules/indexeddb/server/SQLiteIDBTransaction.h
     Modules/indexeddb/server/ServerOpenDBRequest.h
     Modules/indexeddb/server/UniqueIDBDatabase.h
     Modules/indexeddb/server/UniqueIDBDatabaseConnection.h
@@ -2217,13 +2215,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     platform/network/TimingAllowOrigin.h
 
     platform/sql/SQLValue.h
-    platform/sql/SQLiteDatabase.h
-    platform/sql/SQLiteDatabaseTracker.h
-    platform/sql/SQLiteDatabaseTrackerClient.h
-    platform/sql/SQLiteFileSystem.h
-    platform/sql/SQLiteStatement.h
-    platform/sql/SQLiteStatementAutoResetScope.h
-    platform/sql/SQLiteTransaction.h
+    # Zawra: platform/sql/SQLite*.h removed — SQLite replaced by BrowserDB
 
     platform/text/CharacterProperties.h
     platform/text/BidiContext.h

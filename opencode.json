@@ -1,0 +1,12 @@
+{
+  "denied_commands": [
+    "ninja -t clean",
+    "ninja clean",
+    "rm -rf webkit/build",
+    "rm -rf webkit/build/*",
+    "git clean -fdx webkit/build",
+    "git reset --hard",
+    "git clean -fd"
+  ],
+  "deny_description": "webkit/build/ contains the ENTIRE WebKit build cache (DerivedSources, .o files, CMake state). Wiping it means a full multi-day rebuild. These commands are ABSOLUTELY FORBIDDEN."
+}

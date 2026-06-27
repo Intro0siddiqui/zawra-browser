@@ -738,12 +738,14 @@ PageConsoleClient* LocalDOMWindow::console() const
     return frame->page() ? &frame->page()->console() : nullptr;
 }
 
+#if ENABLE(APPLICATION_CACHE)
 DOMApplicationCache& LocalDOMWindow::applicationCache()
 {
     if (!m_applicationCache)
         m_applicationCache = DOMApplicationCache::create(*this);
     return *m_applicationCache;
 }
+#endif
 
 Navigator& LocalDOMWindow::navigator()
 {

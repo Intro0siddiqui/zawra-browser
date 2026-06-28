@@ -516,6 +516,65 @@ def deps(module_path):
     print()
 
 
+def list_patches_by_subsystem():
+    if not DB_PATH.exists():
+        print(f"Error: {DB_PATH} not found. Run inventory_crawler.py first.")
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT patch_path, target_path FROM patches")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        print("No patches found.")
+        return
+
+    categories = {
+        "Hajr IPC & Sandbox": [],
+        "Z-Net Networking": [],
+        "z-graphics Vulkan RHI": [],
+        "BrowserDB Storage": [],
+        "Build System Config": [],
+        "Other Patches": []
+    }
+
+    for patch_path, target_path in rows:
+        path_lower = patch_path.lower()
+        
+        # 1. Build System Config
+        if any(x in path_lower for x in ["cmakelists.txt", "sources.txt", "sourceswpe.txt", "headers.cmake", "optionswpe.cmake", "platformwpe.cmake"]):
+            categories["Build System Config"].append((patch_path, target_path))
+        # 2. Hajr IPC & Sandbox
+        elif any(x in path_lower for x in ["hajr", "moriarty", "gpuprocessmainglib", "networkprocesssoup", "connection", "processlauncherglib", "webprocessglib"]):
+            categories["Hajr IPC & Sandbox"].append((patch_path, target_path))
+        # 3. Z-Net Networking
+        elif any(x in path_lower for x in ["znet", "z_net", "networkdatatask"]):
+            categories["Z-Net Networking"].append((patch_path, target_path))
+        # 4. z-graphics Vulkan RHI
+        elif any(x in path_lower for x in ["z_graphics", "z-graphics", "graphics/zawra"]):
+            categories["z-graphics Vulkan RHI"].append((patch_path, target_path))
+        # 5. BrowserDB Storage (WebSQL, AppCache, LocalStorage, IndexedDB, etc.)
+        elif any(x in path_lower for x in ["webdatabase", "appcache", "indexeddb", "push-api", "localstoragemanager", "storageareabase", "browserdbstoragearea", "swregistrationdatabase", "resourceloadstatisticsdatabasestore", "privateclickmeasurement", "zawrastoragebridge", "zitpbridge", "zpcmbridge", "zswregbridge", "zwebsqlbridge", "zappcachebridge", "zpushbridge"]):
+            categories["BrowserDB Storage"].append((patch_path, target_path))
+        else:
+            categories["Other Patches"].append((patch_path, target_path))
+
+    print("\n===========================================")
+    print("      ZAWRAS PATCH SUBSYSTEM BREAKDOWN     ")
+    print("===========================================")
+    for cat, items in categories.items():
+        if items:
+            print(f"\n📁 {cat} ({len(items)} files):")
+            for p, t in sorted(items):
+                print(f"  - {p}")
+    print("\n===========================================")
+    total = sum(len(items) for items in categories.values())
+    print(f"Total Patches: {total}")
+    print("===========================================\n")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage:")
@@ -535,7 +594,7 @@ if __name__ == "__main__":
         cmd = sys.argv[1]
 
         if cmd == "patches":
-            query("SELECT patch_path, target_path FROM patches")
+            list_patches_by_subsystem()
         elif cmd == "ffi":
             query("SELECT symbol_name, source_file, language FROM ffi_symbols LIMIT 50")
         elif cmd == "audit":

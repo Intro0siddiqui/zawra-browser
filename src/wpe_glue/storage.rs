@@ -1039,7 +1039,7 @@ pub unsafe extern "C" fn Z_WebSQL_Open(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     db_name: *const c_char,
-    db_name_len: u32,
+    _db_name_len: u32,
     version: i32,
 ) -> i32 {
     if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
@@ -1117,7 +1117,7 @@ pub unsafe extern "C" fn Z_WebSQL_GetVersion(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     db_name: *const c_char,
-    db_name_len: u32,
+    _db_name_len: u32,
 ) -> i32 {
     if db_name.is_null() { return -1; }
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
@@ -1143,7 +1143,7 @@ pub unsafe extern "C" fn Z_WebSQL_SetVersion(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     db_name: *const c_char,
-    db_name_len: u32,
+    _db_name_len: u32,
     version: i32,
 ) -> i32 {
     if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
@@ -1174,7 +1174,7 @@ pub unsafe extern "C" fn Z_WebSQL_DeleteDatabase(
     origin_hash_hi: u64,
     origin_hash_lo: u64,
     db_name: *const c_char,
-    db_name_len: u32,
+    _db_name_len: u32,
 ) -> i32 {
     if db_name.is_null() { return NS_ERROR_INVALID_ARG; }
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
@@ -1404,7 +1404,7 @@ pub unsafe extern "C" fn Z_PCM_GetUnattributed(
     result_written: *mut u32,
 ) -> i32 {
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
-    let origin_hash: u128 = 0;
+    let _origin_hash: u128 = 0;
     match db().localstore().query()
         .filter(|e| e.key.starts_with("pcm:unattributed:"))
         .execute() {
@@ -1475,7 +1475,7 @@ pub unsafe extern "C" fn Z_PCM_GetAttributed(
     result_written: *mut u32,
 ) -> i32 {
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
-    let origin_hash: u128 = 0;
+    let _origin_hash: u128 = 0;
     match db().localstore().query()
         .filter(|e| e.key.starts_with("pcm:attributed:"))
         .execute() {

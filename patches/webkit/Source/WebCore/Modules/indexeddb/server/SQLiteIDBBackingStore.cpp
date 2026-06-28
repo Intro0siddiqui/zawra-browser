@@ -29,115 +29,115 @@ uint64_t SQLiteIDBBackingStore::databaseVersion()
 
 IDBError SQLiteIDBBackingStore::beginTransaction(const IDBTransactionInfo&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::abortTransaction(const IDBResourceIdentifier&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::commitTransaction(const IDBResourceIdentifier&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::createObjectStore(const IDBResourceIdentifier&, const IDBObjectStoreInfo&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::deleteObjectStore(const IDBResourceIdentifier&, uint64_t)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::renameObjectStore(const IDBResourceIdentifier&, uint64_t, const String&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::clearObjectStore(const IDBResourceIdentifier&, uint64_t)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::createIndex(const IDBResourceIdentifier&, const IDBIndexInfo&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::deleteIndex(const IDBResourceIdentifier&, uint64_t, uint64_t)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::renameIndex(const IDBResourceIdentifier&, uint64_t, uint64_t, const String&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::keyExistsInObjectStore(const IDBResourceIdentifier&, uint64_t, const IDBKeyData&, bool& keyExists)
 {
     keyExists = false;
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::deleteRange(const IDBResourceIdentifier&, uint64_t, const IDBKeyRangeData&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::addRecord(const IDBResourceIdentifier&, const IDBObjectStoreInfo&, const IDBKeyData&, const IndexIDToIndexKeyMap&, const IDBValue&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::getRecord(const IDBResourceIdentifier&, uint64_t, const IDBKeyRangeData&, IDBGetRecordDataType, IDBGetResult&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::getAllRecords(const IDBResourceIdentifier&, const IDBGetAllRecordsData&, IDBGetAllResult&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t, uint64_t, IndexedDB::IndexRecordType, const IDBKeyRangeData&, IDBGetResult&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::getCount(const IDBResourceIdentifier&, uint64_t, uint64_t, const IDBKeyRangeData&, uint64_t& outCount)
 {
     outCount = 0;
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::generateKeyNumber(const IDBResourceIdentifier&, uint64_t, uint64_t& keyNumber)
 {
     keyNumber = 0;
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::revertGeneratedKeyNumber(const IDBResourceIdentifier&, uint64_t, uint64_t)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&, uint64_t, double)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInfo&, IDBGetResult&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBError SQLiteIDBBackingStore::iterateCursor(const IDBResourceIdentifier&, const IDBResourceIdentifier&, const IDBIterateCursorData&, IDBGetResult&)
 {
-    return { };
+    return IDBError { };
 }
 
 IDBObjectStoreInfo* SQLiteIDBBackingStore::infoForObjectStore(uint64_t)

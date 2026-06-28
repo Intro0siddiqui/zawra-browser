@@ -1577,15 +1577,23 @@ inline void InspectorInstrumentation::willDestroyWebAnimation(WebAnimation& anim
 
 inline void InspectorInstrumentation::networkStateChanged(Page& page)
 {
+#if ENABLE(APPLICATION_CACHE)
     FAST_RETURN_IF_NO_FRONTENDS(void());
     networkStateChangedImpl(instrumentingAgents(page));
+#else
+    UNUSED_PARAM(page);
+#endif
 }
 
 inline void InspectorInstrumentation::updateApplicationCacheStatus(LocalFrame* frame)
 {
+#if ENABLE(APPLICATION_CACHE)
     FAST_RETURN_IF_NO_FRONTENDS(void());
     if (auto* agents = instrumentingAgents(frame))
         updateApplicationCacheStatusImpl(*agents, *frame);
+#else
+    UNUSED_PARAM(frame);
+#endif
 }
 
 inline void InspectorInstrumentation::addMessageToConsole(Page& page, std::unique_ptr<Inspector::ConsoleMessage> message)

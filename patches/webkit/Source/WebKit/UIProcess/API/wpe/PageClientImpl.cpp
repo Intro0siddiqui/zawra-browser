@@ -41,6 +41,7 @@
 #include "WebContextMenuProxyWPE.h"
 #include "WebKitPopupMenu.h"
 #include "WebPageProxy.h"
+#include "PageLoadState.h"
 #include <WebCore/ActivityState.h>
 #include <WebCore/DOMPasteAccess.h>
 #include <WebCore/NotImplemented.h>

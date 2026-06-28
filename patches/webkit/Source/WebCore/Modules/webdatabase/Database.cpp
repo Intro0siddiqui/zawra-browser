@@ -46,6 +46,7 @@
 
 namespace WebCore {
 
+
 Database::Database(DatabaseContext& context, const String& name, const String& expectedVersion, const String& displayName, unsigned long long estimatedSize)
     : m_document(*context.document())
     , m_contextThreadSecurityOrigin(context.document()->securityOrigin())
@@ -311,3 +312,4 @@ String Database::databaseDebugName() const
 #endif
 
 } // namespace WebCore
+

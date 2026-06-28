@@ -124,10 +124,12 @@ void WebResourceLoader::willSendRequest(ResourceRequest&& proposedRequest, IPC::
     LOG(Network, "(WebProcess) WebResourceLoader::willSendRequest to '%s'", proposedRequest.url().string().latin1().data());
     WEBRESOURCELOADER_RELEASE_LOG("willSendRequest:");
 
+#if ENABLE(APPLICATION_CACHE)
     if (m_coreLoader->documentLoader()->applicationCacheHost().maybeLoadFallbackForRedirect(m_coreLoader.get(), proposedRequest, redirectResponse)) {
         WEBRESOURCELOADER_RELEASE_LOG("willSendRequest: exiting early because maybeLoadFallbackForRedirect returned false");
         return completionHandler({ }, false);
     }
+#endif
     
     if (auto* frame = m_coreLoader->frame()) {
         if (auto* page = frame->page()) {
@@ -167,10 +169,12 @@ void WebResourceLoader::didReceiveResponse(ResourceResponse&& response, PrivateR
     if (privateRelayed == PrivateRelayed::Yes && mainFrameMainResource() == MainFrameMainResource::Yes)
         WebProcess::singleton().setHadMainFrameMainResourcePrivateRelayed();
 
+#if ENABLE(APPLICATION_CACHE)
     if (m_coreLoader->documentLoader()->applicationCacheHost().maybeLoadFallbackForResponse(m_coreLoader.get(), response)) {
         WEBRESOURCELOADER_RELEASE_LOG("didReceiveResponse: not continuing load because the content is already cached");
         return;
     }
+#endif
 
     CompletionHandler<void()> policyDecisionCompletionHandler;
     if (needsContinueDidReceiveResponseMessage) {
@@ -306,8 +310,10 @@ void WebResourceLoader::didFailResourceLoad(const ResourceError& error)
 
     ASSERT_WITH_MESSAGE(!m_isProcessingNetworkResponse, "Load should not be able to finish before we've validated the response");
 
+#if ENABLE(APPLICATION_CACHE)
     if (m_coreLoader->documentLoader()->applicationCacheHost().maybeLoadFallbackForError(m_coreLoader.get(), error))
         return;
+#endif
     m_coreLoader->didFail(error);
 }
 

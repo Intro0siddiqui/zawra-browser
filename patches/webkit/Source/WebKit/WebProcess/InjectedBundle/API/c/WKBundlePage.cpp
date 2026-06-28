@@ -26,6 +26,7 @@
 #include "config.h"
 #include "WKBundlePage.h"
 #include "WKBundlePagePrivate.h"
+#include <WebCore/ApplicationCacheStorage.h>
 
 #include "APIArray.h"
 #include "APIDictionary.h"

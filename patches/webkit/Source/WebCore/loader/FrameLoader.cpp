@@ -3360,14 +3360,20 @@ ResourceLoaderIdentifier FrameLoader::loadResourceSynchronously(const ResourceRe
     if (error.isNull()) {
         ASSERT(!newRequest.isNull());
 
+#if ENABLE(APPLICATION_CACHE)
         if (!documentLoader()->applicationCacheHost().maybeLoadSynchronously(newRequest, error, response, data)) {
+#endif
             Vector<uint8_t> buffer;
             platformStrategies()->loaderStrategy()->loadResourceSynchronously(*this, identifier, newRequest, clientCredentialPolicy, options, originalRequestHeaders, error, response, buffer);
             data = SharedBuffer::create(WTFMove(buffer));
+#if ENABLE(APPLICATION_CACHE)
             documentLoader()->applicationCacheHost().maybeLoadFallbackSynchronously(newRequest, error, response, data);
+#endif
             ResourceLoadObserver::shared().logSubresourceLoading(&m_frame, newRequest, response,
                 (isScriptLikeDestination(options.destination) ? ResourceLoadObserver::FetchDestinationIsScriptLike::Yes : ResourceLoadObserver::FetchDestinationIsScriptLike::No));
+#if ENABLE(APPLICATION_CACHE)
         }
+#endif
     }
 
     notifier().sendRemainingDelegateMessages(m_documentLoader.get(), identifier, request, response, data.get(), data ? data->size() : 0, -1, error);

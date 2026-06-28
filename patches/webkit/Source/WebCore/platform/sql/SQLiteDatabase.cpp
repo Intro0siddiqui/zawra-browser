@@ -819,4 +819,5 @@ Expected<UniqueRef<SQLiteStatement>, int> SQLiteDatabase::prepareHeapStatement(A
 }
 
 } // namespace WebCore
-#endif
+
+#endif // ENABLE(WEBSQL)

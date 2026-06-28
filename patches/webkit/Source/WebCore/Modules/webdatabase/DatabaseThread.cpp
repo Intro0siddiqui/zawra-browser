@@ -6,6 +6,7 @@
 #include "Database.h"
 #include "DatabaseTask.h"
 #include "SQLTransactionCoordinator.h"
+#include "SQLTransaction.h"
 
 namespace WebCore {
 

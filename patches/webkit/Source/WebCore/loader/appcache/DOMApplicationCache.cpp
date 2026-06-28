@@ -26,6 +26,7 @@
 #include "config.h"
 #include "DOMApplicationCache.h"
 
+#if ENABLE(APPLICATION_CACHE)
 #include "ApplicationCacheHost.h"
 #include "Document.h"
 #include "DocumentLoader.h"
@@ -101,3 +102,4 @@ ScriptExecutionContext* DOMApplicationCache::scriptExecutionContext() const
 }
 
 } // namespace WebCore
+#endif // ENABLE(APPLICATION_CACHE)

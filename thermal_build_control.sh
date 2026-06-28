@@ -14,7 +14,7 @@ export WEBKIT_USE_SCCACHE=1
 # --- Configuration ---
 BUILD_DIR="webkit/build"
 TARGET="MiniBrowser"
-JOBS=3              # i3-6006U has 4 threads; 3 jobs leaves 1 free for OS/thermal
+JOBS=2              # Reduced to 2 to prevent kernel OOM kills on memory-heavy C++ targets
 TEMP_HIGH=80        # User preferred — conservative pause threshold
 TEMP_LOW=60         # User preferred — conservative resume threshold
 POLL_INTERVAL=5     # seconds between temperature checks

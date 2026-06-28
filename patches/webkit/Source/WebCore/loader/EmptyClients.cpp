@@ -1222,7 +1222,9 @@ PageConfiguration pageConfigurationWithEmptyClients(std::optional<PageIdentifier
 
     pageConfiguration.diagnosticLoggingClient = makeUnique<EmptyDiagnosticLoggingClient>();
 
+#if ENABLE(APPLICATION_CACHE)
     pageConfiguration.applicationCacheStorage = ApplicationCacheStorage::create({ }, { });
+#endif
     pageConfiguration.databaseProvider = adoptRef(*new EmptyDatabaseProvider);
     pageConfiguration.pluginInfoProvider = adoptRef(*new EmptyPluginInfoProvider);
     pageConfiguration.storageNamespaceProvider = adoptRef(*new EmptyStorageNamespaceProvider);

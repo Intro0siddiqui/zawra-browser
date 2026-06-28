@@ -49,6 +49,8 @@
 
 namespace WebCore {
 
+#if ENABLE(APPLICATION_CACHE)
+
 template <class T>
 class StorageIDJournal {
 public:  
@@ -1578,6 +1580,23 @@ int64_t ApplicationCacheStorage::diskUsageForOrigin(const SecurityOriginData& se
     calculateUsageForOrigin(securityOrigin, usage);
     return usage;
 }
+
+#else // !ENABLE(APPLICATION_CACHE)
+
+void ApplicationCacheStorage::setMaximumSize(int64_t) { }
+int64_t ApplicationCacheStorage::maximumSize() const { return 0; }
+void ApplicationCacheStorage::setDefaultOriginQuota(int64_t) { }
+bool ApplicationCacheStorage::calculateUsageForOrigin(const SecurityOriginData&, int64_t& usage) { usage = 0; return false; }
+bool ApplicationCacheStorage::calculateQuotaForOrigin(const SecurityOrigin&, int64_t& quota) { quota = 0; return false; }
+bool ApplicationCacheStorage::storeUpdatedQuotaForOrigin(const SecurityOrigin*, int64_t) { return false; }
+void ApplicationCacheStorage::empty() { }
+HashSet<SecurityOriginData> ApplicationCacheStorage::originsWithCache() { return { }; }
+void ApplicationCacheStorage::deleteAllEntries() { }
+void ApplicationCacheStorage::deleteAllCaches() { }
+void ApplicationCacheStorage::deleteCacheForOrigin(const SecurityOriginData&) { }
+int64_t ApplicationCacheStorage::diskUsageForOrigin(const SecurityOriginData&) { return 0; }
+
+#endif // ENABLE(APPLICATION_CACHE)
 
 ApplicationCacheStorage::ApplicationCacheStorage(const String& cacheDirectory, const String& flatFileSubdirectoryName)
     : m_cacheDirectory(cacheDirectory)

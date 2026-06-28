@@ -27,8 +27,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if ENABLE(WEBSQL)
 #include "config.h"
+
+#if ENABLE(WEBSQL)
 #include "InspectorDatabaseAgent.h"
 
 #include "Database.h"

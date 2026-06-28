@@ -1111,6 +1111,7 @@ IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&,
 
 
 struct ZCursorState {
+    WTF_MAKE_STRUCT_FAST_ALLOCATED;
     IDBCursorInfo info;
     Vector<IDBKeyData> keys;
     Vector<IDBKeyData> primaryKeys;

@@ -227,8 +227,10 @@ void ResourceLoader::start()
         return;
 #endif
 
+#if ENABLE(APPLICATION_CACHE)
     if (m_documentLoader && m_documentLoader->applicationCacheHost().maybeLoadResource(*this, m_request, m_request.url()))
         return;
+#endif
 
     if (m_defersLoading) {
         m_deferredRequest = m_request;
@@ -734,11 +736,13 @@ ResourceError ResourceLoader::httpsUpgradeRedirectLoopError()
 void ResourceLoader::willSendRequestAsync(ResourceHandle* handle, ResourceRequest&& request, ResourceResponse&& redirectResponse, CompletionHandler<void(ResourceRequest&&)>&& completionHandler)
 {
     RefPtr<ResourceHandle> protectedHandle(handle);
+#if ENABLE(APPLICATION_CACHE)
     if (documentLoader()->applicationCacheHost().maybeLoadFallbackForRedirect(this, request, redirectResponse)) {
         RESOURCELOADER_RELEASE_LOG("willSendRequestAsync: exiting early because maybeLoadFallbackForRedirect returned false");
         completionHandler(WTFMove(request));
         return;
     }
+#endif
     willSendRequestInternal(WTFMove(request), redirectResponse, WTFMove(completionHandler));
 }
 
@@ -749,10 +753,12 @@ void ResourceLoader::didSendData(ResourceHandle*, unsigned long long bytesSent, 
 
 void ResourceLoader::didReceiveResponseAsync(ResourceHandle*, ResourceResponse&& response, CompletionHandler<void()>&& completionHandler)
 {
+#if ENABLE(APPLICATION_CACHE)
     if (documentLoader()->applicationCacheHost().maybeLoadFallbackForResponse(this, response)) {
         completionHandler();
         return;
     }
+#endif
     didReceiveResponse(response, WTFMove(completionHandler));
 }
 
@@ -773,8 +779,10 @@ void ResourceLoader::didFinishLoading(ResourceHandle*, const NetworkLoadMetrics&
 
 void ResourceLoader::didFail(ResourceHandle*, const ResourceError& error)
 {
+#if ENABLE(APPLICATION_CACHE)
     if (documentLoader()->applicationCacheHost().maybeLoadFallbackForError(this, error))
         return;
+#endif
     didFail(error);
 }
 

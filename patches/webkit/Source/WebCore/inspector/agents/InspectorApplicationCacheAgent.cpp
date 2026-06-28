@@ -28,7 +28,6 @@
 
 #if ENABLE(APPLICATION_CACHE)
 #include "ApplicationCacheHost.h"
-#endif
 #include "DocumentLoader.h"
 #include "FrameLoader.h"
 #include "InspectorPageAgent.h"
@@ -206,3 +205,4 @@ Ref<Protocol::ApplicationCache::ApplicationCacheResource> InspectorApplicationCa
 }
 
 } // namespace WebCore
+#endif // ENABLE(APPLICATION_CACHE)

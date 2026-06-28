@@ -183,7 +183,9 @@ DocumentLoader::DocumentLoader(const ResourceRequest& request, const SubstituteD
     , m_originalRequestCopy(request)
     , m_request(request)
     , m_substituteResourceDeliveryTimer(*this, &DocumentLoader::substituteResourceDeliveryTimerFired)
+#if ENABLE(APPLICATION_CACHE)
     , m_applicationCacheHost(makeUnique<ApplicationCacheHost>(*this))
+#endif
     , m_originalSubstituteDataWasValid(substituteData.isValid())
 {
 }
@@ -299,7 +301,9 @@ void DocumentLoader::mainReceivedError(const ResourceError& error)
     ASSERT(!mainResourceLoader() || !mainResourceLoader()->defersLoading());
 #endif
 
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->failedLoadingMainResource();
+#endif
 
     setMainDocumentError(error);
     clearMainResourceLoader();
@@ -359,7 +363,9 @@ void DocumentLoader::stopLoading()
         document->suspendFontLoading();
 
     // Appcache uses ResourceHandle directly, DocumentLoader doesn't count these loads.
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->stopLoadingInFrame(*m_frame);
+#endif
     
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
     clearArchiveResources();
@@ -516,7 +522,9 @@ void DocumentLoader::finishedLoading()
         if (m_mainResource && m_frame->document()->hasManifest())
             MemoryCache::singleton().remove(*m_mainResource);
     }
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->finishedLoadingMainResource();
+#endif
 }
 
 static bool isRedirectToGetAfterPost(const ResourceRequest& oldRequest, const ResourceRequest& newRequest)
@@ -624,7 +632,11 @@ void DocumentLoader::redirectReceived(ResourceRequest&& request, const ResourceR
             return;
         }
 
+#if ENABLE(APPLICATION_CACHE)
         if (m_applicationCacheHost->canLoadMainResource(request)) {
+#else
+        if (false) {
+#endif
             auto url = request.url();
             // Let's check service worker registration to see whether loading from network or not.
             this->matchRegistration(url, [request = WTFMove(request), completionHandler = WTFMove(completionHandler), protectedThis = WTFMove(protectedThis), this](auto&& registrationData) mutable {
@@ -816,7 +828,9 @@ std::optional<CrossOriginOpenerPolicyEnforcementResult> DocumentLoader::doCrossO
 
 bool DocumentLoader::tryLoadingRequestFromApplicationCache()
 {
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->maybeLoadMainResource(m_request, m_substituteData);
+#endif
     return tryLoadingSubstituteData();
 }
 
@@ -858,7 +872,9 @@ bool DocumentLoader::tryLoadingSubstituteData()
 
 bool DocumentLoader::tryLoadingRedirectRequestFromApplicationCache(const ResourceRequest& request)
 {
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->maybeLoadMainResourceForRedirect(request, m_substituteData);
+#endif
     if (!m_substituteData.isValid())
         return false;
 
@@ -967,7 +983,10 @@ void DocumentLoader::responseReceived(const ResourceResponse& response, Completi
 #endif
 
     Ref<DocumentLoader> protectedThis(*this);
-    bool willLoadFallback = m_applicationCacheHost->maybeLoadFallbackForMainResponse(request(), response);
+    bool willLoadFallback = false;
+#if ENABLE(APPLICATION_CACHE)
+    willLoadFallback = m_applicationCacheHost->maybeLoadFallbackForMainResponse(request(), response);
+#endif
 
     // The memory cache doesn't understand the application cache or its caching rules. So if a main resource is served
     // from the application cache, ensure we don't save the result for future use.
@@ -1409,7 +1428,9 @@ void DocumentLoader::dataReceived(const SharedBuffer& buffer)
     if (m_identifierForLoadWithoutResourceLoader)
         frameLoader()->notifier().dispatchDidReceiveData(this, m_identifierForLoadWithoutResourceLoader, &buffer, buffer.size(), -1);
 
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->mainResourceDataReceived(buffer, -1, false);
+#endif
 
     if (!isMultipartReplacingLoad())
         commitLoad(buffer);
@@ -1541,7 +1562,9 @@ void DocumentLoader::detachFromFrame()
         m_contentFilter->stopFilteringMainResource();
 #endif
 
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->setDOMApplicationCache(nullptr);
+#endif
 
     cancelPolicyCheckIfNeeded();
 
@@ -2159,7 +2182,11 @@ void DocumentLoader::startLoadingMainResource()
         DOCUMENTLOADER_RELEASE_LOG("startLoadingMainResource: Starting load");
 
 #if ENABLE(SERVICE_WORKER)
+#if ENABLE(APPLICATION_CACHE)
         if (m_applicationCacheHost->canLoadMainResource(request) || m_substituteData.isValid()) {
+#else
+        if (m_substituteData.isValid()) {
+#endif
             auto url = request.url();
             matchRegistration(url, [request = WTFMove(request), protectedThis = WTFMove(protectedThis), this] (auto&& registrationData) mutable {
                 if (!m_mainDocumentError.isNull()) {
@@ -2277,7 +2304,9 @@ void DocumentLoader::loadMainResource(ResourceRequest&& request)
         // If the load was aborted by clearing m_request, it's possible the ApplicationCacheHost
         // is now in a state where starting an empty load will be inconsistent. Replace it with
         // a new ApplicationCacheHost.
+#if ENABLE(APPLICATION_CACHE)
         m_applicationCacheHost = makeUnique<ApplicationCacheHost>(*this);
+#endif
         maybeLoadEmpty();
         return;
     }
@@ -2450,7 +2479,9 @@ void DocumentLoader::finishedLoadingIcon(IconLoader& loader, FragmentedSharedBuf
 void DocumentLoader::dispatchOnloadEvents()
 {
     m_wasOnloadDispatched = true;
+#if ENABLE(APPLICATION_CACHE)
     m_applicationCacheHost->stopDeferringEvents();
+#endif
 }
 
 void DocumentLoader::setTriggeringAction(NavigationAction&& action)

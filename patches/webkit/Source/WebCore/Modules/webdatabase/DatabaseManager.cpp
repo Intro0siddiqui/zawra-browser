@@ -1,6 +1,7 @@
 #include "config.h"
 #include "DatabaseManager.h"
 
+#include "Database.h"
 #include "DatabaseContext.h"
 #include "Exception.h"
 #include <wtf/NeverDestroyed.h>

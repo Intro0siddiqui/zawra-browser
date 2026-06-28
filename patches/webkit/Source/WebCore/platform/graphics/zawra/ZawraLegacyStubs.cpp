@@ -11,7 +11,6 @@
 #include "ZawraGraphicsBridge.h"
 
 
-
 namespace WebCore {
 
 static ThreadSpecific<GLContext*>& currentContext()
@@ -79,14 +78,12 @@ std::unique_ptr<GLContext> GLContext::create(GLNativeWindowType window, Platform
     UNUSED_PARAM(window);
     return createSharing(platformDisplay);
 }
-
 void GLContext::swapBuffers()
 {
     if (m_type == Surfaceless)
         return;
     ZawraGraphicsBridge::singleton().presentFrame();
 }
-
 std::unique_ptr<GLContext> GLContext::createSharing(PlatformDisplay& platformDisplay)
 {
     UNUSED_PARAM(platformDisplay);

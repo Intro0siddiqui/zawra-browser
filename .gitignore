@@ -25,7 +25,6 @@ zawra_inventory.db*
 core.*
 test_*.zig
 
-
 # Build config artifacts
 CMakeCache.txt
 CMakeFiles/

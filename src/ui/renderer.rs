@@ -4,7 +4,7 @@
 //! native browser window widget. When WPE is not available (headless mode),
 //! this module provides a stub that logs rendered output.
 
-use std::ffi::{CString, c_char, c_void};
+use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 
 unsafe extern "C" {

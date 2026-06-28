@@ -37,7 +37,9 @@
 #include "DOMWrapperWorld.h"
 #include "GraphicsContext.h"
 #include "InspectorAnimationAgent.h"
+#if ENABLE(APPLICATION_CACHE)
 #include "InspectorApplicationCacheAgent.h"
+#endif
 #include "InspectorCPUProfilerAgent.h"
 #include "InspectorCSSAgent.h"
 #include "InspectorCanvasAgent.h"
@@ -168,7 +170,9 @@ void InspectorController::createLazyAgents()
     m_agents.append(makeUnique<InspectorCSSAgent>(pageContext));
     ensureDOMAgent();
     m_agents.append(makeUnique<PageDOMDebuggerAgent>(pageContext, debuggerAgentPtr));
+#if ENABLE(APPLICATION_CACHE)
     m_agents.append(makeUnique<InspectorApplicationCacheAgent>(pageContext));
+#endif
     m_agents.append(makeUnique<InspectorLayerTreeAgent>(pageContext));
     m_agents.append(makeUnique<InspectorWorkerAgent>(pageContext));
     m_agents.append(makeUnique<InspectorDOMStorageAgent>(pageContext));

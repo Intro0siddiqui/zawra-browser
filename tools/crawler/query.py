@@ -573,8 +573,6 @@ def list_patches_by_subsystem():
     total = sum(len(items) for items in categories.values())
     print(f"Total Patches: {total}")
     print("===========================================\n")
-
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage:")

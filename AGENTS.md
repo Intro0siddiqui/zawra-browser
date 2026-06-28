@@ -181,7 +181,6 @@ For Zawra-specific project intelligence, agents **MUST** use the following `zw` 
     * **Paranoid Mode (`./zw stubs --severity low`)**: Also shows potential stubs that look like guard clauses (e.g., `if (!x) return nullptr;`). Use this if you suspect a hidden stub.
     * **Clean Mode (`./zw stubs --pattern empty_body`)**: Only shows functions with physically empty braces `{ }`. This has the highest precision for "gutted" functions.
     * **Purpose**: For identifying missing implementation points or platform-specific gaps.
-
 6.  **`./zw deps <module_path>`**: **CRITICAL for feature disabling.** Scan ALL files that `#include` headers from a given module directory. Shows which files are in `patches/` (can be modified) vs `webkit/source/` (need new patches). **Always run this BEFORE disabling a CMake feature flag** to avoid cascading "header not found" build errors.
     * `./zw deps Modules/webdatabase` — check WebSQL consumers
     * `./zw deps loader/appcache` — check AppCache consumers

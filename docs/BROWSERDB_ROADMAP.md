@@ -46,7 +46,6 @@ The following storage subsystems have been successfully routed to BrowserDB:
 
 ### D. Ignored Cookie Metadata
 - **Status**: Resolved. Cookie path/domain metadata is now parsed in `ZawraStorageBridge::storeCookie()` and stored in BrowserDB via `Z_Cookie_Put`. Path filtering is applied in `Z_Cookie_GetForDomain` so only cookies matching the requested path are returned.
-
 ---
 
 ## 3. Remaining Roadmap Stages

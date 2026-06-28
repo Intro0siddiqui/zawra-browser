@@ -8,7 +8,7 @@
 //!     the glue layer without a full WPE install.
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn main() {
     // ── Re-run only when relevant files change ──────────────────────────────

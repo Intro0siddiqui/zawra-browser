@@ -533,8 +533,7 @@ pub unsafe extern "C" fn Z_LocalStorage_GetAll(
     out_buf_len:    usize,
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
-    let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
-    match db().localstore().get_by_origin(origin_hash) {
+    match db().localstore().get_by_origin(0) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let mut combined = String::new();
@@ -1963,7 +1962,7 @@ pub unsafe extern "C" fn Z_SWReg_DeleteAll() -> i32 {
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 // Internal: minimal base64 (no external dependency)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

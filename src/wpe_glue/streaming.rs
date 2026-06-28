@@ -10,16 +10,15 @@
 //!  3. **HTTP Redirect Following** — detects 301/302/307/308 status codes and
 //!     recursively creates a new `ZNetChannel` for the target location.
 
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use lean_net::{NetError, net_read};
 
 use crate::wpe_glue::networking::{
-    OwnedBodyRing, ZNetChannel, ZNetInputStream, global_engine, ns_result,
+    OwnedBodyRing, ns_result,
 };
 
 // ── nsresult values used in this module ─────────────────────────────────────

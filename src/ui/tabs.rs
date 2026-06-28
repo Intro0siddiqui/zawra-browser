@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use browserdb::BrowserDB;
 
 /// A unique tab identifier.
 pub type TabId = u64;

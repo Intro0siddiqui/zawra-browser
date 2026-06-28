@@ -1109,6 +1109,7 @@ IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&,
     return IDBError { };
 }
 
+
 struct ZCursorState {
     IDBCursorInfo info;
     Vector<IDBKeyData> keys;
@@ -1117,6 +1118,7 @@ struct ZCursorState {
     int64_t currentIndex { -1 };
     bool done { false };
 };
+
 
 IDBError Z_IDBStore::getObjectStoreValue(uint64_t objectStoreIdentifier, const IDBKeyData& primaryKey, ThreadSafeDataBuffer& outBuffer)
 {
@@ -1268,7 +1270,7 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
 
     auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(info.objectStoreIdentifier()) : nullptr;
 
-    auto cursorState = std::make_unique<ZCursorState>();
+    auto cursorState = makeUnique<ZCursorState>();
     cursorState->info = info;
 
     Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>> records;

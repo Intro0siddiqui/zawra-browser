@@ -145,7 +145,8 @@ void PageClientImpl::didCommitLoadForMainFrame(const String& mimeType, bool fram
     String urlString = page.currentURL();
     if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
         URL pageURL({ }, urlString);
-        WebCore::ZSB::recordHistory(pageURL, String());
+        String title = page.pageLoadState().title();
+        WebCore::ZSB::recordHistory(pageURL, title);
     }
 }
 
@@ -220,7 +221,8 @@ void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool)
         String urlString = page.currentURL();
         if (!urlString.isEmpty() && !urlString.startsWith("about:"_s)) {
             URL pageURL({ }, urlString);
-            WebCore::ZSB::addBookmark(pageURL, String(), "Default"_s);
+            String title = page.pageLoadState().title();
+            WebCore::ZSB::addBookmark(pageURL, title, "Default"_s);
         }
         return;
     }

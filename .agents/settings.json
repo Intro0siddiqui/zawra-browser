@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "command(ninja -t clean)",
+      "command(ninja clean)",
+      "command(rm -rf webkit/build)",
+      "command(rm -rf webkit/build/*)",
+      "command(git clean -fdx webkit/build)",
+      "command(git reset --hard)",
+      "command(git clean -fd)"
+    ]
+  }
+}

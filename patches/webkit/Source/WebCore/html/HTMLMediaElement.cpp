@@ -1581,6 +1581,7 @@ void HTMLMediaElement::loadResource(const URL& initialURL, ContentType& contentT
     // The resource fetch algorithm
     m_networkState = NETWORK_LOADING;
 
+#if ENABLE(APPLICATION_CACHE)
     // If the URL should be loaded from the application cache, pass the URL of the cached file to the media engine.
     ApplicationCacheResource* resource = nullptr;
     if (!url.isEmpty() && frame->loader().documentLoader()->applicationCacheHost().shouldLoadResourceFromApplicationCache(ResourceRequest(url), resource)) {
@@ -1591,6 +1592,7 @@ void HTMLMediaElement::loadResource(const URL& initialURL, ContentType& contentT
             return;
         }
     }
+#endif
 
     // Log that we started loading a media element.
     page->diagnosticLoggingClient().logDiagnosticMessage(isVideo() ? DiagnosticLoggingKeys::videoKey() : DiagnosticLoggingKeys::audioKey(), DiagnosticLoggingKeys::loadingKey(), ShouldSample::No);
@@ -1601,10 +1603,12 @@ void HTMLMediaElement::loadResource(const URL& initialURL, ContentType& contentT
     // cache is an internal detail not exposed through the media element API.
     setCurrentSrc(url);
 
+#if ENABLE(APPLICATION_CACHE)
     if (resource) {
         url = ApplicationCacheHost::createFileURL(resource->path());
         INFO_LOG(LOGIDENTIFIER, "will load from app cache ", url);
     }
+#endif
 
     INFO_LOG(LOGIDENTIFIER, "m_currentSrc is ", m_currentSrc);
 

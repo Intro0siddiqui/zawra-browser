@@ -24,13 +24,14 @@
 
 #pragma once
 
-#if ENABLE(APPLICATION_CACHE)
-#include "ApplicationCacheHost.h"
-#endif
 #include "InspectorWebAgentBase.h"
 #include <JavaScriptCore/InspectorBackendDispatchers.h>
 #include <JavaScriptCore/InspectorFrontendDispatchers.h>
 #include <wtf/Noncopyable.h>
+
+#if ENABLE(APPLICATION_CACHE)
+#include "ApplicationCacheHost.h"
+#endif
 
 namespace Inspector {
 class ApplicationCacheFrontendDispatcher;
@@ -41,6 +42,7 @@ namespace WebCore {
 class LocalFrame;
 class Page;
 
+#if ENABLE(APPLICATION_CACHE)
 class InspectorApplicationCacheAgent final : public InspectorAgentBase, public Inspector::ApplicationCacheBackendDispatcherHandler {
     WTF_MAKE_NONCOPYABLE(InspectorApplicationCacheAgent);
     WTF_MAKE_FAST_ALLOCATED;
@@ -74,6 +76,6 @@ private:
     RefPtr<Inspector::ApplicationCacheBackendDispatcher> m_backendDispatcher;
     Page& m_inspectedPage;
 };
+#endif // ENABLE(APPLICATION_CACHE)
 
 } // namespace WebCore
-

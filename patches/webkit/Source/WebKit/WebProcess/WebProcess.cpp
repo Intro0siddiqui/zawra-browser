@@ -185,6 +185,7 @@
 #endif
 
 
+
 #if ENABLE(SEC_ITEM_SHIM)
 #include "SecItemShim.h"
 #endif
@@ -1637,6 +1638,7 @@ void WebProcess::prepareToSuspend(bool isSuspensionImminent, MonotonicTime estim
 
 #if USE(RUNNINGBOARD)
     m_webSQLiteDatabaseTracker.setIsSuspended(true);
+
 #endif
 
 #if PLATFORM(IOS_FAMILY)
@@ -1701,6 +1703,7 @@ void WebProcess::processDidResume()
     
 #if USE(RUNNINGBOARD)
     m_webSQLiteDatabaseTracker.setIsSuspended(false);
+
 #endif
 
 #if PLATFORM(IOS_FAMILY)

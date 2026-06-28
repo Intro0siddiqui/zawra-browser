@@ -38,7 +38,9 @@
 #include "DocumentLoader.h"
 #include "Event.h"
 #include "InspectorAnimationAgent.h"
+#if ENABLE(APPLICATION_CACHE)
 #include "InspectorApplicationCacheAgent.h"
+#endif
 #include "InspectorCSSAgent.h"
 #include "InspectorCanvasAgent.h"
 #include "InspectorController.h"
@@ -765,8 +767,10 @@ void InspectorInstrumentation::didCommitLoadImpl(InstrumentingAgents& instrument
         if (auto* cssAgent = instrumentingAgents.enabledCSSAgent())
             cssAgent->reset();
 
+#if ENABLE(WEBSQL)
         if (auto* databaseAgent = instrumentingAgents.enabledDatabaseAgent())
             databaseAgent->didCommitLoad();
+#endif
 
         if (auto* domAgent = instrumentingAgents.persistentDOMAgent())
             domAgent->setDocument(frame.document());
@@ -1243,6 +1247,7 @@ void InspectorInstrumentation::didHandleMemoryPressureImpl(InstrumentingAgents& 
 }
 #endif
 
+#if ENABLE(APPLICATION_CACHE)
 void InspectorInstrumentation::networkStateChangedImpl(InstrumentingAgents& instrumentingAgents)
 {
     if (auto* applicationCacheAgent = instrumentingAgents.enabledApplicationCacheAgent())
@@ -1254,6 +1259,7 @@ void InspectorInstrumentation::updateApplicationCacheStatusImpl(InstrumentingAge
     if (auto* applicationCacheAgent = instrumentingAgents.enabledApplicationCacheAgent())
         applicationCacheAgent->updateApplicationCacheStatus(&frame);
 }
+#endif
 
 bool InspectorInstrumentation::consoleAgentEnabled(ScriptExecutionContext* scriptExecutionContext)
 {

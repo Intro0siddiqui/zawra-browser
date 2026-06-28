@@ -7,7 +7,6 @@
 
 ## RESOLVED
 
-- Cookie wiring — 6 cookie paths fully wired via ZawraStorageBridge
 - localStorage replacement — SQLiteStorageArea replaced with BrowserDBStorageArea (BrowserDBStorageArea.h/cpp, LocalStorageManager updated)
 - History/bookmarks — recordHistory() wired in PageClientImpl
 - IndexedDB backing store — 17 working methods + cursor stubs completed

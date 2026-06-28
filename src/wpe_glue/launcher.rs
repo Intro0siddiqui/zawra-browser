@@ -14,8 +14,6 @@
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::path::PathBuf;
 use std::ptr::null_mut;
-use std::process::Command;
-use std::os::unix::process::CommandExt;
 
 // ── nsresult ─────────────────────────────────────────────────────────────────
 const NS_OK:              i32 = 0;

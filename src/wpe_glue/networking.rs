@@ -20,8 +20,7 @@ use std::thread;
 
 use lean_net::{
     BodyRingDescriptor, ConnectionHandle, NetEngineHandle, NetError, net_body_ring_register,
-    net_body_ring_unregister, net_close, net_conn_bind_body_ring, net_connect, net_engine_create,
-    net_engine_destroy, net_poll, net_read, net_write,
+    net_body_ring_unregister, net_close, net_conn_bind_body_ring, net_connect, net_engine_create, net_poll, net_write,
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

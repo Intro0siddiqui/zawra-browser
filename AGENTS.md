@@ -214,71 +214,13 @@ We use a JSON compilation database to provide the LSP (`clangd`) and AI agents w
 ### 3. clang-scan-deps
 Used for high-speed dependency analysis. In a 5GB codebase, traditional scanning is too slow. CMake and Ninja use `clang-scan-deps` automatically to manage the build graph.
 
-## ⚠️ CRITICAL: Build Cache & Artifact Management ⚠️
+## ⚠️ CRITICAL: Build Cache ⚠️
 
-The entire `webkit/build/` directory is the **build cache**. It contains compiled objects, generated sources, dependency tracking files, and CMake state. A full WebKit rebuild takes **days** on this machine. Preserving and checkpointing these artifacts is the single most important operational concern.
+The entire `webkit/build/` directory is the **build cache**. It contains compiled objects, generated sources, dependency tracking files, and CMake state. A full WebKit rebuild takes **days** on this machine.
 
-### Dual-Repository Strategy
-
-To preserve compilation progress without polluting the remote, we maintain **two separate Git repos**:
-
-| Repo | Location | Stores | Remote | Purpose |
-|------|----------|--------|--------|---------|
-| **Main Repo** | `zawra-browser/` | Source, patches, configs only | GitHub (`origin`) | Distributed source history |
-| **Cache Repo** | `webkit/build/` | Build artifacts (`.o`, `.dep`, DerivedSources, CMake state) | **NONE (local-only)** | Fast rebuild checkpointing |
-
-### The Cache Repo (`webkit/build/.git`)
-
-A **local-only** Git repository initialized inside the build directory. It is the **sole mechanism for preserving build artifacts** — there is no other backup.
-
-#### What it MUST store (checkpoint these)
-- **Compiled object files** (`.o`) — the most expensive artifacts to regenerate
-- **Ninja dependency files** (`.ninja_deps`, `.d`, `.dep`) — required for incremental builds
-- **DerivedSources** — generated `.h` and `.cpp` files (bindings, forwarding headers)
-- **CMake state** — `CMakeCache.txt`, `CMakeFiles/`, `rules.ninja`, `build.ninja`
-- **Static libraries** (`.a`) and shared objects (`.so`) — final linked products
-
-Without these artifacts in the cache repo, **ccache is useless** — ccache caches compilation results in `~/.ccache/`, but it only stores the preprocessed compiler output, not the directory structure, dependency files, CMake configuration, or linked binaries the build system needs. The .o files, .dep files, DerivedSources, and CMake state together form a complete snapshot that makes ninja's incremental rebuild work. Checkpointing only source/patch files does nothing — source is already in the main repo or patches directory.
-
-#### What it does NOT store
-- Main WebKit source tree (that lives in `webkit/source/` — already in the tarball)
-- Patches (live in `patches/webkit/` — already in the main repo)
-
-#### Checkpointing Protocol
-
-Always checkpoint **immediately after a successful build where main goal of conversation is fixed** and **before any destructive operation** (CMake reconfiguration, patching source files, etc.):
-
-```bash
-cd webkit/build
-git add -A
-git commit --amend --no-edit   # amend to keep a single rolling commit
-git gc --aggressive --prune=now
-```
-
-> [!IMPORTANT]
-> Use `--amend` to keep exactly **one commit** in the cache repo. Each amend replaces the previous snapshot. This avoids unbounded disk growth. Run `git gc` after each amend to repack and reclaim space.
-
-### Restoration
-
-If the build cache is wiped or corrupted:
-
-```bash
-cd webkit/build
-
-# If the cache repo still exists (only working tree damaged):
-git checkout -f HEAD
-git gc --aggressive --prune=now
-
-# If the cache repo is intact but build directory needs re-clone:
-# (No action needed — cache repo is embedded in webkit/build/)
-```
-
-### Retention Rules (ABSOLUTE — these are not guidelines)
 - **DO NOT DELETE** the `webkit/build/` directory, ever.
 - **DO NOT RUN** `ninja -t clean`, `rm -rf webkit/build`, `ninja clean`, or any equivalent.
-- **DO NOT** remove, prune, or garbage-collect the cache repo's objects.
-- **DO NOT** run commands that invalidate or wipe CMake state unless the cache repo has been checkpointed first.
-- **NEVER** `git push` the cache repo to any remote — its artifact files exceed GitHub's 100 MB file limit.
+- **DO NOT** run commands that invalidate or wipe CMake state.
 - The `.gitignore` in the main repo already blocks `webkit/build/`. **DO NOT override this.**
 - If a build error claims a file or header is missing or empty, fix the root cause or re-run CMake — **do not** wipe and restart.
 

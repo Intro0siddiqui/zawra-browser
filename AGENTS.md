@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project Context
-**Zawra Browser** is a highly customized, headful WPE WebKit browser. It replaces standard WebKit subsystems (IPC, Network, Storage) with specialized high-performance components.
+**Zawra Browser** is a highly customized WPE WebKit browser built to function like modern browsers (both headful and headless). It replaces standard WebKit subsystems (IPC, Network, Storage) with specialized high-performance components.
 
 *   **Graphics**: Render Hardware Interface (RHI) handled by **z-graphics** (Zig) for Vulkan GPU acceleration.
 *   **IPC & Sandbox**: Handled by **Hajr** (Zig), providing memory isolation (MPK/MTE) and syscall/filesystem isolation (`hajr_seal_process()`).
@@ -60,20 +60,24 @@ cargo run --release -p zawra-setup
 
 ## ⚠️ Critical Policies & Guidelines
 
-### 1. Behavioral Limits (Strictly Enforced)
+### 1. Behavioral Limits & Subagent Delegation (Strictly Enforced)
 *   **NO UNSOLICITED LIBERTIES:** Stop execution and ask user for permission if you encounter missing dependencies, compile blockers, or broken scripts. Do not write unilateral patches.
-*   **Submodule changes:** Ask user before modifying code inside `dependencies/`.
+*   **Submodule changes & Delegation:** Ask user before making changes inside `dependencies/`. The user might prefer to handle edits themselves or with other tools. If you must delegate submodule adjustments to a subagent, ask the user first. If they reject or ask not to touch it, halt and describe the problem so the user can fix it.
 
 ### 2. Sandbox & Feature Disabling
 *   **Bubblewrap:** Must be disabled in CMake configuration (`-DENABLE_BUBBLEWRAP_SANDBOX=OFF`) to prevent conflicting with Hajr.
 *   **WebSQL & AppCache:** Must remain `OFF` in `OptionsWPE.cmake` (replaced by BrowserDB). Always check downstream header consumers using `./zw deps <module>` before editing feature flags.
-*   **Build Cache:** Never delete `webkit/build/` or run clean commands. Wiping the cache causes days of recompilation.
 
-### 3. LLVM Debugging
+### 3. Build Cache Rules (ABSOLUTE)
+*   **NEVER DELETE** the `webkit/build/` directory. Wiping the cache causes days of recompilation.
+*   **NEVER RUN** `ninja -t clean`, `rm -rf webkit/build`, `ninja clean`, or equivalent cache-clearing operations.
+*   If a build error claims a file or header is missing or empty, fix the root cause or re-run CMake. Do not wipe and restart.
+
+### 4. LLVM Debugging
 *   Use `lldb` for cross-language (Rust/Zig/C++) debugging.
 *   Always map addresses using `llvm-symbolizer` instead of slow legacy GNU `addr2line`.
 
-### 4. Code integrations
+### 5. Code integrations
 *   Never write to `webkit/source/` directly. Put all WebKit patches in `patches/webkit/` matching the source structure.
 *   FFI functions returning `i32` must map to `nsresult` (`NS_OK = 0`, `NS_ERROR_FAILURE = -2147467259`).
 

@@ -172,10 +172,7 @@ mod storage_tests {
 
     #[test]
     fn test_cookie_put_get_ffi() {
-        let profile_dir = "./test_profile_cookie";
-        if Path::new(profile_dir).exists() {
-            fs::remove_dir_all(profile_dir).ok();
-        }
+        let profile_dir = "./test_profile_shared";
         fs::create_dir_all(profile_dir).unwrap();
 
         let profile_c = CString::new(profile_dir).unwrap();
@@ -233,8 +230,6 @@ mod storage_tests {
             );
             assert_ne!(get_res_bad, 0); // Should fail
         }
-
-        fs::remove_dir_all(profile_dir).ok();
     }
 }
 
@@ -341,10 +336,7 @@ mod lifecycle_tests {
 
     #[test]
     fn test_storage_flush_and_subsystems_shutdown() {
-        let profile_dir = "./test_profile_lifecycle";
-        if Path::new(profile_dir).exists() {
-            fs::remove_dir_all(profile_dir).ok();
-        }
+        let profile_dir = "./test_profile_shared";
         fs::create_dir_all(profile_dir).unwrap();
 
         let profile_c = CString::new(profile_dir).unwrap();
@@ -359,7 +351,5 @@ mod lifecycle_tests {
             // Shutdown subsystems
             Z_Shutdown_Subsystems();
         }
-
-        fs::remove_dir_all(profile_dir).ok();
     }
 }

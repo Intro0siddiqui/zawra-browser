@@ -22,6 +22,7 @@ extern "C" {
     int32_t Z_IDBStore_Get(const uint8_t* key, size_t key_len, uint8_t** out_ptr, size_t* out_len);
     int32_t Z_IDBStore_Delete(const uint8_t* key, size_t key_len);
     int32_t Z_IDBStore_ScanPrefix(const uint8_t* prefix, size_t prefix_len, uint8_t* out_buf, size_t out_buf_len);
+    int32_t Z_IDBStore_ScanPrefix_Dynamic(const uint8_t* prefix, size_t prefix_len, uint8_t** out_ptr, size_t* out_len);
     int32_t Z_IDBStore_Clear();
     void Z_Free_Buffer(uint8_t* ptr, size_t len);
 }
@@ -1164,13 +1165,17 @@ static void buildCursorRecords(Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadS
 
 IDBError Z_IDBStore::scanObjectStoreRecords(uint64_t objectStoreIdentifier, const IDBKeyRangeData& range, Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>& outRecords)
 {
-    uint8_t scanBuf[65536];
+    uint8_t* scanBuf = nullptr;
+    size_t scanBufLen = 0;
     auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    if (Z_IDBStore_ScanPrefix_Dynamic(recPrefix.data(), recPrefix.size(), &scanBuf, &scanBufLen) != 0)
+        return IDBError { };
+
+    if (!scanBuf || !scanBufLen)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
-    const uint8_t* send = scanBuf + sizeof(scanBuf);
+    const uint8_t* send = scanBuf + scanBufLen;
 
     while (sdata + 4 <= send) {
         uint32_t klen = readU32(sdata, send);
@@ -1211,18 +1216,23 @@ IDBError Z_IDBStore::scanObjectStoreRecords(uint64_t objectStoreIdentifier, cons
         outRecords.append({ IDBKeyData(storedKey), IDBKeyData(storedKey), valueBuffer });
     }
 
+    Z_Free_Buffer(scanBuf, scanBufLen);
     return IDBError { };
 }
 
 IDBError Z_IDBStore::scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const IDBKeyRangeData& range, Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>& outRecords)
 {
-    uint8_t scanBuf[65536];
+    uint8_t* scanBuf = nullptr;
+    size_t scanBufLen = 0;
     auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    if (Z_IDBStore_ScanPrefix_Dynamic(idxRecPrefix.data(), idxRecPrefix.size(), &scanBuf, &scanBufLen) != 0)
+        return IDBError { };
+
+    if (!scanBuf || !scanBufLen)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
-    const uint8_t* send = scanBuf + sizeof(scanBuf);
+    const uint8_t* send = scanBuf + scanBufLen;
 
     while (sdata + 4 <= send) {
         uint32_t klen = readU32(sdata, send);
@@ -1262,6 +1272,7 @@ IDBError Z_IDBStore::scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t i
         outRecords.append({ WTFMove(indexKey), WTFMove(primaryKey), valueBuffer });
     }
 
+    Z_Free_Buffer(scanBuf, scanBufLen);
     return IDBError { };
 }
 

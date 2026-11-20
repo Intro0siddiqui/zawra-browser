@@ -174,16 +174,34 @@ pub fn launch_wpe(profile_path: &str) -> i32 {
     eprintln!("[zawra-launcher] WPE found at {} — launching", wpe_path.display());
 
     // Build argc/argv to pass to WPE (mirrors what firefox-bin does)
-    let profile_flag = CString::new("--profile").unwrap();
-    let profile_val  = CString::new(profile_path).unwrap();
+    let profile_flag = match CString::new("--profile") {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let profile_val = match CString::new(profile_path) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("[zawra-launcher] invalid profile_path with interior NUL");
+            return -1;
+        }
+    };
+    let prog_name = match CString::new("zawra-browser") {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
     let mut argv: Vec<*mut c_char> = vec![
-        CString::new("zawra-browser").unwrap().into_raw(),
+        prog_name.into_raw(),
         profile_flag.into_raw(),
         profile_val.into_raw(),
         null_mut(),
     ];
 
     let exit_code = unsafe { wpe_main(3, argv.as_mut_ptr(), null_mut()) };
+    unsafe {
+        let _ = CString::from_raw(argv[0]);
+        let _ = CString::from_raw(argv[1]);
+        let _ = CString::from_raw(argv[2]);
+    }
     exit_code
 }
 

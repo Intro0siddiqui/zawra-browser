@@ -15,10 +15,9 @@
 extern "C" {
     // Declarations for Zig FFI functions from z-graphics
     bool Z_Graphics_Initialize();
-    void* Z_Graphics_CreateWindow(unsigned int width, unsigned int height);
     void* Z_Graphics_CreateSurface(void* window, unsigned int width, unsigned int height);
-    void Z_Graphics_SwapBuffers(void* handle);
     int Z_Graphics_ExportSurfaceFD(void* handle);
+    bool ZG_ExportSurfaceDMABuf(void* surface, void* info);
     void Z_Graphics_DestroySurface(void* handle);
 
     // Compositor FFI functions
@@ -58,12 +57,7 @@ bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
             ZLOG("FATAL: ZawraGraphics_Initialize failed!");
             return false;
         }
-        void* actualWindow = windowHandle;
-        if (!actualWindow) {
-            actualWindow = Z_Graphics_CreateWindow(width, height);
-            ZLOG("ZawraGraphics_CreateWindow returned window=%p", actualWindow);
-        }
-        void* handle = Z_Graphics_CreateSurface(actualWindow, width, height);
+        void* handle = Z_Graphics_CreateSurface(windowHandle, width, height);
         ZLOG("ZawraGraphics_CreateSurface returned handle=%p", handle);
         if (!handle) {
             ZLOG("FATAL: ZawraGraphics_CreateSurface failed!");
@@ -118,6 +112,22 @@ int ZawraGraphicsBridge::exportCompositorFD()
     return fd;
 }
 
+bool ZawraGraphicsBridge::exportDMABuf(ZawraGraphicsDMABufInfo* info)
+{
+    ZLOG("exportDMABuf called: m_surfaceHandle=%p, info=%p", m_surfaceHandle, info);
+    if (!m_surfaceHandle) {
+        ZLOG("exportDMABuf failed: m_surfaceHandle is null");
+        return false;
+    }
+    if (!info) {
+        ZLOG("exportDMABuf failed: info is null");
+        return false;
+    }
+    bool ok = ZG_ExportSurfaceDMABuf(m_surfaceHandle, static_cast<void*>(info));
+    ZLOG("exportDMABuf: ZG_ExportSurfaceDMABuf returned %s", ok ? "true" : "false");
+    return ok;
+}
+
 void ZawraGraphicsBridge::presentFrame()
 {
     if (m_surfaceHandle) {
@@ -125,10 +135,8 @@ void ZawraGraphicsBridge::presentFrame()
         if (m_compositorState) {
             bool rendered = Z_Graphics_CompositorRenderLayer(m_compositorState);
             ZLOG("presentFrame: CompositorRenderLayer returned %s", rendered ? "true" : "false");
-        } else {
-            Z_Graphics_SwapBuffers(m_surfaceHandle);
-            ZLOG("presentFrame: SwapBuffers done");
         }
+        // Direct Z_Graphics_SwapBuffers removed: presentation is handed over to UIProcess via IPC / WPEPlatform
     }
 }
 

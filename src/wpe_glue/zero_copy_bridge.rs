@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Mutex, OnceLock};
 
-use crate::javascriptcore::jsapi::{JSContext, JSObject, JS_NewExternalArrayBuffer};
+use crate::zero_copy::{JSContext, JSObject, JS_NewExternalArrayBuffer};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Pin registry — keeps BrowserDB blobs alive while JavaScriptCore uses them

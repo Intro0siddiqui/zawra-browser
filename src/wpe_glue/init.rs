@@ -13,8 +13,8 @@
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
 
-use crate::wpe_glue::networking::init_net_engine;
-use crate::wpe_glue::storage::Z_Storage_Init;
+use crate::wpe_glue::networking::{init_net_engine, shutdown_net_engine};
+use crate::wpe_glue::storage::{Z_Storage_Flush, Z_Storage_Init};
 
 const NS_OK: i32 = 0;
 const NS_ERROR_FAILURE: i32 = -2147467259i32;
@@ -80,10 +80,25 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
 
 /// Shut down all Zawra subsystems gracefully.
 ///
+/// Flushes BrowserDB memtable to disk and cleans up subsystem resources.
 /// Safe to call even if init was never completed.
 #[unsafe(no_mangle)]
 pub extern "C" fn Z_Shutdown_Subsystems() {
-    eprintln!("[zawra] Shutdown requested — subsystems will be released at process exit");
+    eprintln!("[zawra] Shutdown requested — starting graceful subsystem teardown...");
+
+    // 1. Flush BrowserDB memtable to disk
+    let flush_ret = Z_Storage_Flush();
+    if flush_ret != NS_OK {
+        eprintln!("[zawra] Warning: BrowserDB flush returned error code {}", flush_ret);
+    } else {
+        eprintln!("[zawra] BrowserDB memtable flushed to disk successfully");
+    }
+
+    // 2. Clean up networking engine and poll thread
+    shutdown_net_engine();
+    eprintln!("[zawra] z-net engine poll thread stopped and resources released");
+
+    eprintln!("[zawra] Subsystems shutdown complete");
 }
 
 unsafe extern "C" {

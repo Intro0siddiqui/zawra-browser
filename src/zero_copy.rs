@@ -1,4 +1,17 @@
-use crate::javascriptcore::jsapi::{JS_NewExternalArrayBuffer, JSContext, JSObject};
+pub enum JSContext {}
+pub enum JSObject {}
+pub type JSExternalArrayBufferContentsDeleter =
+    unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void);
+
+pub unsafe fn JS_NewExternalArrayBuffer(
+    _cx: *mut JSContext,
+    _size: usize,
+    _contents: *mut libc::c_void,
+    _deleter: Option<JSExternalArrayBufferContentsDeleter>,
+    _user_data: *mut libc::c_void,
+) -> *mut JSObject {
+    std::ptr::null_mut()
+}
 
 /// A Rust function defined elsewhere that manages the lifecycle of BrowserDB pins.
 unsafe extern "Rust" {

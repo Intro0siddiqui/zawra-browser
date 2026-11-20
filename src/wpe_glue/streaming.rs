@@ -213,6 +213,21 @@ fn async_reader_loop(state: Arc<AsyncReaderState>) {
             if let Some(parsed_head) = parse_http_head(&header_buf) {
                 head_parsed = true;
 
+                if let Some(ct) = &parsed_head.content_type {
+                    if !state.channel.is_null() {
+                        // SAFETY: state.channel is a valid ZNetChannel pointer
+                        let chan = unsafe { crate::wpe_glue::networking::ZNetChannel::from_ptr(state.channel) };
+                        chan.parse_and_apply_content_type(ct);
+                    }
+                }
+                if let Some(cl) = parsed_head.content_length {
+                    if !state.channel.is_null() {
+                        // SAFETY: state.channel is a valid ZNetChannel pointer
+                        let chan = unsafe { crate::wpe_glue::networking::ZNetChannel::from_ptr(state.channel) };
+                        chan.content_len.store(cl as i64, Ordering::SeqCst);
+                    }
+                }
+
                 // Handle 3xx redirect
                 if parsed_head.status_code >= 300 && parsed_head.status_code < 400 {
                     if let Some(loc) = &parsed_head.location {
@@ -287,6 +302,11 @@ fn fire_on_data_available(listener: *mut c_void, channel: *mut c_void, offset: u
 }
 
 fn fire_on_stop_request(listener: *mut c_void, channel: *mut c_void, status: u32) {
+    if !channel.is_null() {
+        // SAFETY: channel is a valid ZNetChannel pointer
+        let chan = unsafe { crate::wpe_glue::networking::ZNetChannel::from_ptr(channel) };
+        chan.set_pending(false);
+    }
     if listener.is_null() {
         return;
     }

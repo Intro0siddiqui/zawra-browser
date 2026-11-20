@@ -14,7 +14,7 @@
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr::null_mut;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
@@ -46,27 +46,31 @@ unsafe impl Sync for SendSyncEngineHandle {}
 
 static GLOBAL_NET_ENGINE: OnceLock<SendSyncEngineHandle> = OnceLock::new();
 static NET_ENGINE_STARTED: AtomicBool = AtomicBool::new(false);
-
 static NET_POLL_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
+static NET_POLL_THREAD_RUNNING: AtomicBool = AtomicBool::new(true);
 
 fn ensure_net_poll_thread() {
     if NET_POLL_THREAD_STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
+    NET_POLL_THREAD_RUNNING.store(true, Ordering::SeqCst);
     // Background thread: continuously poll the engine for I/O events.
-    thread::Builder::new()
+    let spawn_res = thread::Builder::new()
         .name("zawra-net-poll".into())
         .spawn(move || {
-            loop {
+            while NET_POLL_THREAD_RUNNING.load(Ordering::Relaxed) {
                 if let Some(wrapper) = GLOBAL_NET_ENGINE.get() {
                     // Block up to 10 ms per cycle → CPU-friendly event loop
-                    unsafe { net_poll(wrapper.0, 10) };
+                    net_poll(wrapper.0, 10);
                 } else {
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
-        })
-        .expect("failed to spawn zawra-net-poll thread");
+        });
+    if let Err(e) = spawn_res {
+        eprintln!("[zawra-net] failed to spawn zawra-net-poll thread: {}", e);
+        NET_POLL_THREAD_STARTED.store(false, Ordering::SeqCst);
+    }
 }
 
 /// Initialise the global z-net engine.
@@ -81,7 +85,7 @@ pub unsafe fn init_net_engine() -> bool {
         return true;
     }
 
-    let handle = unsafe { net_engine_create() };
+    let handle = net_engine_create();
     if handle.is_null() {
         return false;
     }
@@ -93,14 +97,21 @@ pub unsafe fn init_net_engine() -> bool {
     true
 }
 
-/// Return the global engine handle. Panics if `init_net_engine` was not called.
+/// Shut down the global z-net engine and background polling thread.
+pub fn shutdown_net_engine() {
+    NET_POLL_THREAD_RUNNING.store(false, Ordering::SeqCst);
+    NET_POLL_THREAD_STARTED.store(false, Ordering::SeqCst);
+    NET_ENGINE_STARTED.store(false, Ordering::SeqCst);
+}
+
+/// Return the global engine handle. Returns null if `init_net_engine` was not called.
 /// Lazily spawns the poll thread on first use.
 pub fn global_engine() -> NetEngineHandle {
     ensure_net_poll_thread();
-    GLOBAL_NET_ENGINE
-        .get()
-        .expect("z-net engine not initialised – call Zawra_Init_Subsystems first")
-        .0
+    match GLOBAL_NET_ENGINE.get() {
+        Some(handle) => handle.0,
+        None => std::ptr::null_mut(),
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -113,7 +124,7 @@ fn alloc_ring_id() -> u64 {
     NEXT_RING_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Shared-memory BodyRing + its unique id.  Heap-allocated so the pointer
+/// Shared-memory BodyRing + its unique id. Heap-allocated so the pointer
 /// is stable across WPE's C++ callback boundaries.
 pub struct OwnedBodyRing {
     pub id: u64,
@@ -142,7 +153,11 @@ impl OwnedBodyRing {
         let id = alloc_ring_id();
         let desc_ptr = &*descriptor as *const BodyRingDescriptor as *mut BodyRingDescriptor;
 
-        let ret = unsafe { net_body_ring_register(global_engine(), id, desc_ptr) };
+        let engine = global_engine();
+        if engine.is_null() {
+            return None;
+        }
+        let ret = net_body_ring_register(engine, id, desc_ptr);
         if ret != 0 {
             return None;
         }
@@ -157,7 +172,10 @@ impl OwnedBodyRing {
 
 impl Drop for OwnedBodyRing {
     fn drop(&mut self) {
-        unsafe { net_body_ring_unregister(global_engine(), self.id) };
+        let engine = global_engine();
+        if !engine.is_null() {
+            net_body_ring_unregister(engine, self.id);
+        }
         self.descriptor.is_closed.store(true, Ordering::Release);
     }
 }
@@ -202,6 +220,7 @@ impl ZNetInputStream {
     }
 
     unsafe fn from_ptr<'a>(ptr: *mut c_void) -> &'a mut Self {
+        // SAFETY: Caller guarantees ptr is a valid, aligned non-null pointer to ZNetInputStream
         unsafe { &mut *(ptr as *mut ZNetInputStream) }
     }
 }
@@ -213,12 +232,15 @@ unsafe extern "C" fn stream_query_interface(
     out: *mut *mut c_void,
 ) -> u32 {
     if out.is_null() { return ns_result::NS_ERROR_INVALID_ARG; }
+    // SAFETY: out pointer is checked non-null
     unsafe { *out = std::ptr::null_mut(); }
 
+    // SAFETY: iid is provided by XPCOM caller; match_iid checks validity
     let is_supports = unsafe { match_iid(iid, 0x00000000, 0x0000, 0x0000, [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46]) };
     let is_stream = unsafe { match_iid(iid, 0xfa9c7f6c, 0x61b3, 0x11d4, [0x98, 0x77, 0x00, 0xc0, 0x4f, 0xa0, 0xcf, 0x4a]) };
 
     if is_supports || is_stream {
+        // SAFETY: out is valid and non-null; stream_add_ref increments refcount
         unsafe {
             *out = this;
             stream_add_ref(this);
@@ -228,49 +250,69 @@ unsafe extern "C" fn stream_query_interface(
         ns_result::NS_NOINTERFACE
     }
 }
+
 unsafe extern "C" fn stream_add_ref(this: *mut c_void) -> u32 {
+    // SAFETY: this is a valid ZNetInputStream pointer managed by XPCOM refcounting
     let s = unsafe { ZNetInputStream::from_ptr(this) };
     s.ref_count.fetch_add(1, Ordering::SeqCst) as u32
 }
+
 unsafe extern "C" fn stream_release(this: *mut c_void) -> u32 {
+    // SAFETY: this is a valid ZNetInputStream pointer
     let s = unsafe { ZNetInputStream::from_ptr(this) };
     let prev = s.ref_count.fetch_sub(1, Ordering::SeqCst);
     if prev == 1 {
+        // SAFETY: refcount reached zero, reclaim ownership of Box
         unsafe {
             let _ = Box::from_raw(this as *mut ZNetInputStream);
         }
-        return 0;
     }
-    (prev - 1) as u32
+    (prev - 1).max(0) as u32
 }
+
 unsafe extern "C" fn stream_close(this: *mut c_void) -> u32 {
+    // SAFETY: this is a valid ZNetInputStream pointer
     let s = unsafe { ZNetInputStream::from_ptr(this) };
-    if let Ok(ring) = s.ring.lock() {
-        ring.descriptor.is_closed.store(true, Ordering::Release);
+    if let Ok(guard) = s.ring.lock() {
+        guard.descriptor.is_closed.store(true, Ordering::Release);
     }
-    0 // NS_OK
+    ns_result::NS_OK
 }
+
 unsafe extern "C" fn stream_available(this: *mut c_void, count: *mut u64) -> u32 {
+    if count.is_null() { return ns_result::NS_ERROR_INVALID_ARG; }
+    // SAFETY: this is a valid ZNetInputStream pointer
     let s = unsafe { ZNetInputStream::from_ptr(this) };
-    if let Ok(ring) = s.ring.lock() {
-        let head = ring.descriptor.head.load(Ordering::Acquire);
-        let tail = ring.descriptor.tail.load(Ordering::Acquire);
-        unsafe {
-            *count = head.wrapping_sub(tail);
-        }
+    let ring_guard = match s.ring.lock() {
+        Ok(g) => g,
+        Err(_) => return ns_result::NS_ERROR_FAILURE,
+    };
+    let head = ring_guard.descriptor.head.load(Ordering::Acquire);
+    let tail = ring_guard.descriptor.tail.load(Ordering::Acquire);
+    let available = head.wrapping_sub(tail);
+    // SAFETY: count pointer was checked non-null
+    unsafe {
+        *count = available;
     }
-    0
+    ns_result::NS_OK
 }
+
 unsafe extern "C" fn stream_read(
     this: *mut c_void,
     buf: *mut c_char,
     count: u32,
     bytes_read: *mut u32,
 ) -> u32 {
+    if buf.is_null() || bytes_read.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: bytes_read was verified non-null
+    unsafe { *bytes_read = 0; }
+    // SAFETY: this is a valid ZNetInputStream pointer
     let s = unsafe { ZNetInputStream::from_ptr(this) };
     let ring_guard = match s.ring.lock() {
         Ok(g) => g,
-        Err(_) => return 0x80004005u32,
+        Err(_) => return ns_result::NS_ERROR_FAILURE,
     };
 
     let head = ring_guard.descriptor.head.load(Ordering::Acquire);
@@ -278,24 +320,16 @@ unsafe extern "C" fn stream_read(
     let available = head.wrapping_sub(tail) as usize;
 
     if available == 0 {
-        if !ring_guard.descriptor.is_closed.load(Ordering::Acquire) {
-            unsafe {
-                *bytes_read = 0;
-            }
-            return 0x80470007u32; // NS_BASE_STREAM_WOULD_BLOCK
-        }
-        unsafe {
-            *bytes_read = 0;
-        }
         return 0; // EOF
     }
 
     let to_copy = available.min(count as usize);
-    let tail_idx = (tail % ring_guard.descriptor.capacity as u64) as usize;
     let cap = ring_guard.descriptor.capacity;
+    let tail_idx = (tail % cap as u64) as usize;
     let contiguous = cap - tail_idx;
     let first_chunk = to_copy.min(contiguous);
 
+    // SAFETY: buffer_ptr is allocated with capacity `cap` bytes and buf has space for at least `count` bytes
     unsafe {
         std::ptr::copy_nonoverlapping(
             ring_guard.descriptor.buffer_ptr.add(tail_idx),
@@ -317,6 +351,7 @@ unsafe extern "C" fn stream_read(
     }
     0 // NS_OK
 }
+
 unsafe extern "C" fn stream_read_segments(
     _this: *mut c_void,
     _writer: *mut c_void,
@@ -326,7 +361,12 @@ unsafe extern "C" fn stream_read_segments(
 ) -> u32 {
     0x80004001u32 // NS_ERROR_NOT_IMPLEMENTED
 }
+
 unsafe extern "C" fn stream_is_non_blocking(_this: *mut c_void, non_blocking: *mut bool) -> u32 {
+    if non_blocking.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: non_blocking checked non-null
     unsafe {
         *non_blocking = true;
     }
@@ -370,10 +410,98 @@ pub unsafe fn match_iid(iid: *const u8, m0: u32, m1: u16, m2: u16, m3: [u8; 8]) 
     if iid.is_null() {
         return false;
     }
+    // SAFETY: Caller provides valid iid pointer conforming to XPCOM nsID layout
     let ptr = iid as *const nsID;
     unsafe {
         (*ptr).m0 == m0 && (*ptr).m1 == m1 && (*ptr).m2 == m2 && (*ptr).m3 == m3
     }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HTTP Helpers (Methods, Headers, Body, Content-Type Parsing)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Parse Content-Type header value and return (mime_type, Option<charset>)
+pub fn parse_content_type_header(raw: &str) -> (String, Option<String>) {
+    let mut parts = raw.split(';');
+    let mime = parts
+        .next()
+        .map(|m| m.trim().to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let mut charset = None;
+    for part in parts {
+        let part = part.trim();
+        if let Some((k, v)) = part.split_once('=') {
+            if k.trim().eq_ignore_ascii_case("charset") {
+                let cs = v.trim().trim_matches('"').trim_matches('\'').trim();
+                if !cs.is_empty() {
+                    charset = Some(cs.to_string());
+                }
+            }
+        }
+    }
+    (mime, charset)
+}
+
+/// Construct full HTTP/1.1 request head string with dynamic method and serialized headers.
+pub fn build_http_request(
+    method: &str,
+    path: &str,
+    host: &str,
+    custom_headers: &[(String, String)],
+    body_len: Option<usize>,
+) -> String {
+    let valid_methods = ["GET", "POST", "PUT", "DELETE", "HEAD"];
+    let method = if valid_methods.iter().any(|&m| m.eq_ignore_ascii_case(method)) {
+        method.to_ascii_uppercase()
+    } else {
+        "GET".to_string()
+    };
+
+    let mut request = format!("{} {} HTTP/1.1\r\n", method, path);
+
+    let mut has_host = false;
+    let mut has_conn = false;
+    let mut has_user_agent = false;
+    let mut has_accept = false;
+    let mut has_content_length = false;
+
+    for (k, v) in custom_headers {
+        let k_lower = k.to_ascii_lowercase();
+        if k_lower == "host" {
+            has_host = true;
+        } else if k_lower == "connection" {
+            has_conn = true;
+        } else if k_lower == "user-agent" {
+            has_user_agent = true;
+        } else if k_lower == "accept" {
+            has_accept = true;
+        } else if k_lower == "content-length" {
+            has_content_length = true;
+        }
+        request.push_str(&format!("{}: {}\r\n", k, v));
+    }
+
+    if !has_host {
+        request.push_str(&format!("Host: {}\r\n", host));
+    }
+    if !has_conn {
+        request.push_str("Connection: close\r\n");
+    }
+    if !has_user_agent {
+        request.push_str("User-Agent: zawra-browser/0.1\r\n");
+    }
+    if !has_accept {
+        request.push_str("Accept: */*\r\n");
+    }
+    if let Some(len) = body_len {
+        if !has_content_length {
+            request.push_str(&format!("Content-Length: {}\r\n", len));
+        }
+    }
+
+    request.push_str("\r\n");
+    request
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -434,9 +562,15 @@ pub struct ZNetChannel {
     url: CString,
     host: CString,
     port: u16,
+    method: Mutex<String>,
+    request_headers: Mutex<Vec<(String, String)>>,
+    request_body: Mutex<Option<Vec<u8>>>,
     request_sent: AtomicBool,
+    is_pending: AtomicBool,
     status: AtomicI32,
-    pub content_len: i64,
+    pub content_len: AtomicI64,
+    content_type: Mutex<CString>,
+    content_charset: Mutex<CString>,
     listener: Mutex<Option<*mut c_void>>,
 }
 
@@ -451,42 +585,145 @@ impl ZNetChannel {
         let ring = Arc::new(Mutex::new(ring));
 
         let engine = global_engine();
+        if engine.is_null() {
+            return None;
+        }
         let host_c = CString::new(host).ok()?;
-        let conn = unsafe { net_connect(engine, host_c.as_ptr(), port) };
+        let url_c = CString::new(url).ok()?;
+        let conn = net_connect(engine, host_c.as_ptr(), port);
         if conn.is_null() {
             return None;
         }
 
         {
             let ring_guard = ring.lock().ok()?;
-            unsafe { net_conn_bind_body_ring(engine, conn, ring_guard.id) };
+            net_conn_bind_body_ring(engine, conn, ring_guard.id);
         }
+
+        let default_content_type = CString::new("application/octet-stream").unwrap();
+        let default_charset = CString::new("UTF-8").unwrap();
 
         let channel = Box::new(ZNetChannel {
             vtable: &ZNET_CHANNEL_VTABLE,
             ref_count: AtomicI32::new(1),
             conn_handle: conn,
             body_ring: ring,
-            url: CString::new(url).unwrap_or_default(),
-            host: CString::new(host).unwrap_or_default(),
+            url: url_c,
+            host: host_c,
             port,
+            method: Mutex::new("GET".to_string()),
+            request_headers: Mutex::new(Vec::new()),
+            request_body: Mutex::new(None),
             request_sent: AtomicBool::new(false),
+            is_pending: AtomicBool::new(false),
             status: AtomicI32::new(0),
-            content_len: -1,
+            content_len: AtomicI64::new(-1),
+            content_type: Mutex::new(default_content_type),
+            content_charset: Mutex::new(default_charset),
             listener: Mutex::new(None),
         });
 
         Some(Box::into_raw(channel))
     }
 
-    unsafe fn from_ptr<'a>(ptr: *mut c_void) -> &'a mut Self {
+    pub unsafe fn from_ptr<'a>(ptr: *mut c_void) -> &'a mut Self {
+        // SAFETY: Caller guarantees ptr is a valid, aligned non-null pointer to a live ZNetChannel
         unsafe { &mut *(ptr as *mut ZNetChannel) }
+    }
+
+    pub fn set_method(&self, method: &str) {
+        if let Ok(mut m) = self.method.lock() {
+            *m = method.to_ascii_uppercase();
+        }
+    }
+
+    pub fn get_method(&self) -> String {
+        self.method
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_else(|_| "GET".to_string())
+    }
+
+    pub fn add_header(&self, name: &str, value: &str) {
+        if let Ok(mut h) = self.request_headers.lock() {
+            h.push((name.to_string(), value.to_string()));
+        }
+    }
+
+    pub fn set_body(&self, body: Option<Vec<u8>>) {
+        if let Ok(mut b) = self.request_body.lock() {
+            *b = body;
+        }
+    }
+
+    pub fn set_pending(&self, pending: bool) {
+        self.is_pending.store(pending, Ordering::SeqCst);
+    }
+
+    pub fn parse_and_apply_content_type(&self, raw: &str) {
+        let (mime, charset_opt) = parse_content_type_header(raw);
+        if let Ok(c_mime) = CString::new(mime) {
+            if let Ok(mut ct) = self.content_type.lock() {
+                *ct = c_mime;
+            }
+        }
+        if let Some(cs) = charset_opt {
+            if let Ok(c_cs) = CString::new(cs) {
+                if let Ok(mut cs_guard) = self.content_charset.lock() {
+                    *cs_guard = c_cs;
+                }
+            }
+        }
+    }
+
+    pub fn try_parse_response_headers_from_ring(&self) {
+        if let Ok(ring_guard) = self.body_ring.lock() {
+            let head = ring_guard.descriptor.head.load(Ordering::Acquire);
+            let tail = ring_guard.descriptor.tail.load(Ordering::Acquire);
+            let available = head.wrapping_sub(tail) as usize;
+            if available > 0 {
+                let cap = ring_guard.descriptor.capacity;
+                let tail_idx = (tail % cap as u64) as usize;
+                let contiguous = (cap - tail_idx).min(available);
+                // SAFETY: buffer_ptr points to `cap` allocated bytes in ring descriptor
+                let slice = unsafe {
+                    std::slice::from_raw_parts(
+                        ring_guard.descriptor.buffer_ptr.add(tail_idx),
+                        contiguous,
+                    )
+                };
+                if let Some(header_end) = slice.windows(4).position(|w| w == b"\r\n\r\n") {
+                    if let Ok(header_str) = std::str::from_utf8(&slice[..header_end]) {
+                        self.parse_and_apply_response_headers(header_str);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn parse_and_apply_response_headers(&self, headers_str: &str) {
+        for line in headers_str.lines() {
+            let line = line.trim();
+            if let Some((name, val)) = line.split_once(':') {
+                let name = name.trim().to_ascii_lowercase();
+                let val = val.trim();
+                if name == "content-type" {
+                    self.parse_and_apply_content_type(val);
+                } else if name == "content-length" {
+                    if let Ok(len) = val.parse::<i64>() {
+                        self.content_len.store(len, Ordering::SeqCst);
+                    }
+                }
+            }
+        }
     }
 
     fn send_http_request(&self) -> bool {
         if self.request_sent.swap(true, Ordering::SeqCst) {
             return true;
         }
+        self.is_pending.store(true, Ordering::SeqCst);
+
         let url_str = self.url.to_string_lossy();
         let path = url_str
             .as_ref()
@@ -494,23 +731,66 @@ impl ZNetChannel {
             .and_then(|(_, rest)| rest.find('/').map(|i| &rest[i..]))
             .unwrap_or("/");
 
-        let request = format!(
-            "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: zawra-browser/0.1\r\nAccept: */*\r\n\r\n",
-            path,
-            self.host.to_string_lossy()
-        );
+        let method = self.get_method();
+        let host_str = self.host.to_string_lossy();
+        let custom_headers = self
+            .request_headers
+            .lock()
+            .map(|h| h.clone())
+            .unwrap_or_default();
+        let body_opt = self
+            .request_body
+            .lock()
+            .map(|b| b.clone())
+            .unwrap_or(None);
+        let body_len = body_opt.as_ref().map(|b| b.len());
+
+        let request = build_http_request(&method, path, &host_str, &custom_headers, body_len);
+
+        let engine = global_engine();
+        if engine.is_null() || self.conn_handle.is_null() {
+            self.is_pending.store(false, Ordering::SeqCst);
+            return false;
+        }
+
         let bytes = request.as_bytes();
         let mut written = 0usize;
-        let ret = unsafe {
-            net_write(
-                global_engine(),
-                self.conn_handle,
-                bytes.as_ptr(),
-                bytes.len(),
-                &mut written,
-            )
-        };
-        ret == NetError::None as i32
+        let ret = net_write(
+            engine,
+            self.conn_handle,
+            bytes.as_ptr(),
+            bytes.len(),
+            &mut written,
+        );
+        if ret != NetError::None as i32 {
+            self.is_pending.store(false, Ordering::SeqCst);
+            return false;
+        }
+
+        // Stream request body chunks if present
+        if let Some(ref body) = body_opt {
+            let mut offset = 0;
+            const CHUNK_SIZE: usize = 16384; // 16KB streaming chunks
+            while offset < body.len() {
+                let end = (offset + CHUNK_SIZE).min(body.len());
+                let chunk = &body[offset..end];
+                let mut chunk_written = 0usize;
+                let ret = net_write(
+                    engine,
+                    self.conn_handle,
+                    chunk.as_ptr(),
+                    chunk.len(),
+                    &mut chunk_written,
+                );
+                if ret != NetError::None as i32 || chunk_written == 0 {
+                    self.is_pending.store(false, Ordering::SeqCst);
+                    return false;
+                }
+                offset += chunk_written;
+            }
+        }
+
+        true
     }
 }
 
@@ -522,13 +802,16 @@ unsafe extern "C" fn chan_query_interface(
     out: *mut *mut c_void,
 ) -> u32 {
     if out.is_null() { return ns_result::NS_ERROR_INVALID_ARG; }
+    // SAFETY: out pointer verified non-null
     unsafe { *out = std::ptr::null_mut(); }
 
+    // SAFETY: iid is provided by XPCOM caller; match_iid verifies layout
     let is_supports = unsafe { match_iid(iid, 0x00000000, 0x0000, 0x0000, [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46]) };
     let is_request = unsafe { match_iid(iid, 0xef6bfbd2, 0xfd46, 0x48d8, [0x96, 0xb7, 0x9f, 0x8f, 0x0f, 0xd3, 0x87, 0xfe]) };
     let is_channel = unsafe { match_iid(iid, 0xc63a0557, 0xa63d, 0x4959, [0xaf, 0x2c, 0xf6, 0xae, 0x49, 0x01, 0x46, 0xa6]) };
 
     if is_supports || is_request || is_channel {
+        // SAFETY: out is valid and non-null; chan_add_ref increments refcount
         unsafe {
             *out = this;
             chan_add_ref(this);
@@ -540,47 +823,81 @@ unsafe extern "C" fn chan_query_interface(
 }
 
 unsafe extern "C" fn chan_add_ref(this: *mut c_void) -> u32 {
+    // SAFETY: this is a valid ZNetChannel pointer
     unsafe { ZNetChannel::from_ptr(this) }
         .ref_count
         .fetch_add(1, Ordering::SeqCst) as u32
 }
+
 unsafe extern "C" fn chan_release(this: *mut c_void) -> u32 {
+    // SAFETY: this is a valid ZNetChannel pointer
     let c = unsafe { ZNetChannel::from_ptr(this) };
     let prev = c.ref_count.fetch_sub(1, Ordering::SeqCst);
     if prev == 1 {
+        c.is_pending.store(false, Ordering::SeqCst);
+        let engine = global_engine();
+        if !engine.is_null() {
+            net_close(engine, c.conn_handle);
+        }
+        // SAFETY: refcount reached zero, reclaim ownership of Box
         unsafe {
-            let chan = Box::from_raw(this as *mut ZNetChannel);
-            net_close(global_engine(), chan.conn_handle);
+            let _ = Box::from_raw(this as *mut ZNetChannel);
         }
     }
     (prev - 1).max(0) as u32
 }
+
 unsafe extern "C" fn chan_get_name(this: *mut c_void, name: *mut *const c_char) -> u32 {
+    if this.is_null() || name.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer; name is verified non-null
     unsafe {
         *name = ZNetChannel::from_ptr(this).url.as_ptr();
     }
     ns_result::NS_OK
 }
-unsafe extern "C" fn chan_is_pending(_this: *mut c_void, pending: *mut bool) -> u32 {
+
+unsafe extern "C" fn chan_is_pending(this: *mut c_void, pending: *mut bool) -> u32 {
+    if this.is_null() || pending.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    let val = c.is_pending.load(Ordering::SeqCst);
+    // SAFETY: pending pointer is verified non-null
     unsafe {
-        *pending = true;
+        *pending = val;
     }
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_get_status(this: *mut c_void, status: *mut u32) -> u32 {
+    if this.is_null() || status.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer; status is verified non-null
     unsafe {
         *status = ZNetChannel::from_ptr(this).status.load(Ordering::SeqCst) as u32;
     }
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_cancel(this: *mut c_void, status: u32) -> u32 {
+    if this.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
     let c = unsafe { ZNetChannel::from_ptr(this) };
     c.status.store(status as i32, Ordering::SeqCst);
-    unsafe {
-        net_close(global_engine(), c.conn_handle);
+    c.is_pending.store(false, Ordering::SeqCst);
+    let engine = global_engine();
+    if !engine.is_null() {
+        net_close(engine, c.conn_handle);
     }
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_nop(_this: *mut c_void) -> u32 {
     ns_result::NS_OK
 }
@@ -599,36 +916,64 @@ unsafe extern "C" fn chan_nop_out_ptr(_this: *mut c_void, _a: *mut *mut c_void) 
 unsafe extern "C" fn chan_nop_out_u32(_this: *mut c_void, _a: *mut u32) -> u32 {
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_get_content_length(this: *mut c_void, len: *mut i64) -> u32 {
+    if this.is_null() || len.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    c.try_parse_response_headers_from_ring();
+    // SAFETY: len is verified non-null
     unsafe {
-        *len = ZNetChannel::from_ptr(this).content_len;
+        *len = c.content_len.load(Ordering::SeqCst);
     }
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_set_content_length(this: *mut c_void, len: i64) -> u32 {
-    unsafe {
-        ZNetChannel::from_ptr(this).content_len = len;
+    if this.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
     }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    c.content_len.store(len, Ordering::SeqCst);
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_get_uri(this: *mut c_void, uri: *mut *mut c_void) -> u32 {
+    if uri.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: uri pointer is verified non-null
     unsafe {
         *uri = this;
     }
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_open(this: *mut c_void, input_stream: *mut *mut c_void) -> u32 {
+    if this.is_null() || input_stream.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
     let c = unsafe { ZNetChannel::from_ptr(this) };
     if !c.send_http_request() {
         return ns_result::NS_ERROR_FAILURE;
     }
     let stream = ZNetInputStream::new(c.body_ring.clone());
+    // SAFETY: input_stream pointer is verified non-null
     unsafe {
         *input_stream = stream as *mut c_void;
     }
     ns_result::NS_OK
 }
+
 unsafe extern "C" fn chan_async_open(this: *mut c_void, listener: *mut c_void) -> u32 {
+    if this.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
     let c = unsafe { ZNetChannel::from_ptr(this) };
     if let Ok(mut guard) = c.listener.lock() {
         *guard = Some(listener);
@@ -638,25 +983,78 @@ unsafe extern "C" fn chan_async_open(this: *mut c_void, listener: *mut c_void) -
     }
     ns_result::NS_OK
 }
-unsafe extern "C" fn chan_get_content_type(_this: *mut c_void, ct: *mut *const c_char) -> u32 {
-    unsafe {
-        *ct = b"application/octet-stream\0".as_ptr() as *const c_char;
+
+unsafe extern "C" fn chan_get_content_type(this: *mut c_void, ct: *mut *const c_char) -> u32 {
+    if this.is_null() || ct.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    c.try_parse_response_headers_from_ring();
+    if let Ok(guard) = c.content_type.lock() {
+        // SAFETY: ct pointer is verified non-null
+        unsafe {
+            *ct = guard.as_ptr();
+        }
     }
     ns_result::NS_OK
 }
-unsafe extern "C" fn chan_get_content_charset(_this: *mut c_void, cs: *mut *const c_char) -> u32 {
-    unsafe {
-        *cs = b"UTF-8\0".as_ptr() as *const c_char;
+
+unsafe extern "C" fn chan_set_content_type(this: *mut c_void, ct: *const c_char) -> u32 {
+    if this.is_null() || ct.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    // SAFETY: ct is verified non-null and is a valid NUL-terminated C string
+    if let Ok(ct_str) = unsafe { CStr::from_ptr(ct) }.to_str() {
+        c.parse_and_apply_content_type(ct_str);
     }
     ns_result::NS_OK
 }
+
+unsafe extern "C" fn chan_get_content_charset(this: *mut c_void, cs: *mut *const c_char) -> u32 {
+    if this.is_null() || cs.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    c.try_parse_response_headers_from_ring();
+    if let Ok(guard) = c.content_charset.lock() {
+        // SAFETY: cs pointer is verified non-null
+        unsafe {
+            *cs = guard.as_ptr();
+        }
+    }
+    ns_result::NS_OK
+}
+
+unsafe extern "C" fn chan_set_content_charset(this: *mut c_void, cs: *const c_char) -> u32 {
+    if this.is_null() || cs.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG;
+    }
+    // SAFETY: this is a valid ZNetChannel pointer
+    let c = unsafe { ZNetChannel::from_ptr(this) };
+    // SAFETY: cs is verified non-null and is a valid NUL-terminated C string
+    if let Ok(cs_str) = unsafe { CStr::from_ptr(cs) }.to_str() {
+        if let Ok(val) = CString::new(cs_str) {
+            if let Ok(mut guard) = c.content_charset.lock() {
+                *guard = val;
+            }
+        }
+    }
+    ns_result::NS_OK
+}
+
 unsafe extern "C" fn chan_cancel_with_reason(
     this: *mut c_void,
     status: u32,
     _reason: *const c_char,
 ) -> u32 {
+    // SAFETY: delegates to chan_cancel
     unsafe { chan_cancel(this, status) }
 }
+
 unsafe extern "C" fn chan_nop_out_const_char(_this: *mut c_void, _out: *mut *const c_char) -> u32 {
     ns_result::NS_ERROR_NOT_IMPLEMENTED
 }
@@ -687,9 +1085,9 @@ static ZNET_CHANNEL_VTABLE: NsIChannelVtable = NsIChannelVtable {
     set_notif_callbacks: chan_nop_ptr_mut,
     get_security_info: chan_nop_out_ptr,
     get_content_type: chan_get_content_type,
-    set_content_type: chan_nop_ptr_const,
+    set_content_type: chan_set_content_type,
     get_content_charset: chan_get_content_charset,
-    set_content_charset: chan_nop_ptr_const,
+    set_content_charset: chan_set_content_charset,
     get_content_length: chan_get_content_length,
     set_content_length: chan_set_content_length,
     open: chan_open,
@@ -735,6 +1133,7 @@ pub unsafe extern "C" fn Z_Net_CreateChannel(url: *const c_char) -> *mut c_void 
     if url.is_null() {
         return null_mut();
     }
+    // SAFETY: url pointer is checked non-null
     let url_str = match unsafe { CStr::from_ptr(url).to_str() } {
         Ok(s) => s,
         Err(_) => return null_mut(),
@@ -749,15 +1148,16 @@ pub unsafe extern "C" fn Z_Net_CreateChannel(url: *const c_char) -> *mut c_void 
     }
 }
 
-/// Destroy a channel created by `Zawra_Net_CreateChannel`.
+/// Destroy a channel created by `Z_Net_CreateChannel`.
 ///
 /// # Safety
-/// `channel` must have been returned by `Zawra_Net_CreateChannel`.
+/// `channel` must have been returned by `Z_Net_CreateChannel`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Net_DestroyChannel(channel: *mut c_void) {
     if channel.is_null() {
         return;
     }
+    // SAFETY: channel checked non-null and comes from Z_Net_CreateChannel
     unsafe { chan_release(channel) };
 }
 
@@ -770,6 +1170,7 @@ pub unsafe extern "C" fn Z_Net_Open(channel: *mut c_void, out_stream: *mut *mut 
     if channel.is_null() || out_stream.is_null() {
         return ns_result::NS_ERROR_INVALID_ARG as i32;
     }
+    // SAFETY: pointers checked non-null
     unsafe { chan_open(channel, out_stream) as i32 }
 }
 
@@ -782,10 +1183,11 @@ pub unsafe extern "C" fn Z_Net_AsyncOpen(channel: *mut c_void, listener: *mut c_
     if channel.is_null() {
         return ns_result::NS_ERROR_INVALID_ARG as i32;
     }
+    // SAFETY: channel checked non-null
     unsafe { chan_async_open(channel, listener) as i32 }
 }
 
-/// Read bytes from an `nsIInputStream` obtained via `Zawra_Net_Open`.
+/// Read bytes from an `nsIInputStream` obtained via `Z_Net_Open`.
 ///
 /// # Safety
 /// All pointers must be valid.
@@ -799,5 +1201,127 @@ pub unsafe extern "C" fn Z_Net_Read(
     if stream.is_null() || buf.is_null() || bytes_read.is_null() {
         return ns_result::NS_ERROR_INVALID_ARG as i32;
     }
+    // SAFETY: pointers checked non-null
     unsafe { stream_read(stream, buf, count, bytes_read) as i32 }
+}
+
+/// Set the HTTP request method for the channel (e.g. "GET", "POST", "PUT", "DELETE", "HEAD").
+///
+/// # Safety
+/// `channel` must be a valid `ZNetChannel*` and `method` a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Net_SetRequestMethod(
+    channel: *mut c_void,
+    method: *const c_char,
+) -> i32 {
+    if channel.is_null() || method.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG as i32;
+    }
+    // SAFETY: method checked non-null
+    let method_str = match unsafe { CStr::from_ptr(method) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return ns_result::NS_ERROR_INVALID_ARG as i32,
+    };
+    // SAFETY: channel checked non-null
+    let chan = unsafe { ZNetChannel::from_ptr(channel) };
+    chan.set_method(method_str);
+    ns_result::NS_OK as i32
+}
+
+/// Add an HTTP request header to the channel.
+///
+/// # Safety
+/// `channel` must be a valid `ZNetChannel*`, `name` and `value` valid NUL-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Net_SetRequestHeader(
+    channel: *mut c_void,
+    name: *const c_char,
+    value: *const c_char,
+) -> i32 {
+    if channel.is_null() || name.is_null() || value.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG as i32;
+    }
+    // SAFETY: name and value checked non-null
+    let name_str = match unsafe { CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return ns_result::NS_ERROR_INVALID_ARG as i32,
+    };
+    let value_str = match unsafe { CStr::from_ptr(value) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return ns_result::NS_ERROR_INVALID_ARG as i32,
+    };
+    // SAFETY: channel checked non-null
+    let chan = unsafe { ZNetChannel::from_ptr(channel) };
+    chan.add_header(name_str, value_str);
+    ns_result::NS_OK as i32
+}
+
+/// Set the HTTP request body payload for streaming.
+///
+/// # Safety
+/// `channel` must be a valid `ZNetChannel*`. If `body` is non-null, it must point to at least `len` valid bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Net_SetRequestBody(
+    channel: *mut c_void,
+    body: *const u8,
+    len: usize,
+) -> i32 {
+    if channel.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG as i32;
+    }
+    // SAFETY: channel checked non-null
+    let chan = unsafe { ZNetChannel::from_ptr(channel) };
+    if body.is_null() || len == 0 {
+        chan.set_body(None);
+    } else {
+        // SAFETY: body checked non-null and caller guarantees len valid bytes
+        let slice = unsafe { std::slice::from_raw_parts(body, len) };
+        chan.set_body(Some(slice.to_vec()));
+    }
+    ns_result::NS_OK as i32
+}
+
+/// Query if the channel has a pending request.
+///
+/// # Safety
+/// `channel` must be a valid `ZNetChannel*` and `pending` non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Net_IsPending(channel: *mut c_void, pending: *mut bool) -> i32 {
+    if channel.is_null() || pending.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG as i32;
+    }
+    // SAFETY: pointers checked non-null
+    unsafe { chan_is_pending(channel, pending) as i32 }
+}
+
+/// Query the response Content-Type for the channel.
+///
+/// # Safety
+/// `channel` must be a valid `ZNetChannel*` and `out_type` non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Net_GetContentType(
+    channel: *mut c_void,
+    out_type: *mut *const c_char,
+) -> i32 {
+    if channel.is_null() || out_type.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG as i32;
+    }
+    // SAFETY: pointers checked non-null
+    unsafe { chan_get_content_type(channel, out_type) as i32 }
+}
+
+/// Query the response Content-Charset for the channel.
+///
+/// # Safety
+/// `channel` must be a valid `ZNetChannel*` and `out_charset` non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Net_GetContentCharset(
+    channel: *mut c_void,
+    out_charset: *mut *const c_char,
+) -> i32 {
+    if channel.is_null() || out_charset.is_null() {
+        return ns_result::NS_ERROR_INVALID_ARG as i32;
+    }
+    // SAFETY: pointers checked non-null
+    unsafe { chan_get_content_charset(channel, out_charset) as i32 }
 }

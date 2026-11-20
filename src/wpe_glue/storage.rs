@@ -28,8 +28,13 @@ use browserdb::{
 
 static GLOBAL_DB: OnceLock<BrowserDB> = OnceLock::new();
 
-fn db() -> &'static BrowserDB {
-    GLOBAL_DB.get().expect("BrowserDB not initialised – call Zawra_Storage_Init first")
+macro_rules! db {
+    () => {
+        match GLOBAL_DB.get() {
+            Some(db) => db,
+            None => return NS_ERROR_FAILURE,
+        }
+    };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -132,7 +137,7 @@ pub unsafe extern "C" fn Z_Cache_Put(
         last_modified: last_mod as u128,
     };
 
-    match db().cache().insert(&entry) {
+    match db!().cache().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -153,7 +158,7 @@ pub unsafe extern "C" fn Z_Cache_Get(
     out_len:     *mut usize,
 ) -> i32 {
     let url_hash = ((url_hash_hi as u128) << 64) | (url_hash_lo as u128);
-    match db().cache().get(url_hash) {
+    match db!().cache().get(url_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(entry)) => {
@@ -172,7 +177,7 @@ pub unsafe extern "C" fn Z_Cache_Get(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Cache_Has(url_hash_hi: u64, url_hash_lo: u64) -> i32 {
     let url_hash = ((url_hash_hi as u128) << 64) | (url_hash_lo as u128);
-    match db().cache().get(url_hash) {
+    match db!().cache().get(url_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(_)) => NS_OK,
@@ -206,7 +211,7 @@ pub unsafe extern "C" fn Z_Storage_PutBlob(
     encode_base64_into(data, &mut encoded);
 
     let entry = LocalStoreEntry { origin_hash, key: key_str, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -233,7 +238,7 @@ pub unsafe extern "C" fn Z_Storage_GetBlob(
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
 
-    match db().localstore().get(origin_hash, &key_str) {
+    match db!().localstore().get(origin_hash, &key_str) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(entry)) => {
@@ -265,7 +270,7 @@ pub unsafe extern "C" fn Z_Storage_DeleteBlob(
     if key.is_null() { return NS_ERROR_INVALID_ARG; }
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
-    match db().localstore().remove(origin_hash, &key_str) {
+    match db!().localstore().remove(origin_hash, &key_str) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -296,9 +301,9 @@ pub unsafe extern "C" fn Z_Bookmark_Put(
         url: url_str,
         title: title_str,
         folder: folder_str,
-        created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+        created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
     };
-    match db().bookmarks().insert(&entry) {
+    match db!().bookmarks().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -310,7 +315,7 @@ pub unsafe extern "C" fn Z_Bookmark_Delete(
     url_hash_lo: u64,
 ) -> i32 {
     let url_hash = ((url_hash_hi as u128) << 64) | (url_hash_lo as u128);
-    match db().bookmarks().delete(url_hash) {
+    match db!().bookmarks().delete(url_hash) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -322,7 +327,7 @@ pub unsafe extern "C" fn Z_Bookmark_GetAll(
     out_buf_len:    usize,
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
-    match db().bookmarks().get_all() {
+    match db!().bookmarks().get_all() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let mut combined = String::new();
@@ -378,7 +383,7 @@ pub unsafe extern "C" fn Z_Cookie_Put(
         expiry,
         flags,
     };
-    match db().cookies().insert(&entry) {
+    match db!().cookies().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -407,7 +412,7 @@ pub unsafe extern "C" fn Z_Cookie_Get(
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
 
-    match db().cookies().get(domain_hash, &name_str) {
+    match db!().cookies().get(domain_hash, &name_str) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(entry)) => {
@@ -439,7 +444,7 @@ pub unsafe extern "C" fn Z_Cookie_GetForDomain(
     let path_str = if path.is_null() { String::new() } else {
         unsafe { CStr::from_ptr(path).to_string_lossy().into_owned() }
     };
-    match db().cookies().get_by_domain(domain_hash) {
+    match db!().cookies().get_by_domain(domain_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let filtered: Vec<&CookieEntry> = if path_str.is_empty() {
@@ -473,11 +478,11 @@ pub unsafe extern "C" fn Z_Cookie_DeleteForDomain(
     domain_hash_lo: u64,
 ) -> i32 {
     let domain_hash = ((domain_hash_hi as u128) << 64) | (domain_hash_lo as u128);
-    match db().cookies().get_by_domain(domain_hash) {
+    match db!().cookies().get_by_domain(domain_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for entry in entries {
-                let _ = db().cookies().delete(domain_hash, &entry.name);
+                let _ = db!().cookies().delete(domain_hash, &entry.name);
             }
             NS_OK
         }
@@ -498,7 +503,7 @@ pub unsafe extern "C" fn Z_Cookie_Delete(
         Ok(s) => s,
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
-    match db().cookies().delete(domain_hash, name_str) {
+    match db!().cookies().delete(domain_hash, name_str) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -506,11 +511,11 @@ pub unsafe extern "C" fn Z_Cookie_Delete(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Cookie_DeleteAll() -> i32 {
-    match db().cookies().get_all() {
+    match db!().cookies().get_all() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for entry in &entries {
-                let _ = db().cookies().delete(entry.domain_hash, &entry.name);
+                let _ = db!().cookies().delete(entry.domain_hash, &entry.name);
             }
             NS_OK
         }
@@ -533,7 +538,7 @@ pub unsafe extern "C" fn Z_LocalStorage_GetAll(
     out_buf_len:    usize,
 ) -> i32 {
     if out_buf.is_null() || out_buf_len == 0 { return NS_ERROR_INVALID_ARG; }
-    match db().localstore().get_by_origin(0) {
+    match db!().localstore().get_by_origin(0) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let mut combined = String::new();
@@ -573,7 +578,7 @@ pub unsafe extern "C" fn Z_LocalStorage_Put(
         key:   key_str,
         value: value_str,
     };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -598,7 +603,7 @@ pub unsafe extern "C" fn Z_LocalStorage_Get(
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
 
 
-    match db().localstore().get(origin_hash, &key_str) {
+    match db!().localstore().get(origin_hash, &key_str) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(entry)) => {
@@ -626,7 +631,7 @@ pub unsafe extern "C" fn Z_LocalStorage_Delete(
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
     let key_str = unsafe { CStr::from_ptr(key).to_string_lossy().into_owned() };
 
-    match db().localstore().remove(origin_hash, &key_str) {
+    match db!().localstore().remove(origin_hash, &key_str) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -639,7 +644,7 @@ pub unsafe extern "C" fn Z_LocalStorage_Clear(
 ) -> i32 {
     let origin_hash = ((origin_hash_hi as u128) << 64) | (origin_hash_lo as u128);
 
-    match db().localstore().clear_origin(origin_hash) {
+    match db!().localstore().clear_origin(origin_hash) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -661,7 +666,7 @@ pub unsafe extern "C" fn Z_History_Increment(
     delta:       i64,
 ) -> i32 {
     let url_hash = ((url_hash_hi as u128) << 64) | (url_hash_lo as u128);
-    match db().history().increment(url_hash, delta) {
+    match db!().history().increment(url_hash, delta) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -693,7 +698,7 @@ pub unsafe extern "C" fn Z_History_Put(
         title: title_str,
         visit_count: 1,
     };
-    match db().history().insert(&entry) {
+    match db!().history().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -710,7 +715,7 @@ pub unsafe extern "C" fn Z_History_Put(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Storage_Stats(stats: *mut ZawraStorageStats) -> i32 {
     if stats.is_null() { return NS_ERROR_INVALID_ARG; }
-    match db().stats() {
+    match db!().stats() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(s) => {
             unsafe {
@@ -733,9 +738,25 @@ pub unsafe extern "C" fn Z_Storage_Stats(stats: *mut ZawraStorageStats) -> i32 {
 /// Wipe ALL storage (panic-mode / "clear site data").
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Storage_Wipe() -> i32 {
-    match db().wipe() {
+    match db!().wipe() {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
+    }
+}
+
+/// Flush all pending BrowserDB memtable writes to disk across all tables.
+#[unsafe(no_mangle)]
+pub extern "C" fn Z_Storage_Flush() -> i32 {
+    let db = match GLOBAL_DB.get() {
+        Some(db) => db,
+        None => return NS_OK,
+    };
+    match db.flush() {
+        Ok(_) => NS_OK,
+        Err(e) => {
+            eprintln!("[ZAWRA-RUST] Storage_Flush error: {}", e);
+            NS_ERROR_FAILURE
+        }
     }
 }
 
@@ -759,7 +780,7 @@ pub unsafe extern "C" fn Z_IDBStore_Put(
     }
     let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len) }.to_vec();
     let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len) }.to_vec();
-    match db().binarystore().put(key, value) {
+    match db!().binarystore().put(key, value) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -783,7 +804,7 @@ pub unsafe extern "C" fn Z_IDBStore_Get(
         return NS_ERROR_INVALID_ARG;
     }
     let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len) };
-    match db().binarystore().get(key) {
+    match db!().binarystore().get(key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(value)) => {
@@ -811,7 +832,7 @@ pub unsafe extern "C" fn Z_IDBStore_Delete(
         return NS_ERROR_INVALID_ARG;
     }
     let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len) };
-    match db().binarystore().delete(key) {
+    match db!().binarystore().delete(key) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -837,7 +858,7 @@ pub unsafe extern "C" fn Z_IDBStore_ScanPrefix(
         return NS_ERROR_INVALID_ARG;
     }
     let prefix = unsafe { std::slice::from_raw_parts(prefix_ptr, prefix_len) };
-    match db().binarystore().scan_prefix(prefix) {
+    match db!().binarystore().scan_prefix(prefix) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             let mut cursor: usize = 0;
@@ -864,15 +885,66 @@ pub unsafe extern "C" fn Z_IDBStore_ScanPrefix(
     }
 }
 
+/// Scan all keys/values matching a prefix, dynamically allocating the output buffer.
+///
+/// Serializes results as flat buffer:
+///   [key_len:4][key...][value_len:4][value...]
+/// repeated for each matching entry.
+/// Free with `Z_Free_Buffer`.
+///
+/// # Safety
+/// `prefix_ptr` points to `prefix_len` bytes; `out_ptr` and `out_len` must be valid non-null pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_IDBStore_ScanPrefix_Dynamic(
+    prefix_ptr: *const u8,
+    prefix_len: usize,
+    out_ptr:    *mut *mut u8,
+    out_len:    *mut usize,
+) -> i32 {
+    if prefix_ptr.is_null() || out_ptr.is_null() || out_len.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+    }
+    let prefix = unsafe { std::slice::from_raw_parts(prefix_ptr, prefix_len) };
+    match db!().binarystore().scan_prefix(prefix) {
+        Err(_) => NS_ERROR_FAILURE,
+        Ok(entries) => {
+            let total_size: usize = entries.iter().map(|(k, v)| 8 + k.len() + v.len()).sum();
+            if total_size == 0 {
+                return NS_OK;
+            }
+            let mut buf = Vec::with_capacity(total_size);
+            for (key, value) in &entries {
+                let key_len_32 = key.len() as u32;
+                let val_len_32 = value.len() as u32;
+                buf.extend_from_slice(&key_len_32.to_le_bytes());
+                buf.extend_from_slice(key);
+                buf.extend_from_slice(&val_len_32.to_le_bytes());
+                buf.extend_from_slice(value);
+            }
+            let mut boxed = buf.into_boxed_slice();
+            unsafe {
+                *out_ptr = boxed.as_mut_ptr();
+                *out_len = boxed.len();
+            }
+            std::mem::forget(boxed);
+            NS_OK
+        }
+    }
+}
+
 /// Clear ALL entries in the binary store.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_IDBStore_Clear() -> i32 {
     // Clear all entries by iterating and deleting each one
-    match db().binarystore().all_entries() {
+    match db!().binarystore().all_entries() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for (key, _) in &entries {
-                let _ = db().binarystore().delete(key);
+                let _ = db!().binarystore().delete(key);
             }
             NS_OK
         }
@@ -948,7 +1020,7 @@ pub unsafe extern "C" fn Z_CacheStore_Store(
     let hash = unsafe { std::slice::from_raw_parts(hash_ptr, hash_len) };
     let data = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
     let key = cache_key(hash);
-    match db().binarystore().put(key, data.to_vec()) {
+    match db!().binarystore().put(key, data.to_vec()) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -973,7 +1045,7 @@ pub unsafe extern "C" fn Z_CacheStore_Retrieve(
     }
     let hash = unsafe { std::slice::from_raw_parts(hash_ptr, hash_len) };
     let key = cache_key(hash);
-    match db().binarystore().get(&key) {
+    match db!().binarystore().get(&key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => NS_ERROR_NOT_FOUND,
         Ok(Some(value)) => {
@@ -1002,7 +1074,7 @@ pub unsafe extern "C" fn Z_CacheStore_Delete(
     }
     let hash = unsafe { std::slice::from_raw_parts(hash_ptr, hash_len) };
     let key = cache_key(hash);
-    match db().binarystore().delete(&key) {
+    match db!().binarystore().delete(&key) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1012,11 +1084,11 @@ pub unsafe extern "C" fn Z_CacheStore_Delete(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_CacheStore_Clear() -> i32 {
     let prefix = [CACHE_NAMESPACE];
-    match db().binarystore().scan_prefix(&prefix) {
+    match db!().binarystore().scan_prefix(&prefix) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for (key, _) in &entries {
-                let _ = db().binarystore().delete(key);
+                let _ = db!().binarystore().delete(key);
             }
             NS_OK
         }
@@ -1054,7 +1126,7 @@ pub unsafe extern "C" fn Z_WebSQL_Open(
         key,
         value,
     };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1125,7 +1197,7 @@ pub unsafe extern "C" fn Z_WebSQL_GetVersion(
         Err(_) => return -1,
     };
     let key = format!("ws:meta:{}:{}", origin_hash, name);
-    match db().localstore().get(origin_hash, &key) {
+    match db!().localstore().get(origin_hash, &key) {
         Ok(Some(entry)) => {
             entry.value.parse::<i32>().unwrap_or(-1)
         }
@@ -1158,7 +1230,7 @@ pub unsafe extern "C" fn Z_WebSQL_SetVersion(
         key,
         value,
     };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1182,7 +1254,7 @@ pub unsafe extern "C" fn Z_WebSQL_DeleteDatabase(
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
     let key = format!("ws:meta:{}:{}", origin_hash, name);
-    match db().localstore().remove(origin_hash, &key) {
+    match db!().localstore().remove(origin_hash, &key) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1217,7 +1289,7 @@ pub unsafe extern "C" fn Z_AppCache_StoreManifest(
     };
     let key = format!("ac:manifest:{}", url);
     let entry = LocalStoreEntry { origin_hash, key, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1245,7 +1317,7 @@ pub unsafe extern "C" fn Z_AppCache_GetManifest(
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
     let key = format!("ac:manifest:{}", url);
-    match db().localstore().get(origin_hash, &key) {
+    match db!().localstore().get(origin_hash, &key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => {
             unsafe { *result_written = 0; }
@@ -1291,7 +1363,7 @@ pub unsafe extern "C" fn Z_AppCache_StoreResource(
     };
     let key = format!("ac:resource:{}", url);
     let entry = LocalStoreEntry { origin_hash, key, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1319,7 +1391,7 @@ pub unsafe extern "C" fn Z_AppCache_GetResource(
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
     let key = format!("ac:resource:{}", url);
-    match db().localstore().get(origin_hash, &key) {
+    match db!().localstore().get(origin_hash, &key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => {
             unsafe { *result_written = 0; }
@@ -1349,12 +1421,12 @@ pub unsafe extern "C" fn Z_AppCache_DeleteOrigin(
     origin_hi: u64, origin_lo: u64,
 ) -> i32 {
     let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
-    match db().localstore().get_by_origin(origin_hash) {
+    match db!().localstore().get_by_origin(origin_hash) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for entry in entries {
                 if entry.key.starts_with("ac:manifest:") || entry.key.starts_with("ac:resource:") {
-                    let _ = db().localstore().remove(origin_hash, &entry.key);
+                    let _ = db!().localstore().remove(origin_hash, &entry.key);
                 }
             }
             NS_OK
@@ -1384,7 +1456,7 @@ pub unsafe extern "C" fn Z_PCM_StoreUnattributed(
     let key = format!("pcm:unattributed:{}", encoded.len());
     let origin_hash: u128 = 0;
     let entry = LocalStoreEntry { origin_hash, key, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1404,7 +1476,7 @@ pub unsafe extern "C" fn Z_PCM_GetUnattributed(
 ) -> i32 {
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
     let _origin_hash: u128 = 0;
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("pcm:unattributed:"))
         .execute() {
         Err(_) => {
@@ -1455,7 +1527,7 @@ pub unsafe extern "C" fn Z_PCM_StoreAttributed(
     let key = format!("pcm:attributed:{}", encoded.len());
     let origin_hash: u128 = 0;
     let entry = LocalStoreEntry { origin_hash, key, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1475,7 +1547,7 @@ pub unsafe extern "C" fn Z_PCM_GetAttributed(
 ) -> i32 {
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
     let _origin_hash: u128 = 0;
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("pcm:attributed:"))
         .execute() {
         Err(_) => {
@@ -1520,8 +1592,8 @@ pub unsafe extern "C" fn Z_PCM_DeleteMeasurement(
     let key_unattributed = format!("pcm:unattributed:{}", id_hash);
     let key_attributed = format!("pcm:attributed:{}", id_hash);
     let origin_hash: u128 = 0;
-    let _ = db().localstore().remove(origin_hash, &key_unattributed);
-    let _ = db().localstore().remove(origin_hash, &key_attributed);
+    let _ = db!().localstore().remove(origin_hash, &key_unattributed);
+    let _ = db!().localstore().remove(origin_hash, &key_attributed);
     NS_OK
 }
 
@@ -1548,7 +1620,7 @@ pub unsafe extern "C" fn Z_ITP_StoreStatistics(
     };
     let key = format!("itp:stats:{}", origin_hash);
     let entry = LocalStoreEntry { origin_hash, key, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1570,7 +1642,7 @@ pub unsafe extern "C" fn Z_ITP_GetStatistics(
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
     let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
     let key = format!("itp:stats:{}", origin_hash);
-    match db().localstore().get(origin_hash, &key) {
+    match db!().localstore().get(origin_hash, &key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => {
             let empty = b"[]";
@@ -1606,7 +1678,7 @@ pub unsafe extern "C" fn Z_ITP_DeleteStatistics(
 ) -> i32 {
     let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
     let key = format!("itp:stats:{}", origin_hash);
-    match db().localstore().remove(origin_hash, &key) {
+    match db!().localstore().remove(origin_hash, &key) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
@@ -1616,13 +1688,13 @@ pub unsafe extern "C" fn Z_ITP_DeleteStatistics(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_ITP_DeleteAll() -> i32 {
     eprintln!("[ZAWRA-RUST] Z_ITP_DeleteAll: clearing all ITP statistics");
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("itp:stats:"))
         .execute() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for entry in &entries {
-                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+                let _ = db!().localstore().remove(entry.origin_hash, &entry.key);
             }
             NS_OK
         }
@@ -1642,7 +1714,7 @@ pub unsafe extern "C" fn Z_ITP_GetAllOrigins(
     result_written: *mut u32,
 ) -> i32 {
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("itp:stats:"))
         .execute() {
         Err(_) => {
@@ -1704,7 +1776,7 @@ pub unsafe extern "C" fn Z_Push_StoreSubscription(
     let key = format!("push:sub:endpoint:{}", origin_hash);
     let val = format!("{}|{}|{}", encoded_endpoint, encoded_p256dh, encoded_auth);
     let entry = LocalStoreEntry { origin_hash, key, value: val };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => {
             eprintln!("[ZAWRA-RUST] Z_Push_StoreSubscription: stored for origin={}", origin_hash);
             NS_OK
@@ -1734,7 +1806,7 @@ pub unsafe extern "C" fn Z_Push_GetSubscription(
     }
     let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
     let key = format!("push:sub:endpoint:{}", origin_hash);
-    match db().localstore().get(origin_hash, &key) {
+    match db!().localstore().get(origin_hash, &key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => {
             unsafe {
@@ -1764,7 +1836,7 @@ pub unsafe extern "C" fn Z_Push_DeleteSubscription(
 ) -> i32 {
     let origin_hash = ((origin_hi as u128) << 64) | (origin_lo as u128);
     let key = format!("push:sub:endpoint:{}", origin_hash);
-    match db().localstore().remove(origin_hash, &key) {
+    match db!().localstore().remove(origin_hash, &key) {
         Ok(_) => {
             eprintln!("[ZAWRA-RUST] Z_Push_DeleteSubscription: deleted for origin={}", origin_hash);
             NS_OK
@@ -1777,13 +1849,13 @@ pub unsafe extern "C" fn Z_Push_DeleteSubscription(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Push_DeleteAll() -> i32 {
     eprintln!("[ZAWRA-RUST] Z_Push_DeleteAll: clearing all push subscriptions");
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("push:sub:"))
         .execute() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for entry in &entries {
-                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+                let _ = db!().localstore().remove(entry.origin_hash, &entry.key);
             }
             NS_OK
         }
@@ -1818,7 +1890,7 @@ pub unsafe extern "C" fn Z_SWReg_StoreRegistration(
     let origin_hash: u128 = 0;
     let key = format!("swreg:{}", scope_str);
     let entry = LocalStoreEntry { origin_hash, key, value: encoded };
-    match db().localstore().insert(&entry) {
+    match db!().localstore().insert(&entry) {
         Ok(_) => {
             eprintln!("[ZAWRA-RUST] Z_SWReg_StoreRegistration: stored scope={}", scope_str);
             NS_OK
@@ -1853,7 +1925,7 @@ pub unsafe extern "C" fn Z_SWReg_GetRegistration(
     };
     let origin_hash: u128 = 0;
     let key = format!("swreg:{}", scope_str);
-    match db().localstore().get(origin_hash, &key) {
+    match db!().localstore().get(origin_hash, &key) {
         Err(_) => NS_ERROR_FAILURE,
         Ok(None) => {
             unsafe { *result_written = 0; }
@@ -1890,7 +1962,7 @@ pub unsafe extern "C" fn Z_SWReg_DeleteRegistration(
     };
     let origin_hash: u128 = 0;
     let key = format!("swreg:{}", scope_str);
-    match db().localstore().remove(origin_hash, &key) {
+    match db!().localstore().remove(origin_hash, &key) {
         Ok(_) => {
             eprintln!("[ZAWRA-RUST] Z_SWReg_DeleteRegistration: deleted scope={}", scope_str);
             NS_OK
@@ -1912,7 +1984,7 @@ pub unsafe extern "C" fn Z_SWReg_GetAll(
     result_written: *mut u32,
 ) -> i32 {
     if result_buf.is_null() || result_written.is_null() { return NS_ERROR_INVALID_ARG; }
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("swreg:"))
         .execute() {
         Err(_) => {
@@ -1949,13 +2021,13 @@ pub unsafe extern "C" fn Z_SWReg_GetAll(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_SWReg_DeleteAll() -> i32 {
     eprintln!("[ZAWRA-RUST] Z_SWReg_DeleteAll: clearing all SW registrations");
-    match db().localstore().query()
+    match db!().localstore().query()
         .filter(|e| e.key.starts_with("swreg:"))
         .execute() {
         Err(_) => NS_ERROR_FAILURE,
         Ok(entries) => {
             for entry in &entries {
-                let _ = db().localstore().remove(entry.origin_hash, &entry.key);
+                let _ = db!().localstore().remove(entry.origin_hash, &entry.key);
             }
             NS_OK
         }

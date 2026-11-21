@@ -739,8 +739,15 @@ int main(int argc, char *argv[])
     hajr_trace_set_process_kind(1);
     Z_Init_Subsystems("/tmp/zawra-profile");
 
-#if ENABLE_DEVELOPER_MODE
+#if defined(WEBKIT_INJECTED_BUNDLE_PATH)
     g_setenv("WEBKIT_INJECTED_BUNDLE_PATH", WEBKIT_INJECTED_BUNDLE_PATH, FALSE);
+#elif ENABLE_DEVELOPER_MODE
+    g_setenv("WEBKIT_INJECTED_BUNDLE_PATH", WEBKIT_INJECTED_BUNDLE_PATH, FALSE);
+#endif
+    if (!g_getenv("WEBKIT_INJECTED_BUNDLE_PATH")) {
+        g_setenv("WEBKIT_INJECTED_BUNDLE_PATH", "/home/intro/spectre-enviroment/browser/zawra-browser/webkit/build/lib", FALSE);
+    }
+#if ENABLE_DEVELOPER_MODE
     g_setenv("WEBKIT_INSPECTOR_RESOURCES_PATH", WEBKIT_INSPECTOR_RESOURCES_PATH, FALSE);
 #endif
 

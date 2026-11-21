@@ -63,11 +63,20 @@ pub struct ZawraStorageStats {
     pub disk_usage_mb:      u64,
 }
 
+unsafe extern "C" {
+    fn hajr_trace_get_process_kind() -> u8;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Initialisation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Open (or create) the BrowserDB at `profile_path`.
+///
+/// In a multi-process browser architecture:
+/// - NetworkProcess (kind 3) acquires the primary exclusive write lock.
+/// - UIProcess (kind 1) opens shared read-only storage without lock contention.
+/// - WebProcess (kind 2) and GPUProcess (kind 4) skip direct DB opens.
 ///
 /// # Safety
 /// `profile_path` must be a valid NUL-terminated UTF-8 path string.
@@ -78,25 +87,118 @@ pub unsafe extern "C" fn Z_Storage_Init(profile_path: *const c_char) -> i32 {
         Ok(s) => s,
         Err(_) => return NS_ERROR_INVALID_ARG,
     };
-    eprintln!("[ZAWRA-RUST] Storage_Init: {}", path_str);
+
+    if GLOBAL_DB.get().is_some() {
+        return NS_OK;
+    }
+
+    let process_kind = unsafe { hajr_trace_get_process_kind() };
+    match process_kind {
+        // WebProcess (2) and GPUProcess (4): Aux processes do not own local DB files
+        2 | 4 => {
+            NS_OK
+        }
+        // UIProcess (1): Open in read-only mode without lock contention
+        1 => {
+            eprintln!("[ZAWRA-RUST] Storage_Init (UIProcess / Reader): {}", path_str);
+            match BrowserDB::open_without_locking(path_str) {
+                Ok(db_instance) => {
+                    let _ = GLOBAL_DB.set(db_instance);
+                    NS_OK
+                }
+                Err(e) => {
+                    eprintln!("[ZAWRA-RUST] Storage_Init (UIProcess) failed: {}", e);
+                    NS_ERROR_FAILURE
+                }
+            }
+        }
+        // NetworkProcess (3): Primary writer holding the exclusive lock
+        3 => {
+            eprintln!("[ZAWRA-RUST] Storage_Init (NetworkProcess / Writer): {}", path_str);
+            match BrowserDB::open(path_str) {
+                Ok(db_instance) => {
+                    let _ = GLOBAL_DB.set(db_instance);
+                    NS_OK
+                }
+                Err(e) => {
+                    eprintln!("[ZAWRA-RUST] Storage_Init (NetworkProcess) lock failed: {}, falling back to open_without_locking", e);
+                    match BrowserDB::open_without_locking(path_str) {
+                        Ok(db_instance) => {
+                            let _ = GLOBAL_DB.set(db_instance);
+                            NS_OK
+                        }
+                        Err(e2) => {
+                            eprintln!("[ZAWRA-RUST] Storage_Init FAILED: {}", e2);
+                            NS_ERROR_FAILURE
+                        }
+                    }
+                }
+            }
+        }
+        // Standalone / test harnesses / CLI (0 or unspecified)
+        _ => {
+            eprintln!("[ZAWRA-RUST] Storage_Init (Default): {}", path_str);
+            match BrowserDB::open(path_str) {
+                Ok(db_instance) => {
+                    let _ = GLOBAL_DB.set(db_instance);
+                    NS_OK
+                }
+                Err(_) => {
+                    match BrowserDB::open_without_locking(path_str) {
+                        Ok(db_instance) => {
+                            let _ = GLOBAL_DB.set(db_instance);
+                            NS_OK
+                        }
+                        Err(e2) => {
+                            eprintln!("[ZAWRA-RUST] Storage_Init FAILED: {}", e2);
+                            NS_ERROR_FAILURE
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Explicit initialisation for writers (NetworkProcess).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Storage_Init_Writer(profile_path: *const c_char) -> i32 {
+    if profile_path.is_null() { return NS_ERROR_INVALID_ARG; }
+    let path_str = match unsafe { CStr::from_ptr(profile_path).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    if GLOBAL_DB.get().is_some() { return NS_OK; }
     match BrowserDB::open(path_str) {
         Ok(db_instance) => {
             let _ = GLOBAL_DB.set(db_instance);
             NS_OK
         }
         Err(e) => {
-            eprintln!("[ZAWRA-RUST] Storage_Init with lock failed: {}. Retrying without locking...", e);
-            match BrowserDB::open_without_locking(path_str) {
-                Ok(db_instance) => {
-                    let _ = GLOBAL_DB.set(db_instance);
-                    NS_OK
-                }
-                Err(e2) => {
-                    eprintln!("[ZAWRA-RUST] Storage_Init FAILED: {}", e2);
-                    NS_ERROR_FAILURE
-                }
-            }
-        },
+            eprintln!("[ZAWRA-RUST] Storage_Init_Writer failed: {}", e);
+            NS_ERROR_FAILURE
+        }
+    }
+}
+
+/// Explicit initialisation for readers (UIProcess).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Storage_Init_Reader(profile_path: *const c_char) -> i32 {
+    if profile_path.is_null() { return NS_ERROR_INVALID_ARG; }
+    let path_str = match unsafe { CStr::from_ptr(profile_path).to_str() } {
+        Ok(s) => s,
+        Err(_) => return NS_ERROR_INVALID_ARG,
+    };
+    if GLOBAL_DB.get().is_some() { return NS_OK; }
+    match BrowserDB::open_without_locking(path_str) {
+        Ok(db_instance) => {
+            let _ = GLOBAL_DB.set(db_instance);
+            NS_OK
+        }
+        Err(e) => {
+            eprintln!("[ZAWRA-RUST] Storage_Init_Reader failed: {}", e);
+            NS_ERROR_FAILURE
+        }
     }
 }
 

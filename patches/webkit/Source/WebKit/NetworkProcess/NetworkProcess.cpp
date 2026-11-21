@@ -334,7 +334,7 @@ void NetworkProcess::initializeNetworkProcess(NetworkProcessCreationParameters&&
     WebCore::NetworkStorageSession::permitProcessToUseCookieAPI(true);
     platformInitializeNetworkProcess(parameters);
 
-    const char* profilePath = "/tmp/zawra_profile";
+    const char* profilePath = "/tmp/zawra-profile";
     Z_Storage_Init(profilePath);
 
     WTF::Thread::setCurrentThreadIsUserInitiated();

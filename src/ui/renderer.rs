@@ -8,7 +8,9 @@ use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 
 unsafe extern "C" {
+    #[link_name = "ZG_CreateSurface"]
     fn Z_Graphics_CreateSurface(window: *mut c_void, width: u32, height: u32) -> *mut c_void;
+    #[link_name = "ZG_DestroySurface"]
     fn Z_Graphics_DestroySurface(handle: *mut c_void);
 }
 

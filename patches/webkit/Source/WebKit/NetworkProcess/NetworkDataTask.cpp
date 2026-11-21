@@ -37,6 +37,7 @@
 #include <WebCore/ResourceRequest.h>
 #include <WebCore/ResourceResponse.h>
 #include <wtf/RunLoop.h>
+#include <wtf/text/MakeString.h>
 #include "znet/NetworkDataTaskZNet.h"
 
 #if PLATFORM(COCOA)
@@ -77,15 +78,16 @@ Ref<NetworkDataTask> NetworkDataTask::create(NetworkSession& session, NetworkDat
     return dataTask;
 }
 
-NetworkDataTask::NetworkDataTask(NetworkSession& session, NetworkDataTaskClient& client, const ResourceRequest& requestWithCredentials, StoredCredentialsPolicy storedCredentialsPolicy, bool shouldClearReferrerOnHTTPSToHTTPRedirect, bool dataTaskIsForMainFrameNavigation)
+NetworkDataTask::NetworkDataTask(NetworkSession& session, NetworkDataTaskClient& client, const ResourceRequest& requestWithCredentials, StoredCredentialsPolicy storedCredentialsPolicy, bool shouldClearReferrerOnHTTPSToHTTPRedirect, bool dataTaskIsForMainFrameNavigation, bool isInitiatedByDedicatedWorker)
     : m_session(session)
-    , m_client(&client)
+    , m_client(client)
     , m_partition(requestWithCredentials.cachePartition())
     , m_storedCredentialsPolicy(storedCredentialsPolicy)
     , m_lastHTTPMethod(requestWithCredentials.httpMethod())
     , m_firstRequest(requestWithCredentials)
     , m_shouldClearReferrerOnHTTPSToHTTPRedirect(shouldClearReferrerOnHTTPSToHTTPRedirect)
     , m_dataTaskIsForMainFrameNavigation(dataTaskIsForMainFrameNavigation)
+    , m_isInitiatedByDedicatedWorker(isInitiatedByDedicatedWorker)
 {
     ASSERT(RunLoop::isMain());
 
@@ -94,7 +96,7 @@ NetworkDataTask::NetworkDataTask(NetworkSession& session, NetworkDataTaskClient&
         return;
     }
 
-    if (!portAllowed(requestWithCredentials.url())) {
+    if (!portAllowed(requestWithCredentials.url()) || isIPAddressDisallowed(requestWithCredentials.url())) {
         scheduleFailure(FailureType::Blocked);
         return;
     }
@@ -105,7 +107,7 @@ NetworkDataTask::NetworkDataTask(NetworkSession& session, NetworkDataTaskClient&
         return;
     }
 
-    m_session->registerNetworkDataTask(*this);
+    protect(networkSession())->registerNetworkDataTask(*this);
 }
 
 NetworkDataTask::~NetworkDataTask()
@@ -113,50 +115,68 @@ NetworkDataTask::~NetworkDataTask()
     ASSERT(RunLoop::isMain());
     ASSERT(!m_client);
 
-    if (m_session)
-        m_session->unregisterNetworkDataTask(*this);
+    if (CheckedPtr session = m_session.get())
+        session->unregisterNetworkDataTask(*this);
 }
 
 void NetworkDataTask::scheduleFailure(FailureType type)
 {
     m_failureScheduled = true;
-    RunLoop::main().dispatch([this, weakThis = ThreadSafeWeakPtr { *this }, type] {
-        auto strongThis = weakThis.get();
-        if (!strongThis || !m_client)
+    RunLoop::mainSingleton().dispatch([weakThis = ThreadSafeWeakPtr { *this }, type] {
+        auto protectedThis = weakThis.get();
+        if (!protectedThis)
+            return;
+
+        RefPtr client = protectedThis->m_client.get();
+        if (!client)
             return;
 
         switch (type) {
         case FailureType::Blocked:
-            m_client->wasBlocked();
+            client->wasBlocked();
             return;
         case FailureType::InvalidURL:
-            m_client->cannotShowURL();
+            client->cannotShowURL();
             return;
         case FailureType::RestrictedURL:
-            m_client->wasBlockedByRestrictions();
+            client->wasBlockedByRestrictions();
             return;
         case FailureType::FTPDisabled:
-            m_client->wasBlockedByDisabledFTP();
+            client->wasBlockedByDisabledFTP();
         }
     });
 }
 
 void NetworkDataTask::didReceiveInformationalResponse(ResourceResponse&& headers)
 {
-    if (m_client)
-        m_client->didReceiveInformationalResponse(WTFMove(headers));
+    if (RefPtr client = m_client.get())
+        client->didReceiveInformationalResponse(WTF::move(headers));
 }
 
-void NetworkDataTask::didReceiveResponse(ResourceResponse&& response, NegotiatedLegacyTLS negotiatedLegacyTLS, PrivateRelayed privateRelayed, ResponseCompletionHandler&& completionHandler)
+void NetworkDataTask::didReceiveResponse(ResourceResponse&& response, NegotiatedLegacyTLS negotiatedLegacyTLS, PrivateRelayed privateRelayed, std::optional<IPAddress> resolvedIPAddress, ResponseCompletionHandler&& completionHandler)
 {
+    auto url = response.url();
     if (response.isHTTP09()) {
-        auto url = response.url();
         std::optional<uint16_t> port = url.port();
         if (port && !WTF::isDefaultPortForProtocol(port.value(), url.protocol())) {
             completionHandler(PolicyAction::Ignore);
             cancel();
-            if (m_client)
-                m_client->didCompleteWithError({ String(), 0, url, "Cancelled load from '" + url.stringCenterEllipsizedToLength() + "' because it is using HTTP/0.9." });
+            if (RefPtr client = m_client.get())
+                client->didCompleteWithError({ String(), 0, url, makeString("Cancelled load from '"_s, url.stringCenterEllipsizedToLength(), "' because it is using HTTP/0.9."_s) });
+            return;
+        }
+    }
+
+    auto lastRequest = m_previousRequest.isNull() ? firstRequest() : m_previousRequest;
+    auto firstPartyURL = lastRequest.firstPartyForCookies();
+    if (!isTopLevelNavigation()
+        && firstPartyURL.protocolIs("https"_s) && !SecurityOrigin::isLocalhostAddress(firstPartyURL.host())
+        && url.protocolIs("http"_s) && SecurityOrigin::isLocalhostAddress(url.host())) {
+        if (resolvedIPAddress && !resolvedIPAddress->isLoopback()) {
+            completionHandler(PolicyAction::Ignore);
+            cancel();
+            if (RefPtr client = m_client.get())
+                client->didCompleteWithError({ String(), 0, url, makeString("Cancelled load from '"_s, url.stringCenterEllipsizedToLength(), "' because localhost did not resolve to a loopback address."_s) });
             return;
         }
     }
@@ -167,15 +187,16 @@ void NetworkDataTask::didReceiveResponse(ResourceResponse&& response, Negotiated
     if (privateRelayed == PrivateRelayed::Yes)
         response.setWasPrivateRelayed(WasPrivateRelayed::Yes);
 
-    if (m_client)
-        m_client->didReceiveResponse(WTFMove(response), negotiatedLegacyTLS, privateRelayed, WTFMove(completionHandler));
+    if (RefPtr client = m_client.get())
+        client->didReceiveResponse(WTF::move(response), negotiatedLegacyTLS, privateRelayed, WTF::move(completionHandler));
     else
         completionHandler(PolicyAction::Ignore);
 }
 
 bool NetworkDataTask::shouldCaptureExtraNetworkLoadMetrics() const
 {
-    return m_client ? m_client->shouldCaptureExtraNetworkLoadMetrics() : false;
+    RefPtr client = m_client.get();
+    return client && client->shouldCaptureExtraNetworkLoadMetrics();
 }
 
 String NetworkDataTask::description() const
@@ -189,32 +210,17 @@ void NetworkDataTask::setH2PingCallback(const URL& url, CompletionHandler<void(E
     completionHandler(makeUnexpected(internalError(url)));
 }
 
-PAL::SessionID NetworkDataTask::sessionID() const
-{
-    return m_session->sessionID();
-}
-
-const NetworkSession* NetworkDataTask::networkSession() const
-{
-    return m_session.get();
-}
-
-NetworkSession* NetworkDataTask::networkSession()
-{
-    return m_session.get();
-}
-
 void NetworkDataTask::restrictRequestReferrerToOriginIfNeeded(WebCore::ResourceRequest& request)
 {
-#if ENABLE(TRACKING_PREVENTION)
-    if ((m_session->sessionID().isEphemeral() || m_session->isTrackingPreventionEnabled()) && m_session->shouldDowngradeReferrer() && request.isThirdParty())
+    CheckedPtr session = m_session.get();
+
+    if ((session->sessionID().isEphemeral() || session->isTrackingPreventionEnabled()) && session->shouldDowngradeReferrer() && request.isThirdParty())
         request.setExistingHTTPReferrerToOriginString();
-#endif
 }
 
 String NetworkDataTask::attributedBundleIdentifier(WebPageProxyIdentifier pageID)
 {
-    if (auto* session = networkSession())
+    if (auto* session = m_session.get())
         return session->attributedBundleIdentifierFromPageIdentifier(pageID);
     return { };
 }

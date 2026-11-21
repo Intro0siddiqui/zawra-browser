@@ -26,25 +26,23 @@
 #include "config.h"
 #include <wtf/RunLoop.h>
 
-#include <sys/syscall.h>
-#include <unistd.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/Ref.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/ThreadSpecific.h>
+#include <wtf/text/StringBuilder.h>
 #include <wtf/threads/BinarySemaphore.h>
-
-#define ZAWRA_RUNLOOP_LOG(fmt, ...) fprintf(stderr, "[ZAWRA-RUNLOOP] %d " fmt "\n", (int)syscall(SYS_gettid), ##__VA_ARGS__)
 
 namespace WTF {
 
-static RunLoop* s_mainRunLoop;
+SUPPRESS_UNCOUNTED_LOCAL static RunLoop* s_mainRunLoop;
 #if USE(WEB_THREAD)
-static RunLoop* s_webRunLoop;
+SUPPRESS_UNCOUNTED_LOCAL static RunLoop* s_webRunLoop;
 #endif
 
 // Helper class for ThreadSpecificData.
 class RunLoop::Holder {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED(RunLoop);
 public:
     Holder()
         : m_runLoop(adoptRef(*new RunLoop))
@@ -56,34 +54,30 @@ public:
         m_runLoop->threadWillExit();
     }
 
-    RunLoop& runLoop() { return m_runLoop; }
+    RunLoop& NODELETE runLoop() { return m_runLoop; }
 
 private:
-    Ref<RunLoop> m_runLoop;
+    const Ref<RunLoop> m_runLoop;
 };
 
 void RunLoop::initializeMain()
 {
     RELEASE_ASSERT(!s_mainRunLoop);
-    s_mainRunLoop = &RunLoop::current();
+    s_mainRunLoop = &RunLoop::currentSingleton();
 }
 
 auto RunLoop::runLoopHolder() -> ThreadSpecific<Holder>&
 {
-    static LazyNeverDestroyed<ThreadSpecific<Holder>> runLoopHolder;
-    static std::once_flag onceKey;
-    std::call_once(onceKey, [&] {
-        runLoopHolder.construct();
-    });
+    static NeverDestroyed<ThreadSpecific<Holder>> runLoopHolder;
     return runLoopHolder;
 }
 
-RunLoop& RunLoop::current()
+RunLoop& RunLoop::currentSingleton()
 {
     return runLoopHolder()->runLoop();
 }
 
-RunLoop& RunLoop::main()
+RunLoop& RunLoop::mainSingleton()
 {
     ASSERT(s_mainRunLoop);
     return *s_mainRunLoop;
@@ -93,10 +87,10 @@ RunLoop& RunLoop::main()
 void RunLoop::initializeWeb()
 {
     RELEASE_ASSERT(!s_webRunLoop);
-    s_webRunLoop = &RunLoop::current();
+    s_webRunLoop = &RunLoop::currentSingleton();
 }
 
-RunLoop& RunLoop::web()
+RunLoop& RunLoop::webSingleton()
 {
     ASSERT(s_webRunLoop);
     return *s_webRunLoop;
@@ -108,23 +102,24 @@ RunLoop* RunLoop::webIfExists()
 }
 #endif
 
-Ref<RunLoop> RunLoop::create(const char* threadName, ThreadType threadType, Thread::QOS qos)
+Ref<RunLoop> RunLoop::create(ASCIILiteral threadName, ThreadType threadType, ThreadQOS qos)
 {
-    RunLoop* runLoop = nullptr;
+    RefPtr<RunLoop> runLoop;
     BinarySemaphore semaphore;
-    Thread::create(threadName, [&] {
-        runLoop = &RunLoop::current();
+    Thread::create(threadName, [&] SUPPRESS_UNCOUNTED_LAMBDA_CAPTURE {
+        auto& current = RunLoop::currentSingleton();
+        runLoop = &current;
         semaphore.signal();
-        runLoop->run();
+        current.run();
     }, threadType, qos)->detach();
     semaphore.wait();
-    return *runLoop;
+    return runLoop.releaseNonNull();
 }
 
 bool RunLoop::isCurrent() const
 {
     // Avoid constructing the RunLoop for the current thread if it has not been created yet.
-    return runLoopHolder().isSet() && this == &RunLoop::current();
+    return runLoopHolder().isSet() && this == &RunLoop::currentSingleton();
 }
 
 void RunLoop::performWork()
@@ -140,8 +135,6 @@ void RunLoop::performWork()
 
         m_currentIteration = std::exchange(m_nextIteration, { });
     }
-
-    ZAWRA_RUNLOOP_LOG("PERFORM_WORK this=%p iterationCount=%zu m_nextIterationLock=%p", this, m_currentIteration.size(), (void*)&m_nextIterationLock);
 
     while (!m_currentIteration.isEmpty()) {
         if (m_isFunctionDispatchSuspended) {
@@ -169,11 +162,8 @@ void RunLoop::dispatch(Function<void()>&& function)
     {
         Locker locker { m_nextIterationLock };
         needsWakeup = m_nextIteration.isEmpty();
-        m_nextIteration.append(WTFMove(function));
+        m_nextIteration.append(WTF::move(function));
     }
-
-    fprintf(stderr, "[ZAWRA-RUNLOOP] DISPATCH this=%p needsWakeup=%d queueSize=%zu tid=%d\n",
-        this, needsWakeup, m_nextIteration.size(), (int)syscall(SYS_gettid));
 
     if (needsWakeup)
         wakeUp();
@@ -183,8 +173,8 @@ Ref<RunLoop::DispatchTimer> RunLoop::dispatchAfter(Seconds delay, Function<void(
 {
     RELEASE_ASSERT(function);
     Ref<DispatchTimer> timer = adoptRef(*new DispatchTimer(*this));
-    timer->setFunction([timer = timer.copyRef(), function = WTFMove(function)]() mutable {
-        Ref<DispatchTimer> protectedTimer { WTFMove(timer) };
+    timer->setFunction([timer = timer.copyRef(), function = WTF::move(function)]() mutable {
+        Ref<DispatchTimer> protectedTimer { WTF::move(timer) };
         function();
         protectedTimer->stop();
     });
@@ -212,11 +202,39 @@ void RunLoop::threadWillExit()
     }
 }
 
-#if ASSERT_ENABLED
-void RunLoop::assertIsCurrent() const
+void RunLoop::registerTimer(TimerBase& timer)
 {
-    ASSERT(this == &current());
+    Locker locker { m_registeredTimerLock };
+    m_registeredTimers.add(&timer);
 }
-#endif
+
+void RunLoop::unregisterTimer(TimerBase& timer)
+{
+    Locker locker { m_registeredTimerLock };
+    m_registeredTimers.remove(&timer);
+}
+
+String RunLoop::listActiveTimersForLogging() const
+{
+    Vector<ASCIILiteral> timers;
+    {
+        Locker locker { m_registeredTimerLock };
+        for (auto* timer : m_registeredTimers)
+            timers.append(timer->description());
+    }
+
+    if (timers.isEmpty())
+        return "{ }"_s;
+
+    StringBuilder builder;
+    builder.append("{ "_s);
+    for (size_t i = 0; i < timers.size() - 1; ++i) {
+        builder.append(timers[i]);
+        builder.append(", "_s);
+    }
+    builder.append(timers.last());
+    builder.append(" }"_s);
+    return builder.toString();
+}
 
 } // namespace WTF

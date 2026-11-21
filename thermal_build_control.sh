@@ -13,8 +13,8 @@ export WEBKIT_USE_SCCACHE=1
 
 # --- Configuration ---
 BUILD_DIR="webkit/build"
-TARGET="MiniBrowser"
-JOBS=2              # Reduced to 2 to prevent kernel OOM kills on memory-heavy C++ targets
+TARGET="${1:-MiniBrowser}"
+JOBS="${JOBS:-4}"        # Set to 4 for optimal performance within memory/thermal envelope
 TEMP_HIGH=80        # User preferred — conservative pause threshold
 TEMP_LOW=60         # User preferred — conservative resume threshold
 POLL_INTERVAL=5     # seconds between temperature checks
@@ -88,6 +88,7 @@ while true; do
     if ! kill -0 "$NINJA_PID" 2>/dev/null; then
         wait "$NINJA_PID"
         EXIT_CODE=$?
+        trap - SIGINT SIGTERM EXIT
         if [ $EXIT_CODE -eq 0 ]; then
             echo -e "\n\n✅ Build finished successfully."
         else

@@ -66,6 +66,7 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
 
     // ── 4. Init z-graphics engine ───────────────────────────────────────────
     unsafe extern "C" {
+        #[link_name = "ZG_Initialize"]
         fn Z_Graphics_Initialize() -> bool;
     }
     if !unsafe { Z_Graphics_Initialize() } {
@@ -73,6 +74,13 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
         return NS_ERROR_FAILURE;
     }
     eprintln!("[zawra] z-graphics engine initialised");
+
+    // ── 5. Init Hajr tracing ────────────────────────────────────────────────
+    unsafe extern "C" {
+        fn hajr_trace_init();
+    }
+    unsafe { hajr_trace_init(); }
+    eprintln!("[zawra] hajr trace initialized (if HAJR_TRACE_FILE set)");
 
     eprintln!("[zawra] Zawra_Init_Subsystems: all subsystems ready");
     NS_OK

@@ -1,9 +1,8 @@
 include(platform/Adwaita.cmake)
-include(platform/Cairo.cmake)
-include(platform/FreeType.cmake)
 include(platform/GCrypt.cmake)
 include(platform/GStreamer.cmake)
 include(platform/ImageDecoders.cmake)
+include(platform/Skia.cmake)
 include(platform/Soup.cmake)
 include(platform/TextureMapper.cmake)
 
@@ -22,21 +21,23 @@ list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/crypto/openssl"
     "${WEBCORE_DIR}/platform/audio/glib"
     "${WEBCORE_DIR}/platform/glib"
+    "${WEBCORE_DIR}/platform/graphics/android"
     "${WEBCORE_DIR}/platform/graphics/egl"
     "${WEBCORE_DIR}/platform/graphics/epoxy"
     "${WEBCORE_DIR}/platform/graphics/gbm"
     "${WEBCORE_DIR}/platform/graphics/gstreamer"
     "${WEBCORE_DIR}/platform/graphics/opengl"
-    "${WEBCORE_DIR}/platform/graphics/wayland"
-    "${WEBCORE_DIR}/platform/graphics/zawra"
+    "${WEBCORE_DIR}/platform/graphics/opentype"
     "${WEBCORE_DIR}/platform/graphics/libwpe"
     "${WEBCORE_DIR}/platform/graphics/wayland"
     "${WEBCORE_DIR}/platform/mock/mediasource"
     "${WEBCORE_DIR}/platform/mediacapabilities"
     "${WEBCORE_DIR}/platform/mediastream/gstreamer"
-    "${WEBCORE_DIR}/platform/network/glib"
+    "${WEBCORE_DIR}/platform/graphics/zawra"
     "${WEBCORE_DIR}/platform/network/zawra"
+    "${WEBCORE_DIR}/platform/network/glib"
     "${WEBCORE_DIR}/platform/text/icu"
+    "${WEBCORE_DIR}/platform/video-codecs"
     "${WEBCORE_DIR}/platform/wpe"
 )
 
@@ -47,46 +48,63 @@ list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
     accessibility/atspi/AccessibilityRootAtspi.h
 
     platform/glib/ApplicationGLib.h
+    platform/glib/SelectionData.h
+    platform/glib/SystemSettings.h
 
-    platform/graphics/wayland/PlatformDisplayWayland.h
-    platform/graphics/wayland/WlUniquePtr.h
+    platform/graphics/DMABufBuffer.h
+    platform/graphics/DMABufBufferAttributes.h
 
+    platform/graphics/android/BufferFormatAndroid.h
+    platform/graphics/android/GraphicsContextGLTextureMapperAndroid.h
+    platform/graphics/android/PlatformDisplayAndroid.h
+
+    platform/graphics/egl/PlatformDisplayDefault.h
+    platform/graphics/egl/PlatformDisplaySurfaceless.h
+
+    platform/graphics/gbm/GBMVersioning.h
+    platform/graphics/gbm/PlatformDisplayGBM.h
+
+    platform/graphics/libwpe/PlatformDisplayLibWPE.h
+
+    platform/text/enchant/TextCheckerEnchant.h
     platform/network/zawra/ZawraStorageBridge.h
 )
 
-set(CSS_VALUE_PLATFORM_DEFINES "HAVE_OS_DARK_MODE_SUPPORT=1")
-
 set(WebCore_USER_AGENT_SCRIPTS_DEPENDENCIES ${WEBCORE_DIR}/platform/wpe/RenderThemeWPE.cpp)
 
+list(APPEND WebCore_PRIVATE_LIBRARIES
+    Tasn1::Tasn1
+)
+
 list(APPEND WebCore_LIBRARIES
-    WPE::libwpe
+    GLib::Module
+    ${UPOWERGLIB_LIBRARIES}
     "${CMAKE_SOURCE_DIR}/../../dependencies/z-graphics/zig-out/lib/libz-graphics.a"
     vulkan
     X11
-    ${GLIB_GIO_LIBRARIES}
-    ${GLIB_GMODULE_LIBRARIES}
-    ${GLIB_GOBJECT_LIBRARIES}
-    ${GLIB_LIBRARIES}
-    ${LIBTASN1_LIBRARIES}
-    ${UPOWERGLIB_LIBRARIES}
 )
+
+if (ENABLE_WPE_LEGACY_API)
+    list(APPEND WebCore_LIBRARIES WPE::libwpe)
+endif ()
 
 list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
-    ${GIO_UNIX_INCLUDE_DIRS}
-    ${GLIB_INCLUDE_DIRS}
-    ${LIBTASN1_INCLUDE_DIRS}
     ${UPOWERGLIB_INCLUDE_DIRS}
 )
-
-if (USE_WPEBACKEND_FDO_AUDIO_EXTENSION)
-    list(APPEND WebCore_LIBRARIES ${WPEBACKEND_FDO_LIBRARIES})
-    list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES ${WPE_INCLUDE_DIRS})
-    list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES ${WPEBACKEND_FDO_INCLUDE_DIRS})
-endif ()
 
 if (USE_OPENXR)
     list(APPEND WebCore_LIBRARIES ${OPENXR_LIBRARIES})
     list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES ${OPENXR_INCLUDE_DIRS})
+endif ()
+
+if (ENABLE_DRAG_SUPPORT)
+    list(APPEND WebCore_SOURCES
+        platform/skia/DragImageSkia.cpp
+    )
+endif ()
+
+if (ENABLE_SPELLCHECK)
+    list(APPEND WebCore_LIBRARIES Enchant::Enchant)
 endif ()
 
 if (USE_ATSPI)
@@ -128,16 +146,13 @@ if (USE_ATSPI)
 endif ()
 
 if (USE_GBM)
-    list(APPEND WebCore_SOURCES
-        platform/graphics/gbm/GBMBufferSwapchain.cpp
-    )
-    list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
-        ${LIBDRM_INCLUDE_DIR}
-    )
-    list(APPEND WebCore_LIBRARIES
-        GBM::GBM
-        ${LIBDRM_LIBRARIES}
-    )
+    list(APPEND WebCore_LIBRARIES GBM::GBM)
+elseif (USE_LIBDRM)
+    list(APPEND WebCore_LIBRARIES LibDRM::LibDRM)
+endif ()
+
+if (USE_LIBHYPHEN)
+    list(APPEND WebCore_PRIVATE_LIBRARIES Hyphen::Hyphen)
 endif ()
 
 if (ENABLE_GAMEPAD)
@@ -150,12 +165,24 @@ if (ENABLE_GAMEPAD)
     )
 endif ()
 
-if (ENABLE_SPEECH_SYNTHESIS)
-    list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
-        ${Flite_INCLUDE_DIRS}
+if (USE_VULKAN)
+    list(APPEND WebCore_PRIVATE_LIBRARIES volk::volk)
+    list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
+        "${WEBCORE_DIR}/platform/graphics/vulkan"
     )
-    list(APPEND WebCore_LIBRARIES
-        ${Flite_LIBRARIES}
+    list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
+        platform/graphics/vulkan/VulkanHandle.h
+        platform/graphics/vulkan/VulkanStructure.h
+        platform/graphics/vulkan/VulkanTypes.h
+        platform/graphics/vulkan/VulkanUtilities.h
+        platform/graphics/vulkan/VulkanVolk.h
     )
 endif ()
-WEBKIT_ADD_TARGET_CXX_FLAGS(WebCore -Wno-undef -Wno-deprecated-literal-operator -Wno-missing-template-arg-list-after-template-kw)
+
+# This sets the maximum amount of memory that BitmapTexturePool can hold before being more
+# aggressive trying to release the unused textures.
+# Use a big value as the default size limit (80MB, enough for ten 1920x1080 layers).
+# Embedded users will want to set this limit depending on the capabilities of their platform.
+list(APPEND WebCore_PRIVATE_DEFINITIONS
+     BITMAP_TEXTURE_POOL_MAX_SIZE_IN_MB=80
+)

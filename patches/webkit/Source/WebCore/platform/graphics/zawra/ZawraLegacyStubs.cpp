@@ -122,8 +122,6 @@ bool GLContext::unmakeContextCurrent()
     return true;
 }
 
-#endif // USE(EGL)
-
-
-
 } // namespace WebCore
+
+#endif // USE(EGL)

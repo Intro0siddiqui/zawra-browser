@@ -31,6 +31,8 @@
 #include "StorageAreaRegistry.h"
 #include <WebCore/SecurityOriginData.h>
 #include <wtf/FileSystem.h>
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/text/MakeString.h>
 
 namespace WebKit {
 
@@ -57,8 +59,14 @@ static std::optional<WebCore::SecurityOriginData> fileNameToOrigin(const String&
 
 static String originToFileName(const WebCore::ClientOrigin& origin)
 {
-    return origin.clientOrigin.databaseIdentifier() + ".localstorage";
+    auto databaseIdentifier = origin.clientOrigin.optionalDatabaseIdentifier();
+    if (databaseIdentifier.isEmpty())
+        return { };
+
+    return makeString(databaseIdentifier, ".localstorage"_s);
 }
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(LocalStorageManager);
 
 Vector<WebCore::SecurityOriginData> LocalStorageManager::originsOfLocalStorageData(const String& path)
 {
@@ -79,7 +87,11 @@ String LocalStorageManager::localStorageFilePath(const String& directory, const 
     if (directory.isEmpty())
         return emptyString();
 
-    return FileSystem::pathByAppendingComponent(directory, originToFileName(origin));
+    auto fileName = originToFileName(origin);
+    if (fileName.isEmpty())
+        return emptyString();
+
+    return FileSystem::pathByAppendingComponent(directory, fileName);
 }
 
 String LocalStorageManager::localStorageFilePath(const String& directory)
@@ -103,41 +115,45 @@ bool LocalStorageManager::isActive() const
 
 bool LocalStorageManager::hasDataInMemory() const
 {
-    bool hasDataInLocalStorageArea = m_localStorageArea && is<MemoryStorageArea>(*m_localStorageArea) && !m_localStorageArea->isEmpty();
-    return hasDataInLocalStorageArea || (m_transientStorageArea && !m_transientStorageArea->isEmpty());
+    RefPtr memoryLocalStorage = dynamicDowncast<MemoryStorageArea>(m_localStorageArea);
+    if (memoryLocalStorage && !memoryLocalStorage->isEmpty())
+        return true;
+
+    RefPtr transientStorage = m_transientStorageArea;
+    return transientStorage && !transientStorage->isEmpty();
 }
 
 void LocalStorageManager::clearDataInMemory()
 {
-    if (m_localStorageArea && is<MemoryStorageArea>(*m_localStorageArea))
-        m_localStorageArea->clear();
+    if (RefPtr storage = dynamicDowncast<MemoryStorageArea>(m_localStorageArea))
+        storage->clear();
 
-    if (m_transientStorageArea)
-        m_transientStorageArea->clear();
+    if (RefPtr transientStorage = m_transientStorageArea)
+        transientStorage->clear();
 }
 
 void LocalStorageManager::clearDataOnDisk()
 {
-    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
-        m_localStorageArea->clear();
+    if (RefPtr storage = dynamicDowncast<BrowserDBStorageArea>(m_localStorageArea))
+        storage->clear();
 }
 
 void LocalStorageManager::close()
 {
-    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
-        downcast<BrowserDBStorageArea>(*m_localStorageArea).close();
+    if (RefPtr storage = dynamicDowncast<BrowserDBStorageArea>(m_localStorageArea))
+        storage->close();
 }
 
 void LocalStorageManager::handleLowMemoryWarning()
 {
-    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
-        downcast<BrowserDBStorageArea>(*m_localStorageArea).handleLowMemoryWarning();
+    if (RefPtr storage = dynamicDowncast<BrowserDBStorageArea>(m_localStorageArea))
+        storage->handleLowMemoryWarning();
 }
 
 void LocalStorageManager::syncLocalStorage()
 {
-    if (m_localStorageArea && is<BrowserDBStorageArea>(*m_localStorageArea))
-        downcast<BrowserDBStorageArea>(*m_localStorageArea).commitTransactionIfNecessary();
+    if (RefPtr storage = dynamicDowncast<BrowserDBStorageArea>(m_localStorageArea))
+        storage->commitTransactionIfNecessary();
 }
 
 void LocalStorageManager::connectionClosed(IPC::Connection::UniqueID connection)
@@ -148,59 +164,77 @@ void LocalStorageManager::connectionClosed(IPC::Connection::UniqueID connection)
 
 void LocalStorageManager::connectionClosedForLocalStorageArea(IPC::Connection::UniqueID connection)
 {
-    if (!m_localStorageArea)
+    RefPtr storage = m_localStorageArea;
+    if (!storage)
         return;
 
-    m_localStorageArea->removeListener(connection);
-    if (m_localStorageArea->hasListeners())
+    storage->removeListener(connection);
+    if (storage->hasListeners())
         return;
 
-    if (is<MemoryStorageArea>(*m_localStorageArea) && !m_localStorageArea->isEmpty())
+    if (RefPtr memoryStorage = dynamicDowncast<MemoryStorageArea>(*storage); memoryStorage && !memoryStorage->isEmpty())
         return;
 
-    m_registry.unregisterStorageArea(m_localStorageArea->identifier());
+    m_registry->unregisterStorageArea(storage->identifier());
     m_localStorageArea = nullptr;
 }
 
 void LocalStorageManager::connectionClosedForTransientStorageArea(IPC::Connection::UniqueID connection)
 {
-    if (!m_transientStorageArea)
+    RefPtr transientStorageArea = m_transientStorageArea;
+    if (!transientStorageArea)
         return;
 
-    m_transientStorageArea->removeListener(connection);
-    if (m_transientStorageArea->hasListeners() || !m_transientStorageArea->isEmpty())
+    transientStorageArea->removeListener(connection);
+    if (transientStorageArea->hasListeners() || !transientStorageArea->isEmpty())
         return;
 
-    m_registry.unregisterStorageArea(m_transientStorageArea->identifier());
+    m_registry->unregisterStorageArea(transientStorageArea->identifier());
     m_transientStorageArea = nullptr;
+}
+
+StorageAreaBase& LocalStorageManager::ensureLocalStorageArea(const WebCore::ClientOrigin& origin, Ref<WorkQueue>&& workQueue)
+{
+    if (!m_localStorageArea) {
+        RefPtr<StorageAreaBase> storage;
+        if (!m_path.isEmpty())
+            storage = BrowserDBStorageArea::create(localStorageQuotaInBytes, origin, WTF::move(workQueue));
+        else
+            storage = MemoryStorageArea::create(origin, StorageAreaBase::StorageType::Local);
+
+        m_localStorageArea = storage;
+        m_registry->registerStorageArea(storage->identifier(), *storage);
+    }
+
+    return *m_localStorageArea;
 }
 
 StorageAreaIdentifier LocalStorageManager::connectToLocalStorageArea(IPC::Connection::UniqueID connection, StorageAreaMapIdentifier sourceIdentifier, const WebCore::ClientOrigin& origin, Ref<WorkQueue>&& workQueue)
 {
-    if (!m_localStorageArea) {
-        if (!m_path.isEmpty())
-            m_localStorageArea = makeUnique<BrowserDBStorageArea>(localStorageQuotaInBytes, origin, WTFMove(workQueue));
-        else
-            m_localStorageArea = makeUnique<MemoryStorageArea>(origin, StorageAreaBase::StorageType::Local);
+    Ref localStorageArea = ensureLocalStorageArea(origin, WTF::move(workQueue));
+    ASSERT(m_path.isEmpty() || is<BrowserDBStorageArea>(localStorageArea));
+    localStorageArea->addListener(connection, sourceIdentifier);
+    return localStorageArea->identifier();
+}
 
-        m_registry.registerStorageArea(m_localStorageArea->identifier(), *m_localStorageArea);
+MemoryStorageArea& LocalStorageManager::ensureTransientLocalStorageArea(const WebCore::ClientOrigin& origin)
+{
+    RefPtr transientStorageArea = m_transientStorageArea;
+    if (!transientStorageArea) {
+        transientStorageArea = MemoryStorageArea::create(origin, StorageAreaBase::StorageType::Local);
+        m_transientStorageArea = transientStorageArea;
+        m_registry->registerStorageArea(transientStorageArea->identifier(), *transientStorageArea);
     }
 
-    ASSERT(m_path.isEmpty() || m_localStorageArea->type() == StorageAreaBase::Type::BrowserDB);
-    m_localStorageArea->addListener(connection, sourceIdentifier);
-    return m_localStorageArea->identifier();
+    return *m_transientStorageArea;
 }
 
 StorageAreaIdentifier LocalStorageManager::connectToTransientLocalStorageArea(IPC::Connection::UniqueID connection, StorageAreaMapIdentifier sourceIdentifier, const WebCore::ClientOrigin& origin)
 {
-    if (!m_transientStorageArea) {
-        m_transientStorageArea = makeUnique<MemoryStorageArea>(origin, StorageAreaBase::StorageType::Local);
-        m_registry.registerStorageArea(m_transientStorageArea->identifier(), *m_transientStorageArea);
-    }
-
-    ASSERT(m_transientStorageArea->type() == StorageAreaBase::Type::Memory);
-    m_transientStorageArea->addListener(connection, sourceIdentifier);
-    return m_transientStorageArea->identifier();
+    Ref transientStorageArea = ensureTransientLocalStorageArea(origin);
+    ASSERT(is<MemoryStorageArea>(transientStorageArea));
+    transientStorageArea->addListener(connection, sourceIdentifier);
+    return transientStorageArea->identifier();
 }
 
 void LocalStorageManager::cancelConnectToLocalStorageArea(IPC::Connection::UniqueID connection)
@@ -210,7 +244,7 @@ void LocalStorageManager::cancelConnectToLocalStorageArea(IPC::Connection::Uniqu
 
 void LocalStorageManager::cancelConnectToTransientLocalStorageArea(IPC::Connection::UniqueID connection)
 {
-    connectionClosedForLocalStorageArea(connection);
+    connectionClosedForTransientStorageArea(connection);
 }
 
 void LocalStorageManager::disconnectFromStorageArea(IPC::Connection::UniqueID connection, StorageAreaIdentifier identifier)
@@ -222,6 +256,38 @@ void LocalStorageManager::disconnectFromStorageArea(IPC::Connection::UniqueID co
 
     if (m_transientStorageArea && m_transientStorageArea->identifier() == identifier)
         connectionClosedForTransientStorageArea(connection);
+}
+
+HashMap<String, String> LocalStorageManager::fetchStorageMap() const
+{
+    if (RefPtr localStorageArea = m_localStorageArea)
+        return localStorageArea->allItems();
+
+    if (RefPtr transientStorageArea = m_transientStorageArea)
+        return transientStorageArea->allItems();
+
+    return { };
+}
+
+bool LocalStorageManager::setStorageMap(WebCore::ClientOrigin clientOrigin, HashMap<String, String>&& storageMap, Ref<WorkQueue>&& workQueue)
+{
+    bool succeeded = true;
+
+    if (clientOrigin.topOrigin == clientOrigin.clientOrigin) {
+        Ref localStorageArea = ensureLocalStorageArea(clientOrigin, WTF::move(workQueue));
+        for (auto& [key, value] : storageMap) {
+            if (!localStorageArea->setItem({ }, { }, WTF::move(key), WTF::move(value), { }))
+                succeeded = false;
+        }
+    } else {
+        Ref transientStorageArea = ensureTransientLocalStorageArea(clientOrigin);
+        for (auto& [key, value] : storageMap) {
+            if (!transientStorageArea->setItem({ }, { }, WTF::move(key), WTF::move(value), { }))
+                succeeded = false;
+        }
+    }
+
+    return succeeded;
 }
 
 } // namespace WebKit

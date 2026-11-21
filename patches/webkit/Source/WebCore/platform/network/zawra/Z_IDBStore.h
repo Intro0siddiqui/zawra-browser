@@ -3,8 +3,12 @@
 #include "IDBBackingStore.h"
 #include "IDBDatabaseIdentifier.h"
 #include "IDBDatabaseInfo.h"
+#include "IDBIndexIdentifier.h"
+#include "IDBObjectStoreIdentifier.h"
 #include "IDBResourceIdentifier.h"
+#include <wtf/CheckedPtr.h>
 #include <wtf/HashMap.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 namespace IDBServer {
@@ -12,7 +16,8 @@ namespace IDBServer {
 struct ZCursorState;
 
 class Z_IDBStore final : public IDBBackingStore {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(Z_IDBStore);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(Z_IDBStore);
 public:
     WEBCORE_EXPORT explicit Z_IDBStore(const IDBDatabaseIdentifier&);
     WEBCORE_EXPORT ~Z_IDBStore();
@@ -25,29 +30,33 @@ public:
     IDBError commitTransaction(const IDBResourceIdentifier&) final;
 
     IDBError createObjectStore(const IDBResourceIdentifier&, const IDBObjectStoreInfo&) final;
-    IDBError deleteObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier) final;
-    IDBError renameObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const String& newName) final;
-    IDBError clearObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier) final;
-    IDBError createIndex(const IDBResourceIdentifier&, const IDBIndexInfo&) final;
-    IDBError deleteIndex(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier) final;
-    IDBError renameIndex(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const String& newName) final;
-    IDBError keyExistsInObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const IDBKeyData&, bool& keyExists) final;
-    IDBError deleteRange(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const IDBKeyRangeData&) final;
-    IDBError addRecord(const IDBResourceIdentifier&, const IDBObjectStoreInfo&, const IDBKeyData&, const IndexIDToIndexKeyMap&, const IDBValue&) final;
-    IDBError getRecord(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const IDBKeyRangeData&, IDBGetRecordDataType, IDBGetResult& outValue) final;
+    IDBError deleteObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier) final;
+    IDBError renameObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, const String& newName) final;
+    IDBError clearObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier) final;
+    IDBError deleteIndex(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, IDBIndexIdentifier) final;
+    IDBError renameIndex(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, IDBIndexIdentifier, const String& newName) final;
+    IDBError keyExistsInObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, const IDBKeyData&, bool& keyExists) final;
+    IDBError deleteRange(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, const IDBKeyRangeData&) final;
+    IDBError overwriteRecord(const IDBResourceIdentifier&, const IDBObjectStoreInfo&, const IDBKeyData&, const IndexIDToIndexKeyMap&, const IDBValue&) final;
+    IDBError getRecord(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, const IDBKeyRangeData&, IDBGetRecordDataType, IDBGetResult& outValue) final;
     IDBError getAllRecords(const IDBResourceIdentifier&, const IDBGetAllRecordsData&, IDBGetAllResult& outValue) final;
-    IDBError getIndexRecord(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, IndexedDB::IndexRecordType, const IDBKeyRangeData&, IDBGetResult& outValue) final;
-    IDBError getCount(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const IDBKeyRangeData&, uint64_t& outCount) final;
-    IDBError generateKeyNumber(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t& keyNumber) final;
-    IDBError revertGeneratedKeyNumber(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t keyNumber) final;
-    IDBError maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, double newKeyNumber) final;
+    IDBError getIndexRecord(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, IDBIndexIdentifier, IndexedDB::IndexRecordType, const IDBKeyRangeData&, IDBGetResult& outValue) final;
+    IDBError getCount(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, std::optional<IDBIndexIdentifier>, const IDBKeyRangeData&, uint64_t& outCount) final;
+    IDBError generateKeyNumber(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, uint64_t& keyNumber) final;
+    IDBError revertGeneratedKeyNumber(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, uint64_t keyNumber) final;
+    IDBError maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, double newKeyNumber) final;
     IDBError openCursor(const IDBResourceIdentifier&, const IDBCursorInfo&, IDBGetResult& outResult) final;
     IDBError iterateCursor(const IDBResourceIdentifier&, const IDBResourceIdentifier& cursorIdentifier, const IDBIterateCursorData&, IDBGetResult& outResult) final;
 
-    IDBObjectStoreInfo* infoForObjectStore(uint64_t objectStoreIdentifier) final;
+    IDBError addIndex(const IDBResourceIdentifier&, const IDBIndexInfo&) final;
+    void revertAddIndex(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, IDBIndexIdentifier) final;
+    IDBError updateIndexRecordsWithIndexKey(const IDBResourceIdentifier&, const IDBIndexInfo&, const IDBKeyData&, const IndexKey&, std::optional<int64_t> recordID) final;
+    void forEachObjectStoreRecord(const IDBResourceIdentifier&, IDBObjectStoreIdentifier, Function<void(RecordOrError&&)>&&) final;
+
+    IDBObjectStoreInfo* infoForObjectStore(IDBObjectStoreIdentifier) final;
     void deleteBackingStore() final;
 
-    bool supportsSimultaneousTransactions() final { return false; }
+    bool supportsSimultaneousReadWriteTransactions() final { return false; }
     bool isEphemeral() final { return false; }
     String fullDatabasePath() const final { return nullString(); }
 
@@ -77,7 +86,7 @@ private:
     IDBDatabaseIdentifier m_identifier;
     uint64_t m_databaseID { 0 };
     std::unique_ptr<IDBDatabaseInfo> m_databaseInfo;
-    HashMap<uint64_t, IDBObjectStoreInfo> m_objectStoreInfoCache;
+    HashMap<IDBObjectStoreIdentifier, IDBObjectStoreInfo> m_objectStoreInfoCache;
     HashMap<IDBResourceIdentifier, std::unique_ptr<ZCursorState>> m_cursors;
 };
 

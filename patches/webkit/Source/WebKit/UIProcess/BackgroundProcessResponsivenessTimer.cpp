@@ -29,8 +29,6 @@
 #include "Logging.h"
 #include "WebProcessMessages.h"
 #include "WebProcessProxy.h"
-#include <sys/syscall.h>
-#include <unistd.h>
 
 namespace WebKit {
 
@@ -41,25 +39,15 @@ static const Seconds responsivenessTimeout { 90_s };
 BackgroundProcessResponsivenessTimer::BackgroundProcessResponsivenessTimer(WebProcessProxy& webProcessProxy)
     : m_webProcessProxy(webProcessProxy)
     , m_checkingInterval(initialCheckingInterval)
-    , m_responsivenessCheckTimer(RunLoop::main(), [this] { this->responsivenessCheckTimerFired(); })
-    , m_timeoutTimer(RunLoop::main(), [this] { this->timeoutTimerFired(); })
+    , m_responsivenessCheckTimer(RunLoop::mainSingleton(), "BackgroundProcessResponsivenessTimer::ResponsivenessCheckTimer"_s, this, &BackgroundProcessResponsivenessTimer::responsivenessCheckTimerFired)
+    , m_timeoutTimer(RunLoop::mainSingleton(), "BackgroundProcessResponsivenessTimer:TimeoutTimer"_s, this, &BackgroundProcessResponsivenessTimer::timeoutTimerFired)
 {
 }
 
-BackgroundProcessResponsivenessTimer::~BackgroundProcessResponsivenessTimer()
-{
-}
+BackgroundProcessResponsivenessTimer::~BackgroundProcessResponsivenessTimer() = default;
 
 void BackgroundProcessResponsivenessTimer::updateState()
 {
-    static int s_updateCount = 0;
-    s_updateCount++;
-    if (s_updateCount <= 20 || (s_updateCount % 1000) == 0) {
-        fprintf(stderr, "[STORM-TIMER] updateState #%d: shouldBeActive=%d isActive=%d checkTimerActive=%d tid=%d\n",
-            s_updateCount, shouldBeActive(), isActive(), m_responsivenessCheckTimer.isActive(), (int)syscall(SYS_gettid));
-    }
-    if (m_webProcessProxy.isDummyProcessProxy())
-        return;
     if (!shouldBeActive()) {
         if (m_responsivenessCheckTimer.isActive()) {
             m_checkingInterval = initialCheckingInterval;
@@ -99,15 +87,11 @@ void BackgroundProcessResponsivenessTimer::processTerminated()
 
 void BackgroundProcessResponsivenessTimer::responsivenessCheckTimerFired()
 {
-    static int s_pingFiredCount = 0;
-    s_pingFiredCount++;
-    fprintf(stderr, "[STORM-TIMER] responsivenessCheckTimerFired #%d interval=%.1fs timeoutActive=%d tid=%d\n",
-        s_pingFiredCount, m_checkingInterval.value(), m_timeoutTimer.isActive(), (int)syscall(SYS_gettid));
     ASSERT(shouldBeActive());
     ASSERT(!m_timeoutTimer.isActive());
 
     m_timeoutTimer.startOneShot(responsivenessTimeout);
-    m_webProcessProxy.send(Messages::WebProcess::BackgroundResponsivenessPing(), 0);
+    protect(m_webProcessProxy)->send(Messages::WebProcess::BackgroundResponsivenessPing(), 0);
 }
 
 void BackgroundProcessResponsivenessTimer::timeoutTimerFired()
@@ -118,13 +102,13 @@ void BackgroundProcessResponsivenessTimer::timeoutTimerFired()
 
     // This shouldn't happen but still check to be 100% sure we don't report
     // suspended processes as unresponsive.
-    if (m_webProcessProxy.throttler().isSuspended())
+    if (m_webProcessProxy->throttler().isSuspended())
         return;
 
     if (!m_isResponsive)
         return;
 
-    if (!client().mayBecomeUnresponsive())
+    if (!protect(client())->mayBecomeUnresponsive())
         return;
 
     setResponsive(false);
@@ -135,31 +119,32 @@ void BackgroundProcessResponsivenessTimer::setResponsive(bool isResponsive)
     if (m_isResponsive == isResponsive)
         return;
 
-    Ref protectedClient { client() };
+    Ref client = this->client();
 
-    client().willChangeIsResponsive();
+    client->willChangeIsResponsive();
     m_isResponsive = isResponsive;
-    client().didChangeIsResponsive();
+    client->didChangeIsResponsive();
 
     if (m_isResponsive) {
-        RELEASE_LOG_ERROR(PerformanceLogging, "Notifying the client that background WebProcess with pid %d has become responsive again", m_webProcessProxy.processID());
-        client().didBecomeResponsive();
+        RELEASE_LOG_ERROR(PerformanceLogging, "Notifying the client that background WebProcess with pid %d has become responsive again", m_webProcessProxy->processID());
+        client->didBecomeResponsive();
     } else {
-        RELEASE_LOG_ERROR(PerformanceLogging, "Notifying the client that background WebProcess with pid %d has become unresponsive", m_webProcessProxy.processID());
-        client().didBecomeUnresponsive();
+        RELEASE_LOG_ERROR(PerformanceLogging, "Notifying the client that background WebProcess with pid %d has become unresponsive", m_webProcessProxy->processID());
+        client->didBecomeUnresponsive();
     }
 }
 
 bool BackgroundProcessResponsivenessTimer::shouldBeActive() const
 {
-#if !PLATFORM(IOS_FAMILY)
-    if (m_webProcessProxy.visiblePageCount())
+#if !USE(RUNNINGBOARD)
+    auto& webProcess = m_webProcessProxy.get();
+    if (webProcess.visiblePageCount())
         return false;
-    if (m_webProcessProxy.throttler().isSuspended())
+    if (webProcess.throttler().isSuspended())
         return false;
-    if (m_webProcessProxy.isStandaloneServiceWorkerProcess())
+    if (webProcess.isStandaloneServiceWorkerProcess())
         return true;
-    return m_webProcessProxy.pageCount();
+    return webProcess.pageCount();
 #else
     // Disable background process responsiveness checking when using RunningBoard since such processes usually get suspended.
     return false;
@@ -181,7 +166,7 @@ void BackgroundProcessResponsivenessTimer::scheduleNextResponsivenessCheck()
 
 ResponsivenessTimer::Client& BackgroundProcessResponsivenessTimer::client() const
 {
-    return m_webProcessProxy;
+    return const_cast<WebProcessProxy&>(m_webProcessProxy.get());
 }
 
 } // namespace WebKit

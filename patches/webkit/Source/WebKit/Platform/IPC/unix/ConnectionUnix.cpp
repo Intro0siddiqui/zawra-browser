@@ -1,20 +1,55 @@
+/*
+ * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (C) 2011 Igalia S.L.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include "config.h"
 #include "Connection.h"
 
 #include "Decoder.h"
 #include "Encoder.h"
 #include "IPCUtilities.h"
+#include "Logging.h"
 #include "UnixMessage.h"
-#include "SharedMemory.h"
+#include <WebCore/SharedMemory.h>
 #include <errno.h>
-#include <sys/mman.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <sys/syscall.h>
+#include <vector>
 #include <wtf/Assertions.h>
-#include <wtf/FastMalloc.h>
+#include <wtf/Borrow.h>
+#include <wtf/MallocSpan.h>
 #include <wtf/SafeStrerror.h>
+#include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/Threading.h>
+#include <wtf/UniStdExtras.h>
 
 #if USE(GLIB)
 #include <gio/gio.h>
@@ -26,16 +61,12 @@
 #endif
 
 // Although it's available on Darwin, SOCK_SEQPACKET seems to work differently
-// than in traditional Unix so fallback to STREAM on that platform.
+// than in traditional Unix so fallback to DGRAM on that platform.
 #if defined(SOCK_SEQPACKET) && !OS(DARWIN)
 #define SOCKET_TYPE SOCK_SEQPACKET
 #else
-#if USE(GLIB)
-#define SOCKET_TYPE SOCK_STREAM
-#else
 #define SOCKET_TYPE SOCK_DGRAM
 #endif
-#endif // SOCK_SEQPACKET
 
 // Hajr FFI Declarations
 extern "C" {
@@ -54,27 +85,84 @@ extern "C" {
     bool hajr_ipc_verify_checksum(const uint8_t* header, size_t header_len, const uint8_t* payload, size_t payload_len, uint32_t expected_checksum);
 }
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN // Unix port
+
 namespace IPC {
+
+#if USE(GLIB)
+struct HajrSource {
+    GSource source;
+    GPollFD pollFd;
+};
+
+static gboolean hajrSourcePrepare(GSource*, gint* timeout)
+{
+    *timeout = -1;
+    return FALSE;
+}
+
+static gboolean hajrSourceCheck(GSource* source)
+{
+    auto* hajrSource = reinterpret_cast<HajrSource*>(source);
+    return hajrSource->pollFd.revents != 0;
+}
+
+static gboolean hajrSourceDispatch(GSource* source, GSourceFunc callback, gpointer userData)
+{
+    auto* hajrSource = reinterpret_cast<HajrSource*>(source);
+    hajrSource->pollFd.revents = 0;
+    if (callback)
+        return callback(userData);
+    return G_SOURCE_CONTINUE;
+}
+
+static GSourceFuncs s_hajrSourceFuncs = {
+    hajrSourcePrepare,
+    hajrSourceCheck,
+    hajrSourceDispatch,
+    nullptr, nullptr, nullptr
+};
+#endif
 
 static const size_t messageMaxSize = 4096;
 static const size_t attachmentMaxAmount = 254;
 
 class AttachmentInfo {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED_INLINE(AttachmentInfo);
 public:
-    AttachmentInfo() { memset(static_cast<void*>(this), 0, sizeof(*this)); }
-    AttachmentInfo(const AttachmentInfo& info) { *this = info; }
+    AttachmentInfo()
+    {
+        // The entire AttachmentInfo is passed to write(), so we have to zero our
+        // padding bytes to avoid writing uninitialized memory.
+        zeroBytes(*this);
+    }
+
+    AttachmentInfo(const AttachmentInfo& info)
+        : AttachmentInfo()
+    {
+        *this = info;
+    }
+
+    AttachmentInfo& operator=(const AttachmentInfo&) = default;
+
+    // The attachment is not null unless explicitly set.
     void setNull() { m_isNull = true; }
     bool isNull() const { return m_isNull; }
+
 private:
+    // The AttachmentInfo will be copied using memcpy, so all members must be trivially copyable.
     bool m_isNull;
 };
 
-void Connection::platformInitialize(Identifier identifier)
+static_assert(sizeof(MessageInfo) + sizeof(AttachmentInfo) * attachmentMaxAmount <= messageMaxSize, "messageMaxSize is too small.");
+
+int Connection::socketDescriptor() const
 {
-    // Save per-connection Hajr info from the Identifier so platformOpen()
-    // can use it instead of global env vars (which get overwritten when
-    // multiple children are launched).
+    return m_socketDescriptor.value();
+}
+
+void Connection::platformInitialize(Identifier&& identifier)
+{
     m_hasHajrInfo = identifier.hasHajrInfo;
     m_hajrRing1 = identifier.hajrRing1;
     m_hajrRing2 = identifier.hajrRing2;
@@ -83,21 +171,12 @@ void Connection::platformInitialize(Identifier identifier)
     m_hajrPidfd = identifier.hajrPidfd;
     m_fdTransferFd = identifier.hajrFdTransferFd;
 
-    if (!m_hasHajrInfo && identifier.handle != -1) {
-        // Socketpair-backed IPC connections created by createConnectionIdentifierPair()
-        // must use their own descriptor. Do not inherit the UIProcess parent
-        // connection's Hajr environment, otherwise secondary connections such as
-        // NetworkProcess<->WebProcess read/write on the wrong ring pair.
-        m_socketDescriptor = identifier.handle;
-#if USE(GLIB)
-        m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
-#endif
-    } else if (!m_hasHajrInfo) {
-        const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
+    const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
+    if (!m_hasHajrInfo && ring1Str) {
         const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
         const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
         const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
-        if (ring1Str && ring2Str && sig1Str && sig2Str) {
+        if (ring2Str && sig1Str && sig2Str) {
             m_hajrRing1 = strtoull(ring1Str, nullptr, 10);
             m_hajrRing2 = strtoull(ring2Str, nullptr, 10);
             m_hajrSig1 = atoi(sig1Str);
@@ -107,34 +186,35 @@ void Connection::platformInitialize(Identifier identifier)
             const char* fdTransferStr = getenv("ZAWRA_HAJR_FDTRANSFER");
             m_fdTransferFd = fdTransferStr ? atoi(fdTransferStr) : -1;
             m_hasHajrInfo = true;
+            unsetenv("ZAWRA_HAJR_RING1");
+            unsetenv("ZAWRA_HAJR_RING2");
+            unsetenv("ZAWRA_HAJR_SIGNAL1");
+            unsetenv("ZAWRA_HAJR_SIGNAL2");
+            unsetenv("ZAWRA_HAJR_PARENT_PIDFD");
+            unsetenv("ZAWRA_HAJR_FDTRANSFER");
         }
     }
 
-    if (m_hasHajrInfo) {
-        // When Hajr is enabled, identifier.handle IS the eventfd (signal2_fd),
-        // NOT a socket. Do NOT wrap it in a GSocket — g_socket_new_from_fd
-        // takes ownership and its lifecycle management would close the
-        // eventfd, colliding with the ring buffer's signal_fd and causing
-        // EBADF in hajr_ring_wait (busy-spin / compositor stall).
-        m_socketDescriptor = -1;
-    } else {
-        m_socketDescriptor = identifier.handle;
+    if (!m_hasHajrInfo && identifier.handle) {
+        m_socketDescriptor = WTF::move(identifier.handle);
 #if USE(GLIB)
-        m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor, nullptr));
+        m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor.value(), nullptr));
+#endif
+    }
+
+    if (m_hasHajrInfo) {
+        // When Hajr is enabled, identifier.handle is an eventfd (signal2_fd), not a socket.
+        // Keep m_socketDescriptor invalid.
+    } else {
+        m_socketDescriptor = WTF::move(identifier.handle);
+#if USE(GLIB)
+        if (m_socketDescriptor.value() != -1)
+            m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor.value(), nullptr));
 #endif
     }
 
     m_readBuffer.reserveInitialCapacity(messageMaxSize);
     m_fileDescriptors.reserveInitialCapacity(attachmentMaxAmount);
-}
-
-bool Connection::platformPrepareForOpen()
-{
-    // The default inline implementation in Connection.cpp is gated by
-    // !USE(UNIX_DOMAIN_SOCKETS), so we must provide our own for Unix.
-    // Returning true defers all real work to platformOpen(), which is
-    // where Hajr bootstrap and the socket monitor start.
-    return true;
 }
 
 void Connection::platformInvalidate()
@@ -148,11 +228,11 @@ void Connection::platformInvalidate()
         m_outboundRing = nullptr;
     }
 
+    if (m_socketDescriptor.value() != -1)
+        closeWithRetry(m_socketDescriptor.release());
+
     if (!m_isConnected)
         return;
-
-    m_readSocketMonitor.stop();
-    m_writeSocketMonitor.stop();
 
 #if USE(GLIB)
     if (m_hajrSignalSource) {
@@ -160,11 +240,109 @@ void Connection::platformInvalidate()
         g_source_unref(m_hajrSignalSource);
         m_hajrSignalSource = nullptr;
     }
+    m_readSocketMonitor.stop();
+    m_writeSocketMonitor.stop();
+    m_socket = nullptr;
 #endif
 
-    m_socketDescriptor = -1;
     m_isConnected = false;
 }
+
+bool Connection::processMessage()
+{
+    if (m_readBuffer.size() < sizeof(MessageInfo))
+        return false;
+
+    Borrow readBuffer = m_readBuffer;
+    auto messageData = readBuffer->mutableSpan();
+    MessageInfo messageInfo;
+    memcpySpan(asMutableByteSpan(messageInfo), consumeSpan(messageData, sizeof(messageInfo)));
+
+    if (messageInfo.attachmentCount() > attachmentMaxAmount || (!messageInfo.isBodyOutOfLine() && messageInfo.bodySize() > messageMaxSize)) {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+
+    size_t messageLength = sizeof(MessageInfo) + messageInfo.attachmentCount() * sizeof(AttachmentInfo) + (messageInfo.isBodyOutOfLine() ? 0 : messageInfo.bodySize());
+    if (m_readBuffer.size() < messageLength)
+        return false;
+
+    size_t attachmentFileDescriptorCount = 0;
+    size_t attachmentCount = messageInfo.attachmentCount();
+    Vector<AttachmentInfo> attachmentInfo(attachmentCount);
+
+    if (attachmentCount) {
+        memcpySpan(asMutableByteSpan(attachmentInfo.mutableSpan()), consumeSpan(messageData, sizeof(AttachmentInfo) * attachmentCount));
+        for (size_t i = 0; i < attachmentCount; ++i) {
+            if (!attachmentInfo[i].isNull())
+                attachmentFileDescriptorCount++;
+        }
+
+        if (messageInfo.isBodyOutOfLine())
+            attachmentCount--;
+    }
+
+    Vector<Attachment> attachments(attachmentCount);
+    RefPtr<WebCore::SharedMemory> oolMessageBody;
+
+    size_t fdIndex = 0;
+    for (size_t i = 0; i < attachmentCount; ++i) {
+        int fd = !attachmentInfo[i].isNull() ? m_fileDescriptors[fdIndex++] : -1;
+        attachments[attachmentCount - i - 1] = UnixFileDescriptor { fd, UnixFileDescriptor::Adopt };
+    }
+
+    if (messageInfo.isBodyOutOfLine()) {
+        ASSERT(messageInfo.bodySize());
+
+        if (attachmentInfo[attachmentCount].isNull()) {
+            ASSERT_NOT_REACHED();
+            return false;
+        }
+
+        auto fd = UnixFileDescriptor { m_fileDescriptors[attachmentFileDescriptorCount - 1], UnixFileDescriptor::Adopt };
+        if (!fd) {
+            ASSERT_NOT_REACHED();
+            return false;
+        }
+
+        auto handle = WebCore::SharedMemory::Handle { WTF::move(fd), messageInfo.bodySize() };
+        oolMessageBody = WebCore::SharedMemory::map(WTF::move(handle), WebCore::SharedMemory::Protection::ReadOnly);
+        if (!oolMessageBody) {
+            ASSERT_NOT_REACHED();
+            return false;
+        }
+    }
+
+    ASSERT(attachments.size() == (messageInfo.isBodyOutOfLine() ? messageInfo.attachmentCount() - 1 : messageInfo.attachmentCount()));
+
+    auto messageBody = messageData;
+    if (messageInfo.isBodyOutOfLine())
+        messageBody = oolMessageBody->mutableSpan();
+
+    auto decoder = Decoder::create(messageBody.first(messageInfo.bodySize()), WTF::move(attachments));
+    ASSERT(decoder);
+    if (!decoder)
+        return false;
+
+    processIncomingMessage(makeUniqueRefFromNonNullUniquePtr(WTF::move(decoder)));
+
+    if (m_readBuffer.size() > messageLength) {
+        memmoveSpan(m_readBuffer.mutableSpan(), m_readBuffer.subspan(messageLength));
+        m_readBuffer.shrink(m_readBuffer.size() - messageLength);
+    } else
+        m_readBuffer.shrink(0);
+
+    if (attachmentFileDescriptorCount) {
+        if (m_fileDescriptors.size() > attachmentFileDescriptorCount) {
+            memmoveSpan(m_fileDescriptors.mutableSpan(), m_fileDescriptors.subspan(attachmentFileDescriptorCount));
+            m_fileDescriptors.shrink(m_fileDescriptors.size() - attachmentFileDescriptorCount);
+        } else
+            m_fileDescriptors.shrink(0);
+    }
+
+    return true;
+}
+
 static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer, Vector<int>& fileDescriptors)
 {
     struct msghdr message;
@@ -173,14 +351,14 @@ static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer
     struct iovec iov[1];
     memset(&iov, 0, sizeof(iov));
 
-    message.msg_controllen = CMSG_SPACE(sizeof(int) * attachmentMaxAmount);
-    MallocPtr<char> attachmentDescriptorBuffer = MallocPtr<char>::malloc(sizeof(char) * message.msg_controllen);
-    memset(attachmentDescriptorBuffer.get(), 0, sizeof(char) * message.msg_controllen);
-    message.msg_control = attachmentDescriptorBuffer.get();
+    auto attachmentDescriptorBuffer = MallocSpan<char>::zeroedMalloc(CMSG_SPACE(sizeof(int) * attachmentMaxAmount));
+    auto attachmentDescriptorSpan = attachmentDescriptorBuffer.mutableSpan();
+    message.msg_control = attachmentDescriptorSpan.data();
+    message.msg_controllen = attachmentDescriptorSpan.size();
 
     size_t previousBufferSize = buffer.size();
     buffer.grow(buffer.capacity());
-    iov[0].iov_base = buffer.data() + previousBufferSize;
+    iov[0].iov_base = buffer.mutableSpan().data() + previousBufferSize;
     iov[0].iov_len = buffer.size() - previousBufferSize;
 
     message.msg_iov = iov;
@@ -198,7 +376,6 @@ static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer
         }
 
         if (message.msg_flags & MSG_CTRUNC) {
-            // Control data has been discarded, which is expected by processMessage(), so consider this a read failure.
             buffer.shrink(previousBufferSize);
             return -1;
         }
@@ -213,7 +390,7 @@ static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer
                 size_t previousFileDescriptorsSize = fileDescriptors.size();
                 size_t fileDescriptorsCount = (controlMessage->cmsg_len - CMSG_LEN(0)) / sizeof(int);
                 fileDescriptors.grow(fileDescriptors.size() + fileDescriptorsCount);
-                memcpy(fileDescriptors.data() + previousFileDescriptorsSize, CMSG_DATA(controlMessage), sizeof(int) * fileDescriptorsCount);
+                memcpy(fileDescriptors.mutableSpan().subspan(previousFileDescriptorsSize).data(), CMSG_DATA(controlMessage), sizeof(int) * fileDescriptorsCount);
 
                 for (size_t i = 0; i < fileDescriptorsCount; ++i) {
                     if (!setCloseOnExec(fileDescriptors[previousFileDescriptorsSize + i])) {
@@ -235,114 +412,94 @@ static ssize_t readBytesFromSocket(int socketDescriptor, Vector<uint8_t>& buffer
 void Connection::readyReadHandler()
 {
     if (m_isHajrEnabled && m_inboundRing) {
-        fprintf(stderr, "[ZAWRA] readyReadHandler ENTERED on tid=%d isServer=%d\n", (int)syscall(SYS_gettid), m_isServer);
-        // Clear eventfd signal if any
-        hajr_ring_wait(m_inboundRing);
-
         while (true) {
             MessageInfo msgInfo;
-            size_t msgInfoBytesRead = 0;
-            int32_t res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&msgInfo), sizeof(msgInfo), &msgInfoBytesRead);
-            if (res != 1 || msgInfoBytesRead == 0)
+            size_t bytesRead = 0;
+            int32_t res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&msgInfo), sizeof(msgInfo), &bytesRead);
+            if (res != 1 || bytesRead == 0)
                 break;
 
-            fprintf(stderr, "[HAJR-CONN] readyReadHandler READ MSG: this=%p inbound=%p inboundSig=%d bodySize=%zu attCount=%zu tid=%d\n",
-                (void*)this, (void*)m_inboundRing,
-                m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
-                msgInfo.bodySize(), msgInfo.attachmentCount(), (int)syscall(SYS_gettid));
-
-            if (msgInfoBytesRead != sizeof(msgInfo)) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - PARTIAL MESSAGE INFO READ\n");
+            if (bytesRead != sizeof(msgInfo)) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - PARTIAL MESSAGE INFO READ: got %zu, expected %zu\n", bytesRead, sizeof(msgInfo));
                 break;
             }
 
             uint32_t attachmentCount = 0;
-            size_t countRead = 0;
-            res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&attachmentCount), sizeof(attachmentCount), &countRead);
-            if (res != 1 || countRead != sizeof(attachmentCount)) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - FAILED TO READ ATTACHMENT COUNT\n");
+            size_t countBytesRead = 0;
+            res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&attachmentCount), sizeof(attachmentCount), &countBytesRead);
+            if (res != 1 || countBytesRead != sizeof(attachmentCount)) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT COUNT READ FAILED\n");
                 break;
             }
 
-            if (attachmentCount > attachmentMaxAmount) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT COUNT %u EXCEEDS MAXIMUM %zu, POSSIBLE RCE ATTEMPT\n", attachmentCount, attachmentMaxAmount);
-                break;
-            }
-
-            Vector<Attachment> fds;
+            Vector<int32_t> handles(attachmentCount);
+            size_t validFdCount = 0;
             bool attachmentFail = false;
-
-            // Read handle values from ring to advance read pointer (they're part of the wire format)
-            // The actual FDs are received separately via SCM_RIGHTS on the transfer socket.
-            Vector<int32_t> handleValues;
             for (uint32_t i = 0; i < attachmentCount; ++i) {
-                int32_t handle;
-                size_t handleRead = 0;
-                res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&handle), sizeof(handle), &handleRead);
-                if (res != 1 || handleRead != sizeof(handle)) {
-                    fprintf(stderr, "[ZAWRA] readyReadHandler - FAILED TO READ HANDLE %u FROM RING\n", i);
+                int32_t handle = -1;
+                size_t handleBytesRead = 0;
+                res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&handle), sizeof(handle), &handleBytesRead);
+                if (res != 1 || handleBytesRead != sizeof(handle)) {
+                    fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT HANDLE READ FAILED at index %u\n", i);
                     attachmentFail = true;
                     break;
                 }
-                handleValues.append(handle);
+                handles[i] = handle;
+                if (handle >= 0)
+                    validFdCount++;
             }
 
-            // Now receive the actual FDs via SCM_RIGHTS from the transfer socket
-            if (!attachmentFail && attachmentCount > 0 && m_fdTransferFd != -1) {
-                struct iovec iov;
+            Vector<int> receivedFds;
+            if (!attachmentFail && validFdCount > 0 && m_fdTransferFd != -1) {
                 char dummy = 0;
+                struct iovec iov;
                 iov.iov_base = &dummy;
-                iov.iov_len = sizeof(dummy);
+                iov.iov_len = 1;
 
-                size_t cmsgSpace = CMSG_SPACE(sizeof(int) * attachmentCount);
-                Vector<uint8_t> cmsgBuf(cmsgSpace);
-                memset(cmsgBuf.data(), 0, cmsgSpace);
-
+                std::vector<char> cmsgBuf(CMSG_SPACE(sizeof(int) * validFdCount));
                 struct msghdr msg;
                 memset(&msg, 0, sizeof(msg));
                 msg.msg_iov = &iov;
                 msg.msg_iovlen = 1;
                 msg.msg_control = cmsgBuf.data();
-                msg.msg_controllen = cmsgSpace;
+                msg.msg_controllen = cmsgBuf.size();
 
-                ssize_t recvResult = recvmsg(m_fdTransferFd, &msg, 0);
-                fprintf(stderr, "[CRASH-V2] readyReadHandler: SCM_RIGHTS recvmsg result=%zd errno=%d fdCount=%u fdTransferFd=%d\n",
-                    recvResult, (recvResult == -1) ? errno : 0, attachmentCount, m_fdTransferFd);
-
-                if (recvResult == -1) {
-                    fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS recvmsg FAILED, errno=%d\n", errno);
+                ssize_t recvResult = recvmsg(m_fdTransferFd, &msg, MSG_NOSIGNAL);
+                if (recvResult <= 0) {
+                    fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS recvmsg failed: res=%zd errno=%d\n", recvResult, errno);
                     attachmentFail = true;
                 } else {
                     struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
                     if (!cmsg || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
-                        fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS cmsg header invalid\n");
+                        fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS cmsg missing or wrong type\n");
                         attachmentFail = true;
                     } else {
-                        int* receivedFds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
-                        for (uint32_t i = 0; i < attachmentCount; ++i) {
-                            int fd = receivedFds[i];
-                            if (fd == -1) {
-                                fprintf(stderr, "[ZAWRA] readyReadHandler - SCM_RIGHTS received fd=-1 for index %u\n", i);
-                                attachmentFail = true;
-                                break;
-                            }
+                        size_t numFds = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+                        int* rawFds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+                        for (size_t f = 0; f < numFds; ++f) {
+                            int fd = rawFds[f];
                             if (!setCloseOnExec(fd)) {
                                 close(fd);
                                 attachmentFail = true;
                                 break;
                             }
-                            fds.append(Attachment(fd, Attachment::Adopt));
+                            receivedFds.append(fd);
+                        }
+                        if (receivedFds.size() != validFdCount) {
+                            fprintf(stderr, "[ZAWRA] readyReadHandler - FD count mismatch: expected %zu, got %zu\n", validFdCount, receivedFds.size());
+                            attachmentFail = true;
                         }
                     }
                 }
-            } else if (!attachmentFail && attachmentCount > 0) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - attachmentCount=%u but no FD transfer socket\n", attachmentCount);
+            } else if (!attachmentFail && validFdCount > 0) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - validFdCount=%zu but no FD transfer socket\n", validFdCount);
                 attachmentFail = true;
             }
 
             if (attachmentFail) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED, skipping body+checksum to resync ring\n");
-                // Skip remaining body + checksum to resync ring position
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED, skipping body+checksum\n");
+                for (int fd : receivedFds)
+                    close(fd);
                 if (msgInfo.bodySize() > 0) {
                     uint8_t* skipBuf = static_cast<uint8_t*>(fastMalloc(msgInfo.bodySize()));
                     size_t skipRead = 0;
@@ -355,6 +512,23 @@ void Connection::readyReadHandler()
                 break;
             }
 
+            uint32_t effectiveAttachmentCount = attachmentCount;
+            if (msgInfo.isBodyOutOfLine() && effectiveAttachmentCount > 0)
+                effectiveAttachmentCount--;
+
+            Vector<Attachment> fds(effectiveAttachmentCount);
+            size_t fdIdx = 0;
+            for (size_t i = 0; i < effectiveAttachmentCount; ++i) {
+                int fd = (handles[i] >= 0 && fdIdx < receivedFds.size()) ? receivedFds[fdIdx++] : -1;
+                fds[effectiveAttachmentCount - i - 1] = UnixFileDescriptor { fd, UnixFileDescriptor::Adopt };
+            }
+
+            if (msgInfo.isBodyOutOfLine()) {
+                int oolFd = (handles[attachmentCount - 1] >= 0 && fdIdx < receivedFds.size()) ? receivedFds[fdIdx++] : -1;
+                if (oolFd != -1)
+                    close(oolFd);
+            }
+
             uint8_t* payloadBuffer = static_cast<uint8_t*>(fastMalloc(msgInfo.bodySize()));
             size_t bodyBytesRead = 0;
             res = hajr_ring_read(m_inboundRing, payloadBuffer, msgInfo.bodySize(), &bodyBytesRead);
@@ -364,7 +538,6 @@ void Connection::readyReadHandler()
                 break;
             }
 
-            // Read and verify checksum
             uint32_t receivedChecksum = 0;
             size_t checksumRead = 0;
             res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&receivedChecksum), sizeof(receivedChecksum), &checksumRead);
@@ -374,213 +547,82 @@ void Connection::readyReadHandler()
                 break;
             }
 
-            // Verify checksum over messageInfo + attachmentCount + payload
-            // Reconstruct the data for verification (simplified - in production, buffer during read)
             uint32_t computedChecksum = hajr_ipc_message_checksum(
                 reinterpret_cast<const uint8_t*>(&msgInfo),
                 sizeof(msgInfo),
                 payloadBuffer,
                 msgInfo.bodySize()
             );
-            
+
             if (computedChecksum != receivedChecksum) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - CHECKSUM MISMATCH: expected 0x%08X, got 0x%08X, POSSIBLE CORRUPTION\n", receivedChecksum, computedChecksum);
+                fprintf(stderr, "[ZAWRA] readyReadHandler - CHECKSUM MISMATCH: expected 0x%08X, got 0x%08X\n", receivedChecksum, computedChecksum);
                 fastFree(payloadBuffer);
                 break;
             }
 
             auto decoder = Decoder::create(
-                payloadBuffer,
-                msgInfo.bodySize(),
-                [](const uint8_t* ptr, size_t) { fastFree(const_cast<uint8_t*>(ptr)); },
-                WTFMove(fds)
+                std::span { payloadBuffer, msgInfo.bodySize() },
+                [](std::span<const uint8_t> span) { fastFree(const_cast<uint8_t*>(span.data())); },
+                WTF::move(fds)
             );
 
             if (decoder) {
-                static int s_readCount = 0;
-                static uint64_t s_prevFirst8 = 0;
-                static size_t s_prevBodySize = 0;
-                static int s_dupCount = 0;
-                s_readCount++;
-                if (msgInfo.bodySize() >= 8) {
-                    uint64_t first8;
-                    memcpy(&first8, payloadBuffer, sizeof(first8));
-                    if (first8 == s_prevFirst8 && msgInfo.bodySize() == s_prevBodySize && s_readCount > 1) {
-                        s_dupCount++;
-                        if (s_dupCount <= 10 || (s_dupCount % 1000) == 0)
-                            fprintf(stderr, "[STORM-DUP] readyReadHandler DUPLICATE #%d (dupCount=%d) this=%p inbound=%p inboundSig=%d first8=0x%016lX bodySize=%zu tid=%d\n",
-                                s_readCount, s_dupCount, (void*)this, (void*)m_inboundRing,
-                                m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
-                                first8, msgInfo.bodySize(), (int)syscall(SYS_gettid));
-                    } else if (s_dupCount > 0) {
-                        fprintf(stderr, "[STORM-DUP] readyReadHandler: dup streak ended after %d duplicates, this=%p inbound=%p inboundSig=%d new msg first8=0x%016lX tid=%d\n",
-                            s_dupCount, (void*)this, (void*)m_inboundRing,
-                            m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
-                            first8, (int)syscall(SYS_gettid));
-                        s_dupCount = 0;
-                    }
-                    s_prevFirst8 = first8;
-                    s_prevBodySize = msgInfo.bodySize();
-                    if (s_readCount <= 20 || (s_readCount % 10000) == 0)
-                        fprintf(stderr, "[STORM-READ] readyReadHandler DISPATCH #%d: this=%p inbound=%p inboundSig=%d bodySize=%zu first8=0x%016lX tid=%d\n",
-                            s_readCount, (void*)this, (void*)m_inboundRing,
-                            m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
-                            msgInfo.bodySize(), first8, (int)syscall(SYS_gettid));
-                }
-                processIncomingMessage(WTFMove(decoder));
+                processIncomingMessage(makeUniqueRefFromNonNullUniquePtr(WTF::move(decoder)));
             } else {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - Decoder::create FAILED bodySize=%zu tid=%d\n", msgInfo.bodySize(), (int)syscall(SYS_gettid));
+                fprintf(stderr, "[ZAWRA] readyReadHandler - Decoder::create FAILED bodySize=%zu\n", msgInfo.bodySize());
                 fastFree(payloadBuffer);
             }
         }
         return;
     }
 
-    // Legacy fallback or signals that didn't go through the ring
+    // Socket fallback
     while (true) {
-        ssize_t bytesRead = readBytesFromSocket(m_socketDescriptor, m_readBuffer, m_fileDescriptors);
-        if (bytesRead <= 0) {
-            if (bytesRead == 0 || (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+        ssize_t bytesRead = readBytesFromSocket(socketDescriptor(), m_readBuffer, m_fileDescriptors);
+
+        if (bytesRead < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return;
+
+            if (errno == ECONNRESET) {
                 connectionDidClose();
                 return;
             }
-            break;
+
+            if (m_isConnected) {
+                WTFLogAlways("Error receiving IPC message on socket %d in process %d: %s", socketDescriptor(), getpid(), safeStrerror(errno).data());
+                connectionDidClose();
+            }
+            return;
         }
-        while (processMessage()) { }
+
+        if (!bytesRead) {
+            connectionDidClose();
+            return;
+        }
+
+        while (true) {
+            if (!processMessage())
+                break;
+        }
     }
 }
 
-bool Connection::processMessage()
+bool Connection::platformPrepareForOpen()
 {
-    if (m_readBuffer.size() < sizeof(MessageInfo))
-        return false;
-
-    uint8_t* messageData = m_readBuffer.data();
-    MessageInfo messageInfo;
-    memcpy(static_cast<void*>(&messageInfo), messageData, sizeof(messageInfo));
-    messageData += sizeof(messageInfo);
-
-    if (messageInfo.attachmentCount() > attachmentMaxAmount || (!messageInfo.isBodyOutOfLine() && messageInfo.bodySize() > messageMaxSize)) {
-        ASSERT_NOT_REACHED();
-        return false;
-    }
-
-    size_t messageLength = sizeof(MessageInfo) + messageInfo.attachmentCount() * sizeof(AttachmentInfo) + (messageInfo.isBodyOutOfLine() ? 0 : messageInfo.bodySize());
-    if (m_readBuffer.size() < messageLength)
-        return false;
-
-    size_t attachmentFileDescriptorCount = 0;
-    size_t attachmentCount = messageInfo.attachmentCount();
-    Vector<AttachmentInfo> attachmentInfo(attachmentCount);
-
-    if (attachmentCount) {
-        memcpy(static_cast<void*>(attachmentInfo.data()), messageData, sizeof(AttachmentInfo) * attachmentCount);
-        messageData += sizeof(AttachmentInfo) * attachmentCount;
-
-        for (size_t i = 0; i < attachmentCount; ++i) {
-            if (!attachmentInfo[i].isNull())
-                attachmentFileDescriptorCount++;
-        }
-
-        if (messageInfo.isBodyOutOfLine())
-            attachmentCount--;
-    }
-
-    Vector<Attachment> attachments(attachmentCount);
-    RefPtr<WebKit::SharedMemory> oolMessageBody;
-
-    size_t fdIndex = 0;
-    for (size_t i = 0; i < attachmentCount; ++i) {
-        int fd = !attachmentInfo[i].isNull() ? m_fileDescriptors[fdIndex++] : -1;
-        attachments[attachmentCount - i - 1] = UnixFileDescriptor { fd, UnixFileDescriptor::Adopt };
-    }
-
-    if (messageInfo.isBodyOutOfLine()) {
-        ASSERT(messageInfo.bodySize());
-
-        if (attachmentInfo[attachmentCount].isNull()) {
-            ASSERT_NOT_REACHED();
-            return false;
-        }
-
-        WebKit::SharedMemory::Handle handle;
-        handle.m_size = messageInfo.bodySize();
-        handle.m_handle = UnixFileDescriptor { m_fileDescriptors[attachmentFileDescriptorCount - 1], UnixFileDescriptor::Adopt };
-
-        oolMessageBody = WebKit::SharedMemory::map(WTFMove(handle), WebKit::SharedMemory::Protection::ReadOnly);
-        if (!oolMessageBody) {
-            ASSERT_NOT_REACHED();
-            return false;
-        }
-    }
-
-    ASSERT(attachments.size() == (messageInfo.isBodyOutOfLine() ? messageInfo.attachmentCount() - 1 : messageInfo.attachmentCount()));
-
-    uint8_t* messageBody = messageData;
-    if (messageInfo.isBodyOutOfLine())
-        messageBody = reinterpret_cast<uint8_t*>(oolMessageBody->data());
-
-    auto decoder = Decoder::create(messageBody, messageInfo.bodySize(), WTFMove(attachments));
-    ASSERT(decoder);
-    if (!decoder)
-        return false;
-
-    processIncomingMessage(WTFMove(decoder));
-
-    if (m_readBuffer.size() > messageLength) {
-        memmove(m_readBuffer.data(), m_readBuffer.data() + messageLength, m_readBuffer.size() - messageLength);
-        m_readBuffer.shrink(m_readBuffer.size() - messageLength);
-    } else
-        m_readBuffer.shrink(0);
-
-    if (attachmentFileDescriptorCount) {
-        if (m_fileDescriptors.size() > attachmentFileDescriptorCount) {
-            memmove(m_fileDescriptors.data(), m_fileDescriptors.data() + attachmentFileDescriptorCount, (m_fileDescriptors.size() - attachmentFileDescriptorCount) * sizeof(int));
-            m_fileDescriptors.shrink(m_fileDescriptors.size() - attachmentFileDescriptorCount);
-        } else
-            m_fileDescriptors.shrink(0);
-    }
-
-    return true;
+    if (m_hasHajrInfo)
+        return true;
+    if (setNonBlock(socketDescriptor()))
+        return true;
+    ASSERT_NOT_REACHED();
+    return false;
 }
-
-#if USE(GLIB)
-struct HajrSource {
-    GSource source;
-    GPollFD pollFd;
-};
-
-static GSourceFuncs s_hajrSourceFuncs = {
-    // prepare
-    [](GSource* source, gint* timeout) -> gboolean {
-        *timeout = -1;
-        return FALSE;
-    },
-    // check
-    [](GSource* source) -> gboolean {
-        auto* hajrSource = reinterpret_cast<HajrSource*>(source);
-        return (hajrSource->pollFd.revents & (G_IO_IN | G_IO_HUP | G_IO_ERR)) != 0;
-    },
-    // dispatch
-    [](GSource* source, GSourceFunc callback, gpointer user_data) -> gboolean {
-        if (!callback)
-            return G_SOURCE_REMOVE;
-        return callback(user_data);
-    },
-    // finalize
-    nullptr,
-    nullptr,
-    nullptr
-};
-#endif
 
 void Connection::platformOpen()
 {
     RefPtr<Connection> protectedThis(this);
     m_isConnected = true;
 
-    // Prefer per-connection Hajr info from the Identifier (set by parent).
-    // Fall back to env vars for child processes (which inherit env at fork).
     uint64_t ring1 = 0, ring2 = 0;
     int sig1 = -1, sig2 = -1, pidfd = -1;
     bool haveHajrInfo = false;
@@ -605,18 +647,22 @@ void Connection::platformOpen()
             sig1 = atoi(sig1Str);
             sig2 = atoi(sig2Str);
             pidfd = parentPidFDStr ? atoi(parentPidFDStr) : -1;
+            const char* fdTransferStr = getenv("ZAWRA_HAJR_FDTRANSFER");
+            if (fdTransferStr && m_fdTransferFd == -1)
+                m_fdTransferFd = atoi(fdTransferStr);
             haveHajrInfo = true;
+            unsetenv("ZAWRA_HAJR_RING1");
+            unsetenv("ZAWRA_HAJR_RING2");
+            unsetenv("ZAWRA_HAJR_SIGNAL1");
+            unsetenv("ZAWRA_HAJR_SIGNAL2");
+            unsetenv("ZAWRA_HAJR_PARENT_PIDFD");
+            unsetenv("ZAWRA_HAJR_FDTRANSFER");
         }
     }
 
     if (haveHajrInfo) {
-        // When Hajr is enabled, the "socket" descriptor is actually an
-        // eventfd used for ring buffer signaling. If platformInitialize()
-        // wrapped it in a GSocket (child-side fallback path reading from
-        // env vars), release it now to prevent GSocket lifecycle from
-        // closing the eventfd that the ring buffer depends on.
 #if USE(GLIB)
-        if (m_socket && m_socketDescriptor != -1) {
+        if (m_socket && m_socketDescriptor.value() != -1) {
             int sockFd = g_socket_get_fd(m_socket.get());
             if (sockFd == sig1 || sockFd == sig2) {
                 int dupFd = dup(sockFd);
@@ -625,18 +671,17 @@ void Connection::platformOpen()
                 if (sockFd == sig2)
                     sig2 = dupFd;
                 m_socket = nullptr;
-                m_socketDescriptor = -1;
+                m_socketDescriptor = { };
             }
         }
 #endif
 
-        if (!m_isServer) {
-            int parentPidfd = syscall(434, getppid(), 0);
-            if (parentPidfd != -1) {
+        if (!m_isServer && pidfd == -1) {
+            int parentPidfd = syscall(__NR_pidfd_open, getppid(), 0);
+            if (parentPidfd != -1)
                 pidfd = parentPidfd;
-            } else {
+            else
                 fprintf(stderr, "[ZAWRA-ERROR] Failed to dynamically open parent pidfd: errno=%d\n", errno);
-            }
         }
         if (pidfd != -1)
             hajr_ipc_set_other_pidfd(pidfd);
@@ -655,6 +700,7 @@ void Connection::platformOpen()
             m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
             m_outboundRing ? hajr_ring_get_signal_fd(m_outboundRing) : -1,
             (unsigned long long)ring1, (unsigned long long)ring2, sig1, sig2, pidfd);
+
 #if USE(GLIB)
         if (m_isHajrEnabled) {
             int hajrFd = hajr_ring_get_signal_fd(m_inboundRing);
@@ -677,7 +723,6 @@ void Connection::platformOpen()
 #else
             g_source_attach(m_hajrSignalSource, nullptr);
 #endif
-            fprintf(stderr, "[CRASH-V2] platformOpen: AFTER g_source_attach, returning\n");
         }
 #endif
     }
@@ -685,268 +730,229 @@ void Connection::platformOpen()
 #if USE(GLIB)
     GSocket* monitorSocket = m_isHajrEnabled ? nullptr : m_socket.get();
     if (monitorSocket) {
-        m_readSocketMonitor.start(monitorSocket, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR), m_connectionQueue->runLoop(), [protectedThis](GIOCondition condition) -> gboolean {
+        m_readSocketMonitor.start(monitorSocket, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP | G_IO_ERR), m_connectionQueue->runLoop(), nullptr, [protectedThis](GIOCondition condition) -> gboolean {
             if (condition & (G_IO_HUP | G_IO_ERR)) {
                 protectedThis->connectionDidClose();
                 return G_SOURCE_REMOVE;
             }
-            protectedThis->readyReadHandler();
+
+            if (condition & G_IO_IN)
+                protectedThis->readyReadHandler();
+
             return G_SOURCE_CONTINUE;
         });
     }
 #endif
 
-    // When Hajr is enabled, the HajrSource GSource (attached above) handles
-    // inbound data via poll on the signal fd. Dispatching readyReadHandler()
-    // directly would BLOCK the queue thread inside hajr_ring_wait() because
-    // no data is available yet, permanently stalling all subsequent dispatches
-    // (including sendOutgoingMessages).
     if (!m_isHajrEnabled) {
         m_connectionQueue->dispatch([protectedThis] {
             protectedThis->readyReadHandler();
         });
     }
-
-    fprintf(stderr, "[CRASH-V2] platformOpen: DONE, m_isHajrEnabled=%d\n", m_isHajrEnabled);
 }
 
-bool Connection::sendOutputMessage(UnixMessage& outputMessage)
+bool Connection::platformCanSendOutgoingMessages() const
 {
-    fprintf(stderr, "[CRASH-V2] sendOutputMessage: called, m_isHajrEnabled=%d\n", m_isHajrEnabled);
-    if (m_isHajrEnabled && m_outboundRing) {
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: entering hajr block\n");
-        auto& messageInfo = outputMessage.messageInfo();
-        auto& attachments = outputMessage.attachments();
-        uint32_t attachmentCount = attachments.size();
-        
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: size calculated\n");
-        size_t total_size = sizeof(messageInfo) + sizeof(attachmentCount) + (attachmentCount * sizeof(int32_t)) + outputMessage.bodySize() + sizeof(uint32_t);
-        Vector<uint8_t> payload(total_size);
-        uint8_t* ptr = payload.data();
-
-        memcpy(ptr, &messageInfo, sizeof(messageInfo));
-        ptr += sizeof(messageInfo);
-
-        memcpy(ptr, &attachmentCount, sizeof(attachmentCount));
-        ptr += sizeof(attachmentCount);
-
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: copying %u attachments\n", attachmentCount);
-        for (auto& attachment : attachments) {
-            int32_t handle = hajr_ipc_send_fd(m_outboundRing, attachment.value());
-            memcpy(ptr, &handle, sizeof(handle));
-            ptr += sizeof(handle);
-        }
-
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: copying body (size=%zu)\n", outputMessage.bodySize());
-        memcpy(ptr, outputMessage.body(), outputMessage.bodySize());
-
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: calculating checksum\n");
-        // Calculate checksum over msgInfo + body (core message integrity)
-        uint32_t checksum = hajr_ipc_message_checksum(
-            reinterpret_cast<const uint8_t*>(&messageInfo),
-            sizeof(messageInfo),
-            outputMessage.body(),
-            outputMessage.bodySize()
-        );
-        memcpy(ptr + outputMessage.bodySize(), &checksum, sizeof(checksum));
-
-        fprintf(stderr, "[HAJR-CONN] sendOutputMessage: this=%p outbound=%p outboundSig=%d bodySize=%zu attachments=%u tid=%d\n",
-            (void*)this, (void*)m_outboundRing,
-            m_outboundRing ? hajr_ring_get_signal_fd(m_outboundRing) : -1,
-            outputMessage.bodySize(), attachmentCount, (int)syscall(SYS_gettid));
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: writing to ring\n");
-        if (hajr_ring_write(m_outboundRing, payload.data(), payload.size()) == 1) {
-            // If we have attachments, send FDs via SCM_RIGHTS on the transfer socket.
-            // pidfd_getfd requires CAP_SYS_PTRACE which sandboxed children lack.
-            if (attachmentCount > 0 && m_fdTransferFd != -1) {
-                // Build iovec + cmsg for sendmsg with SCM_RIGHTS
-                // We send a tiny 1-byte payload alongside the FDs to maintain message boundaries
-                struct iovec iov;
-                char dummy = 0;
-                iov.iov_base = &dummy;
-                iov.iov_len = sizeof(dummy);
-
-                // Calculate cmsg buffer size for up to 254 FDs
-                size_t cmsgSpace = CMSG_SPACE(sizeof(int) * attachmentCount);
-                Vector<uint8_t> cmsgBuf(cmsgSpace);
-                memset(cmsgBuf.data(), 0, cmsgSpace);
-
-                struct msghdr msg;
-                memset(&msg, 0, sizeof(msg));
-                msg.msg_iov = &iov;
-                msg.msg_iovlen = 1;
-                msg.msg_control = cmsgBuf.data();
-                msg.msg_controllen = cmsgSpace;
-
-                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-                cmsg->cmsg_level = SOL_SOCKET;
-                cmsg->cmsg_type = SCM_RIGHTS;
-                cmsg->cmsg_len = CMSG_LEN(sizeof(int) * attachmentCount);
-
-                int* fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
-                int fdIndex = 0;
-                for (auto& attachment : attachments) {
-                    fds[fdIndex++] = attachment.value();
-                }
-
-                ssize_t sendResult = sendmsg(m_fdTransferFd, &msg, MSG_NOSIGNAL);
-                fprintf(stderr, "[CRASH-V2] sendOutputMessage: SCM_RIGHTS sendmsg result=%zd errno=%d fdCount=%u fdTransferFd=%d\n",
-                    sendResult, (sendResult == -1) ? errno : 0, attachmentCount, m_fdTransferFd);
-                if (sendResult == -1) {
-                    fprintf(stderr, "[CRASH-V2] sendOutputMessage: SCM_RIGHTS FAILED\n");
-                }
-            }
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: signaling ring\n");
-        hajr_ring_signal(m_outboundRing);
-        fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning true\n");
-        return true;
-    }
-    }
-
-    if (m_socketDescriptor != -1) {
-        auto& messageInfo = outputMessage.messageInfo();
-        auto& attachments = outputMessage.attachments();
-        uint32_t attachmentCount = attachments.size();
-
-        size_t totalSize = sizeof(messageInfo)
-            + sizeof(attachmentCount)
-            + (attachmentCount * sizeof(AttachmentInfo))
-            + outputMessage.bodySize()
-            + sizeof(uint32_t);
-        Vector<uint8_t> payload(totalSize);
-        uint8_t* ptr = payload.data();
-
-        memcpy(ptr, &messageInfo, sizeof(messageInfo));
-        ptr += sizeof(messageInfo);
-
-        memcpy(ptr, &attachmentCount, sizeof(attachmentCount));
-        ptr += sizeof(attachmentCount);
-
-        for (uint32_t i = 0; i < attachmentCount; ++i) {
-            AttachmentInfo info;
-            memcpy(ptr, &info, sizeof(info));
-            ptr += sizeof(info);
-        }
-
-        memcpy(ptr, outputMessage.body(), outputMessage.bodySize());
-        ptr += outputMessage.bodySize();
-
-        uint32_t checksum = hajr_ipc_message_checksum(
-            reinterpret_cast<const uint8_t*>(&messageInfo),
-            sizeof(messageInfo),
-            outputMessage.body(),
-            outputMessage.bodySize());
-        memcpy(ptr, &checksum, sizeof(checksum));
-
-        struct iovec iov;
-        iov.iov_base = payload.data();
-        iov.iov_len = payload.size();
-
-        struct msghdr msg;
-        memset(&msg, 0, sizeof(msg));
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-
-        Vector<uint8_t> cmsgBuffer;
-        if (attachmentCount > 0) {
-            cmsgBuffer.resize(CMSG_SPACE(sizeof(int) * attachmentCount));
-            msg.msg_control = cmsgBuffer.data();
-            msg.msg_controllen = CMSG_SPACE(sizeof(int) * attachmentCount);
-
-            cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-            cmsg->cmsg_level = SOL_SOCKET;
-            cmsg->cmsg_type = SCM_RIGHTS;
-            cmsg->cmsg_len = CMSG_LEN(sizeof(int) * attachmentCount);
-
-            int* fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
-            for (uint32_t i = 0; i < attachmentCount; ++i)
-                fds[i] = attachments[i].value();
-        }
-
-        ssize_t sendResult = sendmsg(m_socketDescriptor, &msg, MSG_NOSIGNAL);
-        fprintf(stderr, "[SOCK-SEND] sendmsg result=%zd errno=%d fdCount=%u fd=%d bodySize=%zu\n",
-            sendResult == -1 ? -1 : static_cast<long>(sendResult),
-            sendResult == -1 ? errno : 0, attachmentCount, m_socketDescriptor, outputMessage.bodySize());
-        if (sendResult == -1)
-            return false;
-
-        return static_cast<size_t>(sendResult) == payload.size();
-    }
-
-    fprintf(stderr, "[CRASH-V2] sendOutputMessage: returning false\n");
-    return false; 
+    return true;
 }
-
-bool Connection::platformCanSendOutgoingMessages() const { return !m_pendingOutputMessage; }
 
 bool Connection::sendOutgoingMessage(UniqueRef<Encoder>&& encoder)
 {
-    static int s_sendCount = 0;
-    s_sendCount++;
-    if (s_sendCount <= 20 || (s_sendCount % 10000) == 0) {
-        fprintf(stderr, "[STORM-SEND] sendOutgoingMessage #%d: msgName=%d receiver=%d destID=0x%016lX bodySize=%zu tid=%d\n",
-            s_sendCount, (int)encoder->messageName(), (int)encoder->messageReceiverName(),
-            (unsigned long)encoder->destinationID(), encoder->bufferSize(), (int)syscall(SYS_gettid));
-    }
+    static_assert(sizeof(MessageInfo) + attachmentMaxAmount * sizeof(size_t) <= messageMaxSize, "Attachments fit to message inline");
+
     UnixMessage outputMessage(encoder.get());
     if (outputMessage.attachments().size() > (attachmentMaxAmount - 1)) {
         ASSERT_NOT_REACHED();
         return false;
     }
 
-    fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: checking size inline\n");
+    size_t maxInlineSize = m_isHajrEnabled ? (512 * 1024) : messageMaxSize;
     size_t messageSizeWithBodyInline = sizeof(MessageInfo) + (outputMessage.attachments().size() * sizeof(AttachmentInfo)) + outputMessage.bodySize();
-    if (messageSizeWithBodyInline > messageMaxSize && outputMessage.bodySize()) {
-        fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: handling large message (size=%zu, max=%zu)\n", messageSizeWithBodyInline, static_cast<size_t>(messageMaxSize));
-        RefPtr<WebKit::SharedMemory> oolMessageBody = WebKit::SharedMemory::allocate(outputMessage.bodySize());
-        if (!oolMessageBody)
+    if (messageSizeWithBodyInline > maxInlineSize && outputMessage.bodySize()) {
+        if (!outputMessage.setBodyOutOfLine())
             return false;
+    }
 
-        auto handle = oolMessageBody->createHandle(WebKit::SharedMemory::Protection::ReadOnly);
-        if (!handle)
+    return sendOutputMessage(WTF::move(outputMessage));
+}
+
+bool Connection::sendOutputMessage(UnixMessage&& outputMessage)
+{
+    if (m_isHajrEnabled && m_outboundRing) {
+        auto& messageInfo = outputMessage.messageInfo();
+        auto& attachments = outputMessage.attachments();
+        uint32_t attachmentCount = attachments.size();
+
+        size_t totalPayloadSize = sizeof(messageInfo) + sizeof(attachmentCount) + (attachmentCount * sizeof(int32_t)) + outputMessage.bodySize() + sizeof(uint32_t);
+        Vector<uint8_t> payload;
+        payload.grow(totalPayloadSize);
+        uint8_t* ptr = payload.mutableSpan().data();
+
+        memcpy(ptr, &messageInfo, sizeof(messageInfo));
+        ptr += sizeof(messageInfo);
+
+        memcpy(ptr, &attachmentCount, sizeof(attachmentCount));
+        ptr += sizeof(attachmentCount);
+
+        size_t validFdCount = 0;
+        for (auto& attachment : attachments) {
+            int32_t handle = attachment.value();
+            if (handle >= 0)
+                validFdCount++;
+            memcpy(ptr, &handle, sizeof(handle));
+            ptr += sizeof(handle);
+        }
+
+        memcpy(ptr, outputMessage.body().data(), outputMessage.bodySize());
+
+        uint32_t checksum = hajr_ipc_message_checksum(
+            reinterpret_cast<const uint8_t*>(&messageInfo),
+            sizeof(messageInfo),
+            outputMessage.body().data(),
+            outputMessage.bodySize()
+        );
+        memcpy(ptr + outputMessage.bodySize(), &checksum, sizeof(checksum));
+
+        if (hajr_ring_write(m_outboundRing, payload.span().data(), payload.size()) == 1) {
+            if (validFdCount > 0 && m_fdTransferFd != -1) {
+                char dummy = 0;
+                struct iovec iov;
+                iov.iov_base = &dummy;
+                iov.iov_len = 1;
+
+                std::vector<char> cmsgBuf(CMSG_SPACE(sizeof(int) * validFdCount));
+                struct msghdr msg;
+                memset(&msg, 0, sizeof(msg));
+                msg.msg_iov = &iov;
+                msg.msg_iovlen = 1;
+                msg.msg_control = cmsgBuf.data();
+                msg.msg_controllen = cmsgBuf.size();
+
+                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                cmsg->cmsg_level = SOL_SOCKET;
+                cmsg->cmsg_type = SCM_RIGHTS;
+                cmsg->cmsg_len = CMSG_LEN(sizeof(int) * validFdCount);
+
+                int* fdPtr = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+                size_t fdIdx = 0;
+                for (size_t i = 0; i < attachmentCount; ++i) {
+                    if (attachments[i].value() >= 0)
+                        fdPtr[fdIdx++] = attachments[i].value();
+                }
+
+                ssize_t sendResult = sendmsg(m_fdTransferFd, &msg, MSG_NOSIGNAL);
+                if (sendResult == -1)
+                    fprintf(stderr, "[ZAWRA] sendOutputMessage: SCM_RIGHTS FAILED fd=%d errno=%d (%s)\n", m_fdTransferFd, errno, strerror(errno));
+            }
+            hajr_ring_signal(m_outboundRing);
+            return true;
+        }
+    }
+
+    auto& messageInfo = outputMessage.messageInfo();
+    struct msghdr message;
+    memset(&message, 0, sizeof(message));
+
+    struct iovec iov[3];
+    memset(&iov, 0, sizeof(iov));
+
+    message.msg_iov = iov;
+    int iovLength = 1;
+
+    iov[0].iov_base = reinterpret_cast<void*>(&messageInfo);
+    iov[0].iov_len = sizeof(messageInfo);
+
+    Vector<AttachmentInfo> attachmentInfo;
+    MallocSpan<char> attachmentFDBuffer;
+
+    auto& attachments = outputMessage.attachments();
+    if (!attachments.isEmpty()) {
+        int* fdPtr = 0;
+
+        size_t attachmentFDBufferLength = std::count_if(attachments.begin(), attachments.end(),
+            [](const Attachment& attachment) {
+                return !!attachment;
+            });
+
+        if (attachmentFDBufferLength) {
+            attachmentFDBuffer = MallocSpan<char>::zeroedMalloc(CMSG_SPACE(sizeof(int) * attachmentFDBufferLength));
+            auto span = attachmentFDBuffer.mutableSpan();
+            message.msg_control = span.data();
+            message.msg_controllen = span.size();
+
+            struct cmsghdr* cmsg = CMSG_FIRSTHDR(&message);
+            cmsg->cmsg_level = SOL_SOCKET;
+            cmsg->cmsg_type = SCM_RIGHTS;
+            cmsg->cmsg_len = CMSG_LEN(sizeof(int) * attachmentFDBufferLength);
+
+            fdPtr = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+        }
+
+        attachmentInfo.grow(attachments.size());
+
+        size_t fdIndex = 0;
+        for (size_t i = 0; i < attachments.size(); ++i) {
+            if (!!attachments[i]) {
+                ASSERT(fdPtr);
+                fdPtr[fdIndex++] = attachments[i].value();
+            } else
+                attachmentInfo[i].setNull();
+        }
+
+        iov[iovLength].iov_base = attachmentInfo.mutableSpan().data();
+        iov[iovLength].iov_len = sizeof(AttachmentInfo) * attachments.size();
+        ++iovLength;
+    }
+
+    if (!messageInfo.isBodyOutOfLine() && outputMessage.bodySize()) {
+        iov[iovLength].iov_base = reinterpret_cast<void*>(outputMessage.body().data());
+        iov[iovLength].iov_len = outputMessage.bodySize();
+        ++iovLength;
+    }
+
+    message.msg_iovlen = iovLength;
+
+    while (sendmsg(socketDescriptor(), &message, MSG_NOSIGNAL) == -1) {
+        if (errno == EINTR)
+            continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            struct pollfd pollfd;
+
+            pollfd.fd = socketDescriptor();
+            pollfd.events = POLLOUT;
+            pollfd.revents = 0;
+            poll(&pollfd, 1, -1);
+            continue;
+        }
+
+#if OS(LINUX)
+        if (errno == EPIPE || errno == ECONNRESET)
+#else
+        if (errno == ECONNRESET)
+#endif
+        {
+            connectionDidClose();
             return false;
+        }
 
-        outputMessage.messageInfo().setBodyOutOfLine();
-
-        memcpy(oolMessageBody->data(), outputMessage.body(), outputMessage.bodySize());
-
-        outputMessage.appendAttachment(handle->releaseHandle());
+        if (m_isConnected)
+            WTFLogAlways("Error sending IPC message: %s", safeStrerror(errno).data());
+        return false;
     }
 
-    fprintf(stderr, "[CRASH-V2] sendOutgoingMessage: calling sendOutputMessage\n");
-    return sendOutputMessage(outputMessage);
-}
-SocketPair createPlatformConnection(unsigned options)
-{
-    int sockets[2];
-    RELEASE_ASSERT(socketpair(AF_UNIX, SOCKET_TYPE, 0, sockets) != -1);
-
-    if (options & SetCloexecOnServer) {
-        if (!setCloseOnExec(sockets[1]))
-            RELEASE_ASSERT_NOT_REACHED();
-    }
-
-    if (options & SetCloexecOnClient) {
-        if (!setCloseOnExec(sockets[0]))
-            RELEASE_ASSERT_NOT_REACHED();
-    }
-
-    SocketPair socketPair = { sockets[0], sockets[1] };
-    return socketPair;
-}
-
-void Connection::willSendSyncMessage(OptionSet<SendSyncOption>)
-{
-}
-
-void Connection::didReceiveSyncReply(OptionSet<SendSyncOption>)
-{
+    return true;
 }
 
 std::optional<Connection::ConnectionIdentifierPair> Connection::createConnectionIdentifierPair()
 {
-    SocketPair socketPair = createPlatformConnection();
-    return ConnectionIdentifierPair { Identifier { UnixFileDescriptor { socketPair.server,  UnixFileDescriptor::Adopt } }, UnixFileDescriptor { socketPair.client, UnixFileDescriptor::Adopt } };
+    SocketPair socketPair = createPlatformConnection(SOCKET_TYPE);
+    return { { Identifier { WTF::move(socketPair.server) }, ConnectionHandle { WTF::move(socketPair.client) } } };
+}
+
+void Connection::sendCredentials() const
+{
 }
 
 } // namespace IPC
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

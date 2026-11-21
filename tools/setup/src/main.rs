@@ -42,12 +42,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Could not resolve project root from CARGO_MANIFEST_DIR")?
         .to_path_buf();
 
-    let webkit_version = "2.42.5";
+    let webkit_version = "2.54.3";
     let url = format!("https://wpewebkit.org/releases/wpewebkit-{}.tar.xz", webkit_version);
     let target_dir    = project_root.join("webkit/source");
     let patch_dir     = project_root.join("patches/webkit");
-    let download_path = project_root.join("webkit_source.tar.xz");
-    let sentinel      = target_dir.join("Source/WebCore/config.h");
+    let download_path = project_root.join("webkit_source_2.54.3.tar.xz");
+    let sentinel      = target_dir.join(".zawra_webkit_2.54.3");
 
     println!("🚀 Starting Zawra Browser Setup...");
     println!("📁 Project root: {}", project_root.display());
@@ -95,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             entry.unpack(out_path)?;
         }
+        fs::write(&sentinel, "2.54.3\n")?;
         println!("✅ Extraction complete.");
     }
 

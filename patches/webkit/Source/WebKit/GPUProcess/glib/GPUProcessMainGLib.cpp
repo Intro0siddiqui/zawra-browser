@@ -34,21 +34,28 @@
 namespace WebKit {
 
 #if ENABLE(GPU_PROCESS) && (PLATFORM(GTK) || PLATFORM(WPE))
-class GPUProcessMainGStreamer final: public AuxiliaryProcessMainBaseNoSingleton<GPUProcess> {
+class GPUProcessMainGLib final: public AuxiliaryProcessMainBase<GPUProcess> {
+public:
+    bool platformInitialize() override
+    {
+        return true;
+    }
 };
 #endif
 
 extern "C" void hajr_seal_process(unsigned int process_type);
 extern "C" int Z_Init_Subsystems(const char* profile_path);
+extern "C" void hajr_trace_set_process_kind(uint8_t);
 
 #define HAJR_GPU_PROCESS 2
 
 int GPUProcessMain(int argc, char** argv)
 {
+    hajr_trace_set_process_kind(4);
     hajr_seal_process(HAJR_GPU_PROCESS);
     Z_Init_Subsystems("/tmp/zawra-profile");
 #if ENABLE(GPU_PROCESS) && (PLATFORM(GTK) || PLATFORM(WPE))
-    return AuxiliaryProcessMain<GPUProcessMainGStreamer>(argc, argv);
+    return AuxiliaryProcessMain<GPUProcessMainGLib>(argc, argv);
 #else
     return 0;
 #endif

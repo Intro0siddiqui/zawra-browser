@@ -14,17 +14,17 @@
 
 extern "C" {
     // Declarations for Zig FFI functions from z-graphics
-    bool Z_Graphics_Initialize();
-    void* Z_Graphics_CreateSurface(void* window, unsigned int width, unsigned int height);
-    int Z_Graphics_ExportSurfaceFD(void* handle);
+    bool ZG_Initialize();
+    void* ZG_CreateSurface(void* window, unsigned int width, unsigned int height);
+    int ZG_ExportSurfaceFD(void* handle);
     bool ZG_ExportSurfaceDMABuf(void* surface, void* info);
-    void Z_Graphics_DestroySurface(void* handle);
+    void ZG_DestroySurface(void* handle);
 
     // Compositor FFI functions
-    void* Z_Graphics_CompositorInitialize(void* surface, unsigned int width, unsigned int height);
-    bool Z_Graphics_CompositorRenderLayer(void* state);
-    void Z_Graphics_CompositorDestroy(void* state);
-    bool Z_Graphics_CompositorResize(void* state, unsigned int width, unsigned int height);
+    void* ZG_CompositorInitialize(void* surface, unsigned int width, unsigned int height);
+    bool ZG_CompositorRenderLayer(void* state);
+    void ZG_CompositorDestroy(void* state);
+    bool ZG_CompositorResize(void* state, unsigned int width, unsigned int height);
 }
 
 namespace WebCore {
@@ -32,11 +32,11 @@ namespace WebCore {
 ZawraGraphicsBridge::~ZawraGraphicsBridge()
 {
     if (m_compositorState) {
-        Z_Graphics_CompositorDestroy(m_compositorState);
+        ZG_CompositorDestroy(m_compositorState);
         m_compositorState = nullptr;
         m_surfaceHandle = nullptr;
     } else if (m_surfaceHandle) {
-        Z_Graphics_DestroySurface(m_surfaceHandle);
+        ZG_DestroySurface(m_surfaceHandle);
         m_surfaceHandle = nullptr;
     }
 }
@@ -51,35 +51,35 @@ bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
 {
     ZLOG("initialize: window=%p, size=%dx%d, existingHandle=%p", windowHandle, width, height, m_surfaceHandle);
     if (!m_surfaceHandle) {
-        bool initOk = Z_Graphics_Initialize();
-        ZLOG("ZawraGraphics_Initialize returned %s", initOk ? "true" : "false");
+        bool initOk = ZG_Initialize();
+        ZLOG("ZG_Initialize returned %s", initOk ? "true" : "false");
         if (!initOk) {
-            ZLOG("FATAL: ZawraGraphics_Initialize failed!");
+            ZLOG("FATAL: ZG_Initialize failed!");
             return false;
         }
-        void* handle = Z_Graphics_CreateSurface(windowHandle, width, height);
-        ZLOG("ZawraGraphics_CreateSurface returned handle=%p", handle);
+        void* handle = ZG_CreateSurface(windowHandle, width, height);
+        ZLOG("ZG_CreateSurface returned handle=%p", handle);
         if (!handle) {
-            ZLOG("FATAL: ZawraGraphics_CreateSurface failed!");
+            ZLOG("FATAL: ZG_CreateSurface failed!");
             return false;
         }
         m_surfaceHandle = handle;
         m_compositorWidth = width;
         m_compositorHeight = height;
 
-        m_compositorState = Z_Graphics_CompositorInitialize(m_surfaceHandle, width, height);
-        ZLOG("ZawraGraphics_CompositorInitialize returned state=%p", m_compositorState);
+        m_compositorState = ZG_CompositorInitialize(m_surfaceHandle, width, height);
+        ZLOG("ZG_CompositorInitialize returned state=%p", m_compositorState);
         if (!m_compositorState) {
-            ZLOG("FATAL: ZawraGraphics_CompositorInitialize returned null!");
-            Z_Graphics_DestroySurface(m_surfaceHandle);
+            ZLOG("FATAL: ZG_CompositorInitialize returned null!");
+            ZG_DestroySurface(m_surfaceHandle);
             m_surfaceHandle = nullptr;
             return false;
         }
     } else if (width != m_compositorWidth || height != m_compositorHeight) {
         ZLOG("Resize requested from %dx%d to %dx%d", m_compositorWidth, m_compositorHeight, width, height);
         if (m_compositorState) {
-            bool ok = Z_Graphics_CompositorResize(m_compositorState, width, height);
-            ZLOG("ZawraGraphics_CompositorResize returned %s", ok ? "true" : "false");
+            bool ok = ZG_CompositorResize(m_compositorState, width, height);
+            ZLOG("ZG_CompositorResize returned %s", ok ? "true" : "false");
             if (ok) {
                 m_surfaceHandle = *(void**)m_compositorState;
             }
@@ -100,12 +100,12 @@ int ZawraGraphicsBridge::exportCompositorFD()
         fflush(stderr);
         RELEASE_ASSERT_NOT_REACHED();
     }
-    ZLOG("About to call ZawraGraphics_ExportSurfaceFD, handle=%p", m_surfaceHandle);
-    int fd = Z_Graphics_ExportSurfaceFD(m_surfaceHandle);
+    ZLOG("About to call ZG_ExportSurfaceFD, handle=%p", m_surfaceHandle);
+    int fd = ZG_ExportSurfaceFD(m_surfaceHandle);
     ZLOG("exportCompositorFD: handle=%p -> fd=%d", m_surfaceHandle, fd);
     if (fd < 0) {
-        ZLOG("FATAL ERROR: ZawraGraphics_ExportSurfaceFD failed: fd=%d", fd);
-        fprintf(stderr, "FATAL ERROR: ZawraGraphics_ExportSurfaceFD failed: fd=%d\n", fd);
+        ZLOG("FATAL ERROR: ZG_ExportSurfaceFD failed: fd=%d", fd);
+        fprintf(stderr, "FATAL ERROR: ZG_ExportSurfaceFD failed: fd=%d\n", fd);
         fflush(stderr);
         RELEASE_ASSERT_NOT_REACHED();
     }
@@ -133,10 +133,10 @@ void ZawraGraphicsBridge::presentFrame()
     if (m_surfaceHandle) {
         ZLOG("presentFrame: handle=%p, compositorState=%p", m_surfaceHandle, m_compositorState);
         if (m_compositorState) {
-            bool rendered = Z_Graphics_CompositorRenderLayer(m_compositorState);
+            bool rendered = ZG_CompositorRenderLayer(m_compositorState);
             ZLOG("presentFrame: CompositorRenderLayer returned %s", rendered ? "true" : "false");
         }
-        // Direct Z_Graphics_SwapBuffers removed: presentation is handed over to UIProcess via IPC / WPEPlatform
+        // Direct ZG_SwapBuffers removed: presentation is handed over to UIProcess via IPC / WPEPlatform
     }
 }
 
@@ -144,7 +144,7 @@ void ZawraGraphicsBridge::renderLayer(void* state)
 {
     void* targetState = state ? state : m_compositorState;
     if (m_surfaceHandle && targetState) {
-        Z_Graphics_CompositorRenderLayer(targetState);
+        ZG_CompositorRenderLayer(targetState);
     }
 }
 

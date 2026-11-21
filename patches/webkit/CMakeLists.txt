@@ -11,9 +11,9 @@ cmake_minimum_required(VERSION 3.20)
 # --- Zawra Project Overrides ---
 # Silence noisy compiler warnings to save CPU cycles
 add_compile_options("-Wno-#warnings" "-Wno-unnecessary-virtual-specifier")
-# Use BOTH ccache and sccache (chained) for maximum caching efficiency
-set(CMAKE_C_COMPILER_LAUNCHER "ccache;sccache" CACHE STRING "" FORCE)
-set(CMAKE_CXX_COMPILER_LAUNCHER "ccache;sccache" CACHE STRING "" FORCE)
+# Use sccache for unified caching across C++ and Rust
+set(CMAKE_C_COMPILER_LAUNCHER "sccache" CACHE STRING "" FORCE)
+set(CMAKE_CXX_COMPILER_LAUNCHER "sccache" CACHE STRING "" FORCE)
 # Use the ultra-fast mold linker instead of LLD
 add_link_options("-fuse-ld=mold")
 

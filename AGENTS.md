@@ -94,6 +94,36 @@ The trace system lives in `dependencies/hajr/src/trace/`.
 *   **Display Preservation**: In `z-graphics` (Vulkan/X11), the X11 Display connection must be preserved and reused across `createWindow` and `createSurface` rather than being opened as a temporary local and immediately orphaned.
 *   **Non-blocking Event Pump**: When creating the X11 window, mapping X11 windows under Sway/Xwayland is asynchronous. Pumping events must be done using a non-blocking check (`XPending(display)`) with a sleep interval rather than a raw blocking `XNextEvent` loop, to prevent hanging the UIProcess main thread on startup.
 
+### 8. WebKit 2.54+ C++ Migration Gotchas
+*   **Deprecated Macros**: Replace legacy `WTF_MAKE_FAST_ALLOCATED;` with `#include <wtf/FastMalloc.h>` and `WTF_DEPRECATED_MAKE_FAST_ALLOCATED(Class);`. Avoid `WTF_MAKE_TZONE_ALLOCATED` on custom stubs as it requires IsoSubspace definitions.
+*   **WTFMove vs std::move**: WebKit 2.54 deprecated `WTFMove` in favor of standard `std::move`.
+*   **Smart Pointers**: `Ref<T>` and `UniqueRef<T>` no longer support `.` operator method forwarding; use `->`.
+*   **ThreadSafeWeakPtr**: Classes held weakly across multiple threads must inherit from `ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<T>`.
+
+### 9. Zero-SQLite Engine Independence
+*   **WebSQL Decoupling**: All 18 WebSQL stub classes in `Source/WebCore/Modules/webdatabase/` completely decouple WebKit from `libsqlite3`, ensuring 0 SQLite engine symbols in `libWPEWebKit-2.0.so`.
+*   **SQLiteFileSystem Pure Abstraction**: `SQLiteFileSystem` is backed purely by `WebCore::FileSystem` primitives in `Source/WebCore/platform/sql/SQLiteFileSystem.cpp` without any `sqlite3_*` engine calls.
+
+### 10. Subsystem Bootstrap & Process Role Tagging
+The startup sequence across `WebProcessMainWPE`, `NetworkProcessMainSoup`, `GPUProcessMainGLib`, and `MiniBrowser`:
+1.  **Tag Process Role**: Call `hajr_trace_set_process_kind(kind)`:
+    *   `1`: UI Process
+    *   `2`: Web Process
+    *   `3`: Network Process
+    *   `4`: GPU Process
+2.  **Bootstrap Subsystems**: Call `Z_Init_Subsystems("/tmp/zawra-profile")`, which automatically initializes `BrowserDB`, `z-net`, `z-graphics`, and invokes `hajr_trace_init()` to bind Hajr trace rings if `HAJR_TRACE_FILE` is defined.
+
+### 11. IPC Side-Channel Handling
+*   **CLOEXEC Preservation**: Side-channel sockets created in `ProcessLauncherGLib.cpp` must maintain correct `CLOEXEC` handling so file descriptor passing via `SCM_RIGHTS` does not drop before the child process completes its socket handshake.
+*   **Executable Resolution**: In `Source/WebKit/Shared/glib/ProcessExecutablePathGLib.cpp`, auxiliary processes must always resolve via `WEBKIT_EXEC_PATH` and the executable directory in both developer and release builds.
+
+### 12. IPC Ring Buffers, Descriptors & Memory Conventions
+*   **Attachment LIFO Reversal for Decoder**: WebKit's `IPC::Decoder` consumes attachments using `takeLastAttachment()` (popping from the back in LIFO order). Any IPC bridge populating the attachment vector must map them in reverse order: `attachments[count - i - 1] = UnixFileDescriptor { fd, Adopt };`. Writing in forward order causes the decoder to receive attachments in inverted order.
+*   **Negative FDs (-1) in SCM_RIGHTS**: Linux kernel `sendmsg` with `SCM_RIGHTS` returns `EBADF` (`errno=9`) if ANY file descriptor in `msg_control` is negative (`-1`) or closed. WebKit routinely creates null attachments with `fd = -1`. The sender must filter attachments, count valid descriptors (`>= 0`), allocate `CMSG_SPACE` only for valid descriptors, and omit `sendmsg` entirely if `validFdCount == 0`.
+*   **Secondary IPC Connection Isolation**: Auxiliary processes (`WebProcess`, `NetworkProcess`, `GPUProcess`) receive bootstrap ring file descriptors via environment variables (`ZAWRA_HAJR_*`). The primary `platformOpen()` must immediately call `unsetenv()` on all `ZAWRA_HAJR_*` variables once read so that secondary internal child socketpairs (e.g. `NetworkProcessConnection`) do not hijack the bootstrap rings and corrupt memory.
+*   **1MB Ring Inlining vs Out-of-Line SharedMemory**: Hajr provides 1MB circular shared-memory ring buffers. Avoid WebKit's legacy 4KB out-of-line threshold by setting `maxInlineSize = (512 * 1024)` for Hajr connections. This eliminates unnecessary POSIX shared memory allocations and descriptor overhead for inline messages.
+*   **Debugging Seccomp Traps (`HAJR_SEAL_DEBUG=1`)**: When debugging auxiliary process crashes, run with `HAJR_SEAL_DEBUG=1`. This instructs Hajr's Seccomp filter to use `SECCOMP_RET_LOG` instead of `SECCOMP_RET_KILL_PROCESS`, logging the blocked syscall to `dmesg` without killing the process. Always inspect `dmesg` when processes exit unexpectedly.
+
 ---
 
 ## 🔍 Project Intelligence (`zw` Tool)

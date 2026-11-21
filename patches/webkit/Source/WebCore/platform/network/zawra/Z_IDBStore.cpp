@@ -16,6 +16,8 @@
 #include "ThreadSafeDataBuffer.h"
 #include <algorithm>
 #include <tuple>
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/StdLibExtras.h>
 
 extern "C" {
     int32_t Z_IDBStore_Put(const uint8_t* key, size_t key_len, const uint8_t* value, size_t value_len);
@@ -29,6 +31,10 @@ extern "C" {
 
 namespace WebCore {
 namespace IDBServer {
+
+using enum WebCore::ExceptionCode;
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(Z_IDBStore);
 
 static const uint64_t maxGeneratorValue = 0x20000000000000;
 
@@ -142,15 +148,16 @@ IDBError Z_IDBStore::getOrEstablishDatabaseInfo(IDBDatabaseInfo& info)
     uint8_t* outPtr = nullptr;
     size_t outLen = 0;
 
-    if (Z_IDBStore_Get(metaKey.data(), metaKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen > 0) {
+    if (Z_IDBStore_Get(metaKey.span().data(), metaKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen > 0) {
         const uint8_t* data = outPtr;
         const uint8_t* end = outPtr + outLen;
 
         uint64_t version = readU64(data, end);
         uint64_t maxIndexID = readU64(data, end);
         uint64_t maxObjectStoreID = readU64(data, end);
+        UNUSED_PARAM(maxObjectStoreID);
 
-        m_databaseInfo = makeUnique<IDBDatabaseInfo>(m_identifier.databaseName(), version, maxIndexID, maxObjectStoreID);
+        m_databaseInfo = makeUnique<IDBDatabaseInfo>(m_identifier.databaseName(), version, maxIndexID);
 
         Z_Free_Buffer(outPtr, outLen);
     } else {
@@ -163,12 +170,12 @@ IDBError Z_IDBStore::getOrEstablishDatabaseInfo(IDBDatabaseInfo& info)
         writeU64(val, 0ULL);
         writeU64(val, 0ULL);
         writeU64(val, 0ULL);
-        Z_IDBStore_Put(metaKey.data(), metaKey.size(), val.data(), val.size());
+        Z_IDBStore_Put(metaKey.span().data(), metaKey.size(), val.span().data(), val.size());
     }
 
     auto osPrefix = makeKey(0x02);
     uint8_t scanBuf[65536];
-    int32_t scanResult = Z_IDBStore_ScanPrefix(osPrefix.data(), osPrefix.size(), scanBuf, sizeof(scanBuf));
+    int32_t scanResult = Z_IDBStore_ScanPrefix(osPrefix.span().data(), osPrefix.size(), scanBuf, sizeof(scanBuf));
     if (scanResult == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
@@ -193,22 +200,22 @@ IDBError Z_IDBStore::getOrEstablishDatabaseInfo(IDBDatabaseInfo& info)
             uint32_t nameLen = readU32(vptr, vend);
             String osName;
             if (nameLen && vptr + nameLen <= vend) {
-                osName = String::fromUTF8(reinterpret_cast<const char*>(vptr), nameLen);
+                osName = String::fromUTF8(std::span { reinterpret_cast<const char*>(vptr), static_cast<size_t>(nameLen) });
                 vptr += nameLen;
             }
             std::optional<IDBKeyPath> keyPath;
             if (vptr + 4 <= vend) {
                 uint32_t kpLen = readU32(vptr, vend);
                 if (kpLen && vptr + kpLen <= vend) {
-                    deserializeIDBKeyPath(vptr, kpLen, keyPath);
+                    deserializeIDBKeyPath(std::span { vptr, static_cast<size_t>(kpLen) }, keyPath);
                     vptr += kpLen;
                 }
             }
             bool autoInc = (vptr < vend) ? (*vptr++ != 0) : false;
 
-            IDBObjectStoreInfo osInfo(osID, osName, keyPath ? std::optional<IDBKeyPath>(WTFMove(*keyPath)) : std::nullopt, autoInc);
+            IDBObjectStoreInfo osInfo(IDBObjectStoreIdentifier(osID), osName, WTF::move(keyPath), autoInc);
             m_databaseInfo->addExistingObjectStore(osInfo);
-            m_objectStoreInfoCache.set(osID, WTFMove(osInfo));
+            m_objectStoreInfoCache.set(IDBObjectStoreIdentifier(osID), WTF::move(osInfo));
         }
     }
 
@@ -250,25 +257,25 @@ IDBError Z_IDBStore::createObjectStore(const IDBResourceIdentifier& transactionI
     auto keyPathBuffer = serializeIDBKeyPath(info.keyPath());
 
     Vector<uint8_t> val;
-    writeU64(val, info.identifier());
+    writeU64(val, info.identifier().toRawValue());
     auto nameUTF8 = info.name().utf8();
     writeU32(val, nameUTF8.length());
-    val.append(nameUTF8.data(), nameUTF8.length());
+    val.append(std::span { reinterpret_cast<const uint8_t*>(nameUTF8.data()), nameUTF8.length() });
     if (keyPathBuffer) {
-        auto span = keyPathBuffer->dataAsSpanForContiguousData();
+        auto span = keyPathBuffer->span();
         writeU32(val, span.size());
-        val.append(span.data(), span.size());
+        val.append(span);
     } else {
         writeU32(val, 0);
     }
     val.append(static_cast<uint8_t>(info.autoIncrement() ? 1 : 0));
 
-    auto key = makeKeyWithOS(0x02, info.identifier());
-    Z_IDBStore_Put(key.data(), key.size(), val.data(), val.size());
+    auto key = makeKeyWithOS(0x02, info.identifier().toRawValue());
+    Z_IDBStore_Put(key.span().data(), key.size(), val.span().data(), val.size());
 
-    auto genKey = makeKeyWithOS(0x07, info.identifier());
+    auto genKey = makeKeyWithOS(0x07, info.identifier().toRawValue());
     auto genVal = packU64(0ULL);
-    Z_IDBStore_Put(genKey.data(), genKey.size(), genVal.data(), genVal.size());
+    Z_IDBStore_Put(genKey.span().data(), genKey.size(), genVal.span().data(), genVal.size());
 
     m_databaseInfo->addExistingObjectStore(info);
     m_objectStoreInfoCache.set(info.identifier(), info);
@@ -276,24 +283,25 @@ IDBError Z_IDBStore::createObjectStore(const IDBResourceIdentifier& transactionI
     return IDBError { };
 }
 
-IDBError Z_IDBStore::deleteObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier)
+IDBError Z_IDBStore::deleteObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier)
 {
-    LOG(IndexedDB, "Z_IDBStore::deleteObjectStore - %" PRIu64, objectStoreIdentifier);
+    LOG(IndexedDB, "Z_IDBStore::deleteObjectStore - %" PRIu64, objectStoreIdentifier.toRawValue());
 
     ASSERT(m_databaseInfo);
     auto* osInfo = m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier);
     if (!osInfo)
         return IDBError { ConstraintError };
 
-    auto metaKey = makeKeyWithOS(0x02, objectStoreIdentifier);
-    Z_IDBStore_Delete(metaKey.data(), metaKey.size());
+    uint64_t rawOSID = objectStoreIdentifier.toRawValue();
+    auto metaKey = makeKeyWithOS(0x02, rawOSID);
+    Z_IDBStore_Delete(metaKey.span().data(), metaKey.size());
 
-    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier);
-    Z_IDBStore_Delete(genKey.data(), genKey.size());
+    auto genKey = makeKeyWithOS(0x07, rawOSID);
+    Z_IDBStore_Delete(genKey.span().data(), genKey.size());
 
     uint8_t scanBuf[65536];
-    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
+    auto recPrefix = makeKeyWithOS(0x03, rawOSID);
+    if (Z_IDBStore_ScanPrefix(recPrefix.span().data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
         while (sdata + 4 <= send) {
@@ -309,8 +317,8 @@ IDBError Z_IDBStore::deleteObjectStore(const IDBResourceIdentifier&, uint64_t ob
         }
     }
 
-    auto idxPrefix = makeKeyWithOS(0x04, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxPrefix.data(), idxPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
+    auto idxPrefix = makeKeyWithOS(0x04, rawOSID);
+    if (Z_IDBStore_ScanPrefix(idxPrefix.span().data(), idxPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
         while (sdata + 4 <= send) {
@@ -326,8 +334,8 @@ IDBError Z_IDBStore::deleteObjectStore(const IDBResourceIdentifier&, uint64_t ob
         }
     }
 
-    auto idxRecPrefix = makeKeyWithOS(0x05, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
+    auto idxRecPrefix = makeKeyWithOS(0x05, rawOSID);
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.span().data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
         while (sdata + 4 <= send) {
@@ -343,15 +351,15 @@ IDBError Z_IDBStore::deleteObjectStore(const IDBResourceIdentifier&, uint64_t ob
         }
     }
 
-    m_databaseInfo->deleteObjectStore(osInfo->name());
+    m_databaseInfo->deleteObjectStore(objectStoreIdentifier);
     m_objectStoreInfoCache.remove(objectStoreIdentifier);
 
     return IDBError { };
 }
 
-IDBError Z_IDBStore::renameObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const String& newName)
+IDBError Z_IDBStore::renameObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, const String& newName)
 {
-    LOG(IndexedDB, "Z_IDBStore::renameObjectStore - %" PRIu64, objectStoreIdentifier);
+    LOG(IndexedDB, "Z_IDBStore::renameObjectStore - %" PRIu64, objectStoreIdentifier.toRawValue());
 
     ASSERT(m_databaseInfo);
     auto* info = m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier);
@@ -360,27 +368,27 @@ IDBError Z_IDBStore::renameObjectStore(const IDBResourceIdentifier&, uint64_t ob
 
     m_databaseInfo->renameObjectStore(objectStoreIdentifier, newName);
 
-    auto metaKey = makeKeyWithOS(0x02, objectStoreIdentifier);
+    auto metaKey = makeKeyWithOS(0x02, objectStoreIdentifier.toRawValue());
     auto* updatedInfo = m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier);
     if (!updatedInfo)
         return IDBError { UnknownError };
 
     auto keyPathBuffer = serializeIDBKeyPath(updatedInfo->keyPath());
     Vector<uint8_t> val;
-    writeU64(val, updatedInfo->identifier());
+    writeU64(val, updatedInfo->identifier().toRawValue());
     auto nameUTF8 = newName.utf8();
     writeU32(val, nameUTF8.length());
-    val.append(nameUTF8.data(), nameUTF8.length());
+    val.append(std::span { reinterpret_cast<const uint8_t*>(nameUTF8.data()), nameUTF8.length() });
     if (keyPathBuffer) {
-        auto span = keyPathBuffer->dataAsSpanForContiguousData();
+        auto span = keyPathBuffer->span();
         writeU32(val, span.size());
-        val.append(span.data(), span.size());
+        val.append(span);
     } else {
         writeU32(val, 0);
     }
     val.append(static_cast<uint8_t>(updatedInfo->autoIncrement() ? 1 : 0));
 
-    Z_IDBStore_Put(metaKey.data(), metaKey.size(), val.data(), val.size());
+    Z_IDBStore_Put(metaKey.span().data(), metaKey.size(), val.span().data(), val.size());
 
     auto it = m_objectStoreInfoCache.find(objectStoreIdentifier);
     if (it != m_objectStoreInfoCache.end()) {
@@ -390,13 +398,13 @@ IDBError Z_IDBStore::renameObjectStore(const IDBResourceIdentifier&, uint64_t ob
     return IDBError { };
 }
 
-IDBError Z_IDBStore::clearObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier)
+IDBError Z_IDBStore::clearObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier)
 {
-    LOG(IndexedDB, "Z_IDBStore::clearObjectStore - %" PRIu64, objectStoreIdentifier);
+    LOG(IndexedDB, "Z_IDBStore::clearObjectStore - %" PRIu64, objectStoreIdentifier.toRawValue());
 
     uint8_t scanBuf[65536];
-    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
+    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier.toRawValue());
+    if (Z_IDBStore_ScanPrefix(recPrefix.span().data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
         while (sdata + 4 <= send) {
@@ -412,8 +420,8 @@ IDBError Z_IDBStore::clearObjectStore(const IDBResourceIdentifier&, uint64_t obj
         }
     }
 
-    auto idxRecPrefix = makeKeyWithOS(0x05, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
+    auto idxRecPrefix = makeKeyWithOS(0x05, objectStoreIdentifier.toRawValue());
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.span().data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
         while (sdata + 4 <= send) {
@@ -432,9 +440,9 @@ IDBError Z_IDBStore::clearObjectStore(const IDBResourceIdentifier&, uint64_t obj
     return IDBError { };
 }
 
-IDBError Z_IDBStore::createIndex(const IDBResourceIdentifier& transactionIdentifier, const IDBIndexInfo& info)
+IDBError Z_IDBStore::addIndex(const IDBResourceIdentifier&, const IDBIndexInfo& info)
 {
-    LOG(IndexedDB, "Z_IDBStore::createIndex");
+    LOG(IndexedDB, "Z_IDBStore::addIndex");
 
     ASSERT(m_databaseInfo);
     auto* osInfo = m_databaseInfo->infoForExistingObjectStore(info.objectStoreIdentifier());
@@ -444,31 +452,37 @@ IDBError Z_IDBStore::createIndex(const IDBResourceIdentifier& transactionIdentif
     auto keyPathBuffer = serializeIDBKeyPath(info.keyPath());
 
     Vector<uint8_t> val;
-    writeU64(val, info.identifier());
-    writeU64(val, info.objectStoreIdentifier());
+    writeU64(val, info.identifier().toRawValue());
+    writeU64(val, info.objectStoreIdentifier().toRawValue());
     auto nameUTF8 = info.name().utf8();
     writeU32(val, nameUTF8.length());
-    val.append(nameUTF8.data(), nameUTF8.length());
+    val.append(std::span { reinterpret_cast<const uint8_t*>(nameUTF8.data()), nameUTF8.length() });
     if (keyPathBuffer) {
-        auto span = keyPathBuffer->dataAsSpanForContiguousData();
+        auto span = keyPathBuffer->span();
         writeU32(val, span.size());
-        val.append(span.data(), span.size());
+        val.append(span);
     } else {
         writeU32(val, 0);
     }
     val.append(static_cast<uint8_t>(info.unique() ? 1 : 0));
     val.append(static_cast<uint8_t>(info.multiEntry() ? 1 : 0));
 
-    auto key = makeKeyWithOSAndIndex(0x04, info.objectStoreIdentifier(), info.identifier());
-    Z_IDBStore_Put(key.data(), key.size(), val.data(), val.size());
+    auto key = makeKeyWithOSAndIndex(0x04, info.objectStoreIdentifier().toRawValue(), info.identifier().toRawValue());
+    Z_IDBStore_Put(key.span().data(), key.size(), val.span().data(), val.size());
 
     osInfo->addExistingIndex(info);
-    m_databaseInfo->setMaxIndexID(info.identifier());
+    m_databaseInfo->setMaxIndexID(info.identifier().toRawValue());
 
     return IDBError { };
 }
 
-IDBError Z_IDBStore::deleteIndex(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier)
+void Z_IDBStore::revertAddIndex(const IDBResourceIdentifier& transactionIdentifier, IDBObjectStoreIdentifier objectStoreIdentifier, IDBIndexIdentifier indexIdentifier)
+{
+    LOG(IndexedDB, "Z_IDBStore::revertAddIndex");
+    deleteIndex(transactionIdentifier, objectStoreIdentifier, indexIdentifier);
+}
+
+IDBError Z_IDBStore::deleteIndex(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, IDBIndexIdentifier indexIdentifier)
 {
     LOG(IndexedDB, "Z_IDBStore::deleteIndex");
 
@@ -481,12 +495,15 @@ IDBError Z_IDBStore::deleteIndex(const IDBResourceIdentifier&, uint64_t objectSt
     if (!idxInfo)
         return IDBError { ConstraintError };
 
-    auto metaKey = makeKeyWithOSAndIndex(0x04, objectStoreIdentifier, indexIdentifier);
-    Z_IDBStore_Delete(metaKey.data(), metaKey.size());
+    uint64_t rawOSID = objectStoreIdentifier.toRawValue();
+    uint64_t rawIdxID = indexIdentifier.toRawValue();
+
+    auto metaKey = makeKeyWithOSAndIndex(0x04, rawOSID, rawIdxID);
+    Z_IDBStore_Delete(metaKey.span().data(), metaKey.size());
 
     uint8_t scanBuf[65536];
-    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
+    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, rawOSID, rawIdxID);
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.span().data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) == 0) {
         const uint8_t* sdata = scanBuf;
         const uint8_t* send = scanBuf + sizeof(scanBuf);
         while (sdata + 4 <= send) {
@@ -507,7 +524,7 @@ IDBError Z_IDBStore::deleteIndex(const IDBResourceIdentifier&, uint64_t objectSt
     return IDBError { };
 }
 
-IDBError Z_IDBStore::renameIndex(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const String& newName)
+IDBError Z_IDBStore::renameIndex(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, IDBIndexIdentifier indexIdentifier, const String& newName)
 {
     LOG(IndexedDB, "Z_IDBStore::renameIndex");
 
@@ -524,28 +541,28 @@ IDBError Z_IDBStore::renameIndex(const IDBResourceIdentifier&, uint64_t objectSt
 
     auto keyPathBuffer = serializeIDBKeyPath(idxInfo->keyPath());
     Vector<uint8_t> val;
-    writeU64(val, idxInfo->identifier());
-    writeU64(val, idxInfo->objectStoreIdentifier());
+    writeU64(val, idxInfo->identifier().toRawValue());
+    writeU64(val, idxInfo->objectStoreIdentifier().toRawValue());
     auto nameUTF8 = newName.utf8();
     writeU32(val, nameUTF8.length());
-    val.append(nameUTF8.data(), nameUTF8.length());
+    val.append(std::span { reinterpret_cast<const uint8_t*>(nameUTF8.data()), nameUTF8.length() });
     if (keyPathBuffer) {
-        auto span = keyPathBuffer->dataAsSpanForContiguousData();
+        auto span = keyPathBuffer->span();
         writeU32(val, span.size());
-        val.append(span.data(), span.size());
+        val.append(span);
     } else {
         writeU32(val, 0);
     }
     val.append(static_cast<uint8_t>(idxInfo->unique() ? 1 : 0));
     val.append(static_cast<uint8_t>(idxInfo->multiEntry() ? 1 : 0));
 
-    auto key = makeKeyWithOSAndIndex(0x04, objectStoreIdentifier, indexIdentifier);
-    Z_IDBStore_Put(key.data(), key.size(), val.data(), val.size());
+    auto key = makeKeyWithOSAndIndex(0x04, objectStoreIdentifier.toRawValue(), indexIdentifier.toRawValue());
+    Z_IDBStore_Put(key.span().data(), key.size(), val.span().data(), val.size());
 
     return IDBError { };
 }
 
-IDBError Z_IDBStore::keyExistsInObjectStore(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const IDBKeyData& keyData, bool& keyExists)
+IDBError Z_IDBStore::keyExistsInObjectStore(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, const IDBKeyData& keyData, bool& keyExists)
 {
     LOG(IndexedDB, "Z_IDBStore::keyExistsInObjectStore");
 
@@ -553,16 +570,16 @@ IDBError Z_IDBStore::keyExistsInObjectStore(const IDBResourceIdentifier&, uint64
     if (!keyBuffer)
         return IDBError { UnknownError, "Unable to serialize key"_s };
 
-    auto span = keyBuffer->dataAsSpanForContiguousData();
+    auto span = keyBuffer->span();
     Vector<uint8_t> fullKey;
     writeU64(fullKey, m_databaseID);
     fullKey.append(0x03);
-    writeU64(fullKey, objectStoreIdentifier);
-    fullKey.append(span.data(), span.size());
+    writeU64(fullKey, objectStoreIdentifier.toRawValue());
+    fullKey.append(span);
 
     uint8_t* outPtr = nullptr;
     size_t outLen = 0;
-    if (Z_IDBStore_Get(fullKey.data(), fullKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen > 0) {
+    if (Z_IDBStore_Get(fullKey.span().data(), fullKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen > 0) {
         keyExists = true;
         Z_Free_Buffer(outPtr, outLen);
     } else {
@@ -574,13 +591,13 @@ IDBError Z_IDBStore::keyExistsInObjectStore(const IDBResourceIdentifier&, uint64
     return IDBError { };
 }
 
-IDBError Z_IDBStore::deleteRange(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const IDBKeyRangeData& range)
+IDBError Z_IDBStore::deleteRange(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, const IDBKeyRangeData& range)
 {
     LOG(IndexedDB, "Z_IDBStore::deleteRange");
 
     uint8_t scanBuf[65536];
-    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier.toRawValue());
+    if (Z_IDBStore_ScanPrefix(recPrefix.span().data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
@@ -602,9 +619,9 @@ IDBError Z_IDBStore::deleteRange(const IDBResourceIdentifier&, uint64_t objectSt
         size_t keyDataLen = klen > keyDataOffset ? klen - keyDataOffset : 0;
         if (keyDataLen > 0) {
             IDBKeyData storedKey;
-            if (deserializeIDBKeyData(keyStart + keyDataOffset, keyDataLen, storedKey)) {
+            if (deserializeIDBKeyData(std::span { keyStart + keyDataOffset, static_cast<size_t>(keyDataLen) }, storedKey)) {
                 if (range.isExactlyOneKey()) {
-                    if (storedKey.compare(range.lowerKey) == 0)
+                    if (storedKey == range.lowerKey)
                         Z_IDBStore_Delete(keyStart, klen);
                 } else if (range.containsKey(storedKey)) {
                     Z_IDBStore_Delete(keyStart, klen);
@@ -616,34 +633,34 @@ IDBError Z_IDBStore::deleteRange(const IDBResourceIdentifier&, uint64_t objectSt
     return IDBError { };
 }
 
-IDBError Z_IDBStore::addRecord(const IDBResourceIdentifier&, const IDBObjectStoreInfo& objectStoreInfo, const IDBKeyData& keyData, const IndexIDToIndexKeyMap& indexKeys, const IDBValue& value)
+IDBError Z_IDBStore::overwriteRecord(const IDBResourceIdentifier&, const IDBObjectStoreInfo& objectStoreInfo, const IDBKeyData& keyData, const IndexIDToIndexKeyMap& indexKeys, const IDBValue& value)
 {
-    LOG(IndexedDB, "Z_IDBStore::addRecord");
+    LOG(IndexedDB, "Z_IDBStore::overwriteRecord");
 
     auto keyBuffer = serializeIDBKeyData(keyData);
     if (!keyBuffer)
         return IDBError { UnknownError, "Unable to serialize key"_s };
 
-    auto keySpan = keyBuffer->dataAsSpanForContiguousData();
+    auto keySpan = keyBuffer->span();
     Vector<uint8_t> fullKey;
     writeU64(fullKey, m_databaseID);
     fullKey.append(0x03);
-    writeU64(fullKey, objectStoreInfo.identifier());
-    fullKey.append(keySpan.data(), keySpan.size());
+    writeU64(fullKey, objectStoreInfo.identifier().toRawValue());
+    fullKey.append(keySpan);
 
     Vector<uint8_t> val;
-    auto* dataPtr = value.data().data();
+    const auto* dataPtr = value.data().data();
     if (dataPtr) {
         writeU32(val, dataPtr->size());
-        val.append(dataPtr->data(), dataPtr->size());
+        if (dataPtr) val.append(dataPtr->span());
     } else {
         writeU32(val, 0);
     }
 
-    Z_IDBStore_Put(fullKey.data(), fullKey.size(), val.data(), val.size());
+    Z_IDBStore_Put(fullKey.span().data(), fullKey.size(), val.span().data(), val.size());
 
     for (auto& entry : indexKeys) {
-        uint64_t indexID = entry.key;
+        uint64_t indexID = entry.key.toRawValue();
         const IndexKey& idxKey = entry.value;
 
         auto keys = idxKey.multiEntry();
@@ -657,39 +674,39 @@ IDBError Z_IDBStore::addRecord(const IDBResourceIdentifier&, const IDBObjectStor
             auto idxKeyBuf = serializeIDBKeyData(ik);
             if (!idxKeyBuf)
                 continue;
-            auto idxKeySpan = idxKeyBuf->dataAsSpanForContiguousData();
+            auto idxKeySpan = idxKeyBuf->span();
 
             Vector<uint8_t> idxFullKey;
             writeU64(idxFullKey, m_databaseID);
             idxFullKey.append(0x05);
-            writeU64(idxFullKey, objectStoreInfo.identifier());
+            writeU64(idxFullKey, objectStoreInfo.identifier().toRawValue());
             writeU64(idxFullKey, indexID);
-            idxFullKey.append(idxKeySpan.data(), idxKeySpan.size());
+            idxFullKey.append(idxKeySpan);
 
             auto pkBuffer = serializeIDBKeyData(keyData);
             if (!pkBuffer)
                 continue;
-            auto pkSpan = pkBuffer->dataAsSpanForContiguousData();
+            auto pkSpan = pkBuffer->span();
             Vector<uint8_t> idxVal;
             writeU32(idxVal, pkSpan.size());
-            idxVal.append(pkSpan.data(), pkSpan.size());
+            idxVal.append(pkSpan);
 
-            Z_IDBStore_Put(idxFullKey.data(), idxFullKey.size(), idxVal.data(), idxVal.size());
+            Z_IDBStore_Put(idxFullKey.span().data(), idxFullKey.size(), idxVal.span().data(), idxVal.size());
         }
     }
 
     return IDBError { };
 }
 
-IDBError Z_IDBStore::getRecord(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, const IDBKeyRangeData& keyRange, IDBGetRecordDataType type, IDBGetResult& outValue)
+IDBError Z_IDBStore::getRecord(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, const IDBKeyRangeData& keyRange, IDBGetRecordDataType type, IDBGetResult& outValue)
 {
     LOG(IndexedDB, "Z_IDBStore::getRecord");
 
     auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier) : nullptr;
 
     uint8_t scanBuf[65536];
-    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier.toRawValue());
+    if (Z_IDBStore_ScanPrefix(recPrefix.span().data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
@@ -716,12 +733,12 @@ IDBError Z_IDBStore::getRecord(const IDBResourceIdentifier&, uint64_t objectStor
             continue;
 
         IDBKeyData storedKey;
-        if (!deserializeIDBKeyData(keyDataStart, keyDataLen, storedKey))
+        if (!deserializeIDBKeyData(std::span { keyDataStart, static_cast<size_t>(keyDataLen) }, storedKey))
             continue;
 
         bool keyMatches;
         if (keyRange.isExactlyOneKey())
-            keyMatches = storedKey.compare(keyRange.lowerKey) == 0;
+            keyMatches = storedKey == keyRange.lowerKey;
         else
             keyMatches = keyRange.containsKey(storedKey);
 
@@ -737,8 +754,7 @@ IDBError Z_IDBStore::getRecord(const IDBResourceIdentifier&, uint64_t objectStor
         const uint8_t* valEnd = vdata + vlen;
         uint32_t dataSize = readU32(valData, valEnd);
         if (dataSize && valData + dataSize <= valEnd) {
-            Vector<uint8_t> dataCopy(valData, dataSize);
-            auto buffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
+            auto buffer = ThreadSafeDataBuffer::copyData(std::span { valData, static_cast<size_t>(dataSize) });
             outValue = IDBGetResult(storedKey, buffer, objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
         } else {
             outValue = IDBGetResult(storedKey, ThreadSafeDataBuffer(), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
@@ -753,7 +769,7 @@ IDBError Z_IDBStore::getRecord(const IDBResourceIdentifier&, uint64_t objectStor
 static bool keyMatchesRange(const IDBKeyData& key, const IDBKeyRangeData& range)
 {
     if (range.isExactlyOneKey())
-        return key.compare(range.lowerKey) == 0;
+        return key == range.lowerKey;
     return range.containsKey(key);
 }
 
@@ -772,8 +788,8 @@ IDBError Z_IDBStore::getAllRecords(const IDBResourceIdentifier&, const IDBGetAll
 IDBError Z_IDBStore::getAllRecordsForObjectStore(const IDBGetAllRecordsData& data, IDBGetAllResult& outValue)
 {
     uint8_t scanBuf[65536];
-    auto recPrefix = makeKeyWithOS(0x03, data.objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    auto recPrefix = makeKeyWithOS(0x03, data.objectStoreIdentifier.toRawValue());
+    if (Z_IDBStore_ScanPrefix(recPrefix.span().data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
@@ -800,7 +816,7 @@ IDBError Z_IDBStore::getAllRecordsForObjectStore(const IDBGetAllRecordsData& dat
             continue;
 
         IDBKeyData storedKey;
-        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, storedKey))
+        if (!deserializeIDBKeyData(std::span { storedFullKey + keyDataOffset, static_cast<size_t>(keyDataLen) }, storedKey))
             continue;
 
         if (!keyMatchesRange(storedKey, data.keyRangeData))
@@ -813,9 +829,7 @@ IDBError Z_IDBStore::getAllRecordsForObjectStore(const IDBGetAllRecordsData& dat
             const uint8_t* valData = vdata;
             uint32_t dataSize = readU32(valData, valEnd);
             if (dataSize && valData + dataSize <= valEnd) {
-                Vector<uint8_t> dataCopy(valData, dataSize);
-                auto buffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
-                outValue.addValue(IDBValue(buffer));
+                outValue.addValue(IDBValue(ThreadSafeDataBuffer::copyData(std::span { valData, static_cast<size_t>(dataSize) })));
             }
         }
 
@@ -829,8 +843,8 @@ IDBError Z_IDBStore::getAllRecordsForObjectStore(const IDBGetAllRecordsData& dat
 IDBError Z_IDBStore::getAllRecordsForIndex(const IDBGetAllRecordsData& data, IDBGetAllResult& outValue)
 {
     uint8_t scanBuf[65536];
-    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, data.objectStoreIdentifier, data.indexIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, data.objectStoreIdentifier.toRawValue(), data.indexIdentifier->toRawValue());
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.span().data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
@@ -857,7 +871,7 @@ IDBError Z_IDBStore::getAllRecordsForIndex(const IDBGetAllRecordsData& data, IDB
             continue;
 
         IDBKeyData indexKey;
-        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, indexKey))
+        if (!deserializeIDBKeyData(std::span { storedFullKey + keyDataOffset, static_cast<size_t>(keyDataLen) }, indexKey))
             continue;
 
         if (!keyMatchesRange(indexKey, data.keyRangeData))
@@ -867,14 +881,14 @@ IDBError Z_IDBStore::getAllRecordsForIndex(const IDBGetAllRecordsData& data, IDB
         const uint8_t* valData = vdata;
         uint32_t pkSize = readU32(valData, valEnd);
         IDBKeyData primaryKey;
-        if (!pkSize || !deserializeIDBKeyData(valData, pkSize, primaryKey))
+        if (!pkSize || !deserializeIDBKeyData(std::span { valData, static_cast<size_t>(pkSize) }, primaryKey))
             continue;
 
         if (data.getAllType == IndexedDB::GetAllType::Keys) {
-            outValue.addKey(WTFMove(primaryKey));
+            outValue.addKey(WTF::move(primaryKey));
         } else {
             ThreadSafeDataBuffer valueBuffer;
-            getObjectStoreValue(data.objectStoreIdentifier, primaryKey, valueBuffer);
+            getObjectStoreValue(data.objectStoreIdentifier.toRawValue(), primaryKey, valueBuffer);
             outValue.addValue(IDBValue(valueBuffer));
         }
 
@@ -885,15 +899,15 @@ IDBError Z_IDBStore::getAllRecordsForIndex(const IDBGetAllRecordsData& data, IDB
     return IDBError { };
 }
 
-IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, IndexedDB::IndexRecordType recordType, const IDBKeyRangeData& range, IDBGetResult& outValue)
+IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, IDBIndexIdentifier indexIdentifier, IndexedDB::IndexRecordType recordType, const IDBKeyRangeData& range, IDBGetResult& outValue)
 {
     LOG(IndexedDB, "Z_IDBStore::getIndexRecord");
 
     auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier) : nullptr;
 
     uint8_t scanBuf[65536];
-    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
-    if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+    auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier.toRawValue(), indexIdentifier.toRawValue());
+    if (Z_IDBStore_ScanPrefix(idxRecPrefix.span().data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
         return IDBError { };
 
     const uint8_t* sdata = scanBuf;
@@ -920,7 +934,7 @@ IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t objec
             continue;
 
         IDBKeyData indexKey;
-        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, indexKey))
+        if (!deserializeIDBKeyData(std::span { storedFullKey + keyDataOffset, static_cast<size_t>(keyDataLen) }, indexKey))
             continue;
 
         if (!keyMatchesRange(indexKey, range))
@@ -930,7 +944,7 @@ IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t objec
         const uint8_t* valData = vdata;
         uint32_t pkSize = readU32(valData, valEnd);
         IDBKeyData primaryKey;
-        if (!pkSize || !deserializeIDBKeyData(valData, pkSize, primaryKey))
+        if (!pkSize || !deserializeIDBKeyData(std::span { valData, static_cast<size_t>(pkSize) }, primaryKey))
             continue;
 
         if (recordType == IndexedDB::IndexRecordType::Key) {
@@ -939,7 +953,7 @@ IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t objec
         }
 
         ThreadSafeDataBuffer valueBuffer;
-        getObjectStoreValue(objectStoreIdentifier, primaryKey, valueBuffer);
+        getObjectStoreValue(objectStoreIdentifier.toRawValue(), primaryKey, valueBuffer);
         outValue = IDBGetResult(indexKey, primaryKey, IDBValue(valueBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
         return IDBError { };
     }
@@ -948,7 +962,7 @@ IDBError Z_IDBStore::getIndexRecord(const IDBResourceIdentifier&, uint64_t objec
     return IDBError { };
 }
 
-IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t indexIdentifier, const IDBKeyRangeData& range, uint64_t& outCount)
+IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, std::optional<IDBIndexIdentifier> indexIdentifier, const IDBKeyRangeData& range, uint64_t& outCount)
 {
     LOG(IndexedDB, "Z_IDBStore::getCount");
 
@@ -956,8 +970,8 @@ IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStore
 
     if (indexIdentifier) {
         uint8_t scanBuf[65536];
-        auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
-        if (Z_IDBStore_ScanPrefix(idxRecPrefix.data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier.toRawValue(), indexIdentifier->toRawValue());
+        if (Z_IDBStore_ScanPrefix(idxRecPrefix.span().data(), idxRecPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
             return IDBError { };
 
         const uint8_t* sdata = scanBuf;
@@ -982,7 +996,7 @@ IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStore
                 continue;
 
             IDBKeyData storedKey;
-            if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, storedKey))
+            if (!deserializeIDBKeyData(std::span { storedFullKey + keyDataOffset, static_cast<size_t>(keyDataLen) }, storedKey))
                 continue;
 
             if (!keyMatchesRange(storedKey, range))
@@ -995,8 +1009,8 @@ IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStore
 
     if (!range.isExactlyOneKey()) {
         uint8_t scanBuf[65536];
-        auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-        if (Z_IDBStore_ScanPrefix(recPrefix.data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
+        auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier.toRawValue());
+        if (Z_IDBStore_ScanPrefix(recPrefix.span().data(), recPrefix.size(), scanBuf, sizeof(scanBuf)) != 0)
             return IDBError { };
 
         const uint8_t* sdata = scanBuf;
@@ -1019,16 +1033,16 @@ IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStore
     if (!keyBuffer)
         return IDBError { UnknownError };
 
-    auto span = keyBuffer->dataAsSpanForContiguousData();
+    auto span = keyBuffer->span();
     Vector<uint8_t> fullKey;
     writeU64(fullKey, m_databaseID);
     fullKey.append(0x03);
-    writeU64(fullKey, objectStoreIdentifier);
-    fullKey.append(span.data(), span.size());
+    writeU64(fullKey, objectStoreIdentifier.toRawValue());
+    fullKey.append(span);
 
     uint8_t* outPtr = nullptr;
     size_t outLen = 0;
-    if (Z_IDBStore_Get(fullKey.data(), fullKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen > 0) {
+    if (Z_IDBStore_Get(fullKey.span().data(), fullKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen > 0) {
         outCount = 1;
         Z_Free_Buffer(outPtr, outLen);
     } else if (outPtr) {
@@ -1038,15 +1052,15 @@ IDBError Z_IDBStore::getCount(const IDBResourceIdentifier&, uint64_t objectStore
     return IDBError { };
 }
 
-IDBError Z_IDBStore::generateKeyNumber(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t& keyNumber)
+IDBError Z_IDBStore::generateKeyNumber(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, uint64_t& keyNumber)
 {
     LOG(IndexedDB, "Z_IDBStore::generateKeyNumber");
 
-    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier);
+    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier.toRawValue());
 
     uint8_t* outPtr = nullptr;
     size_t outLen = 0;
-    if (Z_IDBStore_Get(genKey.data(), genKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen >= 8) {
+    if (Z_IDBStore_Get(genKey.span().data(), genKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen >= 8) {
         const uint8_t* data = outPtr;
         const uint8_t* end = outPtr + outLen;
         uint64_t currentValue = readU64(data, end);
@@ -1063,35 +1077,35 @@ IDBError Z_IDBStore::generateKeyNumber(const IDBResourceIdentifier&, uint64_t ob
     }
 
     auto newVal = packU64(keyNumber);
-    Z_IDBStore_Put(genKey.data(), genKey.size(), newVal.data(), newVal.size());
+    Z_IDBStore_Put(genKey.span().data(), genKey.size(), newVal.span().data(), newVal.size());
 
     return IDBError { };
 }
 
-IDBError Z_IDBStore::revertGeneratedKeyNumber(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, uint64_t keyNumber)
+IDBError Z_IDBStore::revertGeneratedKeyNumber(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, uint64_t keyNumber)
 {
     LOG(IndexedDB, "Z_IDBStore::revertGeneratedKeyNumber");
 
     if (!keyNumber)
         return IDBError { };
 
-    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier);
+    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier.toRawValue());
     auto newVal = packU64(keyNumber - 1);
-    Z_IDBStore_Put(genKey.data(), genKey.size(), newVal.data(), newVal.size());
+    Z_IDBStore_Put(genKey.span().data(), genKey.size(), newVal.span().data(), newVal.size());
 
     return IDBError { };
 }
 
-IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&, uint64_t objectStoreIdentifier, double newKeyNumber)
+IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, double newKeyNumber)
 {
     LOG(IndexedDB, "Z_IDBStore::maybeUpdateKeyGeneratorNumber");
 
-    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier);
+    auto genKey = makeKeyWithOS(0x07, objectStoreIdentifier.toRawValue());
 
     uint8_t* outPtr = nullptr;
     size_t outLen = 0;
     uint64_t currentValue = 0;
-    if (Z_IDBStore_Get(genKey.data(), genKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen >= 8) {
+    if (Z_IDBStore_Get(genKey.span().data(), genKey.size(), &outPtr, &outLen) == 0 && outPtr && outLen >= 8) {
         const uint8_t* data = outPtr;
         const uint8_t* end = outPtr + outLen;
         currentValue = readU64(data, end);
@@ -1105,14 +1119,15 @@ IDBError Z_IDBStore::maybeUpdateKeyGeneratorNumber(const IDBResourceIdentifier&,
 
     uint64_t newVal = std::min(static_cast<uint64_t>(newKeyNumber), maxGeneratorValue);
     auto val = packU64(newVal);
-    Z_IDBStore_Put(genKey.data(), genKey.size(), val.data(), val.size());
+    Z_IDBStore_Put(genKey.span().data(), genKey.size(), val.span().data(), val.size());
 
     return IDBError { };
 }
 
 
 struct ZCursorState {
-    WTF_MAKE_STRUCT_FAST_ALLOCATED;
+    WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(ZCursorState);
+    explicit ZCursorState(const IDBCursorInfo& i) : info(i) { }
     IDBCursorInfo info;
     Vector<IDBKeyData> keys;
     Vector<IDBKeyData> primaryKeys;
@@ -1128,23 +1143,22 @@ IDBError Z_IDBStore::getObjectStoreValue(uint64_t objectStoreIdentifier, const I
     if (!pkBuffer)
         return IDBError { UnknownError };
 
-    auto pkSpan = pkBuffer->dataAsSpanForContiguousData();
+    auto pkSpan = pkBuffer->span();
     Vector<uint8_t> recFullKey;
     writeU64(recFullKey, m_databaseID);
     recFullKey.append(0x03);
     writeU64(recFullKey, objectStoreIdentifier);
-    recFullKey.append(pkSpan.data(), pkSpan.size());
+    recFullKey.append(pkSpan);
 
     uint8_t* recOutPtr = nullptr;
     size_t recOutLen = 0;
     IDBError error;
-    if (Z_IDBStore_Get(recFullKey.data(), recFullKey.size(), &recOutPtr, &recOutLen) == 0 && recOutPtr && recOutLen > 0) {
+    if (Z_IDBStore_Get(recFullKey.span().data(), recFullKey.size(), &recOutPtr, &recOutLen) == 0 && recOutPtr && recOutLen > 0) {
         const uint8_t* rdata = recOutPtr;
         const uint8_t* rend = recOutPtr + recOutLen;
         uint32_t recDataSize = readU32(rdata, rend);
         if (recDataSize && rdata + recDataSize <= rend) {
-            Vector<uint8_t> dataCopy(rdata, recDataSize);
-            outBuffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
+            outBuffer = ThreadSafeDataBuffer::copyData(std::span { rdata, static_cast<size_t>(recDataSize) });
         }
         Z_Free_Buffer(recOutPtr, recOutLen);
     } else if (recOutPtr) {
@@ -1157,9 +1171,9 @@ IDBError Z_IDBStore::getObjectStoreValue(uint64_t objectStoreIdentifier, const I
 static void buildCursorRecords(Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>>& records, Vector<IDBKeyData>& keys, Vector<IDBKeyData>& primaryKeys, Vector<ThreadSafeDataBuffer>& values)
 {
     for (auto& rec : records) {
-        keys.append(WTFMove(std::get<0>(rec)));
-        primaryKeys.append(WTFMove(std::get<1>(rec)));
-        values.append(WTFMove(std::get<2>(rec)));
+        keys.append(WTF::move(std::get<0>(rec)));
+        primaryKeys.append(WTF::move(std::get<1>(rec)));
+        values.append(WTF::move(std::get<2>(rec)));
     }
 }
 
@@ -1168,7 +1182,7 @@ IDBError Z_IDBStore::scanObjectStoreRecords(uint64_t objectStoreIdentifier, cons
     uint8_t* scanBuf = nullptr;
     size_t scanBufLen = 0;
     auto recPrefix = makeKeyWithOS(0x03, objectStoreIdentifier);
-    if (Z_IDBStore_ScanPrefix_Dynamic(recPrefix.data(), recPrefix.size(), &scanBuf, &scanBufLen) != 0)
+    if (Z_IDBStore_ScanPrefix_Dynamic(recPrefix.span().data(), recPrefix.size(), &scanBuf, &scanBufLen) != 0)
         return IDBError { };
 
     if (!scanBuf || !scanBufLen)
@@ -1198,7 +1212,7 @@ IDBError Z_IDBStore::scanObjectStoreRecords(uint64_t objectStoreIdentifier, cons
             continue;
 
         IDBKeyData storedKey;
-        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, storedKey))
+        if (!deserializeIDBKeyData(std::span { storedFullKey + keyDataOffset, static_cast<size_t>(keyDataLen) }, storedKey))
             continue;
 
         if (!keyMatchesRange(storedKey, range))
@@ -1209,8 +1223,7 @@ IDBError Z_IDBStore::scanObjectStoreRecords(uint64_t objectStoreIdentifier, cons
         uint32_t dataSize = readU32(valData, valEnd);
         ThreadSafeDataBuffer valueBuffer;
         if (dataSize && valData + dataSize <= valEnd) {
-            Vector<uint8_t> dataCopy(valData, dataSize);
-            valueBuffer = ThreadSafeDataBuffer::create(WTFMove(dataCopy));
+            valueBuffer = ThreadSafeDataBuffer::copyData(std::span { valData, static_cast<size_t>(dataSize) });
         }
 
         outRecords.append({ IDBKeyData(storedKey), IDBKeyData(storedKey), valueBuffer });
@@ -1225,7 +1238,7 @@ IDBError Z_IDBStore::scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t i
     uint8_t* scanBuf = nullptr;
     size_t scanBufLen = 0;
     auto idxRecPrefix = makeKeyWithOSAndIndex(0x05, objectStoreIdentifier, indexIdentifier);
-    if (Z_IDBStore_ScanPrefix_Dynamic(idxRecPrefix.data(), idxRecPrefix.size(), &scanBuf, &scanBufLen) != 0)
+    if (Z_IDBStore_ScanPrefix_Dynamic(idxRecPrefix.span().data(), idxRecPrefix.size(), &scanBuf, &scanBufLen) != 0)
         return IDBError { };
 
     if (!scanBuf || !scanBufLen)
@@ -1255,7 +1268,7 @@ IDBError Z_IDBStore::scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t i
             continue;
 
         IDBKeyData indexKey;
-        if (!deserializeIDBKeyData(storedFullKey + keyDataOffset, keyDataLen, indexKey))
+        if (!deserializeIDBKeyData(std::span { storedFullKey + keyDataOffset, static_cast<size_t>(keyDataLen) }, indexKey))
             continue;
 
         if (!keyMatchesRange(indexKey, range))
@@ -1265,11 +1278,11 @@ IDBError Z_IDBStore::scanIndexRecords(uint64_t objectStoreIdentifier, uint64_t i
         const uint8_t* valData = vdata;
         uint32_t pkSize = readU32(valData, valEnd);
         IDBKeyData primaryKey;
-        if (!pkSize || !deserializeIDBKeyData(valData, pkSize, primaryKey))
+        if (!pkSize || !deserializeIDBKeyData(std::span { valData, static_cast<size_t>(pkSize) }, primaryKey))
             continue;
 
         ThreadSafeDataBuffer valueBuffer;
-        outRecords.append({ WTFMove(indexKey), WTFMove(primaryKey), valueBuffer });
+        outRecords.append({ WTF::move(indexKey), WTF::move(primaryKey), valueBuffer });
     }
 
     Z_Free_Buffer(scanBuf, scanBufLen);
@@ -1282,17 +1295,16 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
 
     auto* objectStoreInfo = m_databaseInfo ? m_databaseInfo->infoForExistingObjectStore(info.objectStoreIdentifier()) : nullptr;
 
-    auto cursorState = makeUnique<ZCursorState>();
-    cursorState->info = info;
+    auto cursorState = makeUnique<ZCursorState>(info);
 
     Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>> records;
     IDBError error;
     if (info.cursorSource() == IndexedDB::CursorSource::Index) {
-        error = scanIndexRecords(info.objectStoreIdentifier(), info.sourceIdentifier(), info.range(), records);
+        error = scanIndexRecords(info.objectStoreIdentifier().toRawValue(), info.sourceIndexIdentifier()->toRawValue(), info.range(), records);
         if (!error.isNull())
             return error;
     } else {
-        error = scanObjectStoreRecords(info.sourceIdentifier(), info.range(), records);
+        error = scanObjectStoreRecords(info.objectStoreIdentifier().toRawValue(), info.range(), records);
         if (!error.isNull())
             return error;
     }
@@ -1300,7 +1312,7 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
     bool isForward = info.cursorDirection() == IndexedDB::CursorDirection::Next || info.cursorDirection() == IndexedDB::CursorDirection::Nextunique;
 
     std::sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
-        return std::get<0>(a).compare(std::get<0>(b)) < 0;
+        return std::get<0>(a) < std::get<0>(b);
     });
 
     if (!isForward)
@@ -1310,7 +1322,7 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
 
     if (cursorState->keys.isEmpty()) {
         cursorState->done = true;
-        m_cursors.set(info.identifier(), WTFMove(cursorState));
+        m_cursors.set(info.identifier(), WTF::move(cursorState));
         outResult = IDBGetResult();
         return IDBError { };
     }
@@ -1324,7 +1336,7 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
             outResult = IDBGetResult(cursorState->keys[cursorState->currentIndex], cursorState->primaryKeys[cursorState->currentIndex], IDBValue(cursorState->values[cursorState->currentIndex]), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
         } else if (info.cursorSource() == IndexedDB::CursorSource::Index) {
             ThreadSafeDataBuffer valueBuffer;
-            getObjectStoreValue(info.objectStoreIdentifier(), cursorState->primaryKeys[cursorState->currentIndex], valueBuffer);
+            getObjectStoreValue(info.objectStoreIdentifier().toRawValue(), cursorState->primaryKeys[cursorState->currentIndex], valueBuffer);
             cursorState->values[cursorState->currentIndex] = valueBuffer;
             outResult = IDBGetResult(cursorState->keys[cursorState->currentIndex], cursorState->primaryKeys[cursorState->currentIndex], IDBValue(valueBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
         } else {
@@ -1332,7 +1344,7 @@ IDBError Z_IDBStore::openCursor(const IDBResourceIdentifier&, const IDBCursorInf
         }
     }
 
-    m_cursors.set(info.identifier(), WTFMove(cursorState));
+    m_cursors.set(info.identifier(), WTF::move(cursorState));
     return IDBError { };
 }
 
@@ -1373,9 +1385,9 @@ IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResour
                 while (cursor.currentIndex >= 0 && cursor.currentIndex < static_cast<int64_t>(cursor.keys.size())) {
                     bool duplicate = false;
                     if (isForward && cursor.currentIndex > 0)
-                        duplicate = cursor.keys[cursor.currentIndex].compare(cursor.keys[cursor.currentIndex - 1]) == 0;
+                        duplicate = cursor.keys[cursor.currentIndex] == cursor.keys[cursor.currentIndex - 1];
                     else if (!isForward && cursor.currentIndex + 1 < static_cast<int64_t>(cursor.keys.size()))
-                        duplicate = cursor.keys[cursor.currentIndex].compare(cursor.keys[cursor.currentIndex + 1]) == 0;
+                        duplicate = cursor.keys[cursor.currentIndex] == cursor.keys[cursor.currentIndex + 1];
 
                     if (!duplicate)
                         break;
@@ -1400,7 +1412,7 @@ IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResour
 
     if (!data.keyData.isNull()) {
         while (!cursor.done) {
-            int cmp = cursor.keys[cursor.currentIndex].compare(data.keyData);
+            auto cmp = cursor.keys[cursor.currentIndex] <=> data.keyData;
             if ((isForward && cmp >= 0) || (!isForward && cmp <= 0))
                 break;
 
@@ -1412,9 +1424,9 @@ IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResour
     if (data.primaryKeyData.isValid() && !cursor.done) {
         while (!cursor.done) {
             auto& currentKey = cursor.keys[cursor.currentIndex];
-            if (currentKey.compare(data.keyData) != 0)
+            if (currentKey != data.keyData)
                 break;
-            int cmp = cursor.primaryKeys[cursor.currentIndex].compare(data.primaryKeyData);
+            auto cmp = cursor.primaryKeys[cursor.currentIndex] <=> data.primaryKeyData;
             if ((isForward && cmp >= 0) || (!isForward && cmp <= 0))
                 break;
 
@@ -1436,7 +1448,7 @@ IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResour
             outResult = IDBGetResult(cursor.keys[cursor.currentIndex], cursor.primaryKeys[cursor.currentIndex], IDBValue(valBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
         } else if (cursor.info.cursorSource() == IndexedDB::CursorSource::Index) {
             ThreadSafeDataBuffer valueBuffer;
-            getObjectStoreValue(cursor.info.objectStoreIdentifier(), cursor.primaryKeys[cursor.currentIndex], valueBuffer);
+            getObjectStoreValue(cursor.info.objectStoreIdentifier().toRawValue(), cursor.primaryKeys[cursor.currentIndex], valueBuffer);
             cursor.values[cursor.currentIndex] = valueBuffer;
             outResult = IDBGetResult(cursor.keys[cursor.currentIndex], cursor.primaryKeys[cursor.currentIndex], IDBValue(valueBuffer), objectStoreInfo ? objectStoreInfo->keyPath() : std::nullopt);
         } else {
@@ -1447,7 +1459,64 @@ IDBError Z_IDBStore::iterateCursor(const IDBResourceIdentifier&, const IDBResour
     return IDBError { };
 }
 
-IDBObjectStoreInfo* Z_IDBStore::infoForObjectStore(uint64_t objectStoreIdentifier)
+IDBError Z_IDBStore::updateIndexRecordsWithIndexKey(const IDBResourceIdentifier&, const IDBIndexInfo& indexInfo, const IDBKeyData& key, const IndexKey& indexKey, std::optional<int64_t>)
+{
+    LOG(IndexedDB, "Z_IDBStore::updateIndexRecordsWithIndexKey");
+
+    if (indexKey.isNull())
+        return IDBError { };
+
+    auto keys = indexKey.multiEntry();
+    if (keys.isEmpty()) {
+        auto oneKey = indexKey.asOneKey();
+        if (!oneKey.isNull())
+            keys.append(oneKey);
+    }
+
+    for (auto& ik : keys) {
+        auto idxKeyBuf = serializeIDBKeyData(ik);
+        if (!idxKeyBuf)
+            continue;
+        auto idxKeySpan = idxKeyBuf->span();
+
+        Vector<uint8_t> idxFullKey;
+        writeU64(idxFullKey, m_databaseID);
+        idxFullKey.append(0x05);
+        writeU64(idxFullKey, indexInfo.objectStoreIdentifier().toRawValue());
+        writeU64(idxFullKey, indexInfo.identifier().toRawValue());
+        idxFullKey.append(idxKeySpan);
+
+        auto pkBuffer = serializeIDBKeyData(key);
+        if (!pkBuffer)
+            continue;
+        auto pkSpan = pkBuffer->span();
+        Vector<uint8_t> idxVal;
+        writeU32(idxVal, pkSpan.size());
+        idxVal.append(pkSpan);
+
+        Z_IDBStore_Put(idxFullKey.span().data(), idxFullKey.size(), idxVal.span().data(), idxVal.size());
+    }
+
+    return IDBError { };
+}
+
+void Z_IDBStore::forEachObjectStoreRecord(const IDBResourceIdentifier&, IDBObjectStoreIdentifier objectStoreIdentifier, Function<void(RecordOrError&&)>&& apply)
+{
+    LOG(IndexedDB, "Z_IDBStore::forEachObjectStoreRecord");
+
+    Vector<std::tuple<IDBKeyData, IDBKeyData, ThreadSafeDataBuffer>> records;
+    auto error = scanObjectStoreRecords(objectStoreIdentifier.toRawValue(), IDBKeyRangeData::allKeys(), records);
+    if (!error.isNull()) {
+        apply(makeUnexpected(WTF::move(error)));
+        return;
+    }
+
+    for (auto& record : records) {
+        apply(ObjectStoreRecord { std::get<0>(record), IDBValue(std::get<2>(record)), std::nullopt });
+    }
+}
+
+IDBObjectStoreInfo* Z_IDBStore::infoForObjectStore(IDBObjectStoreIdentifier objectStoreIdentifier)
 {
     ASSERT(m_databaseInfo);
     return m_databaseInfo->infoForExistingObjectStore(objectStoreIdentifier);

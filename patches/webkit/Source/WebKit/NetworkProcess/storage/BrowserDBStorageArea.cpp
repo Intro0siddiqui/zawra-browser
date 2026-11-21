@@ -28,18 +28,29 @@
 
 #include "Logging.h"
 #include <WebCore/ZawraStorageBridge.h>
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/WorkQueue.h>
 
 namespace WebKit {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(BrowserDBStorageArea);
+
 constexpr unsigned maximumSizeForValuesKeptInMemory { 1 * KB };
+
+Ref<BrowserDBStorageArea> BrowserDBStorageArea::create(unsigned quota, const WebCore::ClientOrigin& origin, Ref<WorkQueue>&& workQueue)
+{
+    return adoptRef(*new BrowserDBStorageArea(quota, origin, WTF::move(workQueue)));
+}
 
 BrowserDBStorageArea::BrowserDBStorageArea(unsigned quota, const WebCore::ClientOrigin& origin, Ref<WorkQueue>&& workQueue)
     : StorageAreaBase(quota, origin)
-    , m_queue(WTFMove(workQueue))
+    , m_queue(WTF::move(workQueue))
 {
     ASSERT(!isMainRunLoop());
     WebCore::ZSB::hashString(origin.clientOrigin.databaseIdentifier(), m_originHashHi, m_originHashLo);
 }
+
+BrowserDBStorageArea::~BrowserDBStorageArea() = default;
 
 void BrowserDBStorageArea::close()
 {
@@ -101,7 +112,7 @@ HashMap<String, String> BrowserDBStorageArea::allItems()
     return items;
 }
 
-Expected<void, StorageError> BrowserDBStorageArea::setItem(IPC::Connection::UniqueID connection, StorageAreaImplIdentifier storageAreaImplID, String&& key, String&& value, const String& urlString)
+Expected<void, StorageError> BrowserDBStorageArea::setItem(std::optional<IPC::Connection::UniqueID> connection, std::optional<StorageAreaImplIdentifier> storageAreaImplID, String&& key, String&& value, const String& urlString)
 {
     ASSERT(!isMainRunLoop());
 
@@ -114,7 +125,8 @@ Expected<void, StorageError> BrowserDBStorageArea::setItem(IPC::Connection::Uniq
 
     WebCore::ZSB::storeDataWithTTL(m_originHashHi, m_originHashLo, key, value, 0);
 
-    dispatchEvents(connection, storageAreaImplID, key, oldValue, value, urlString);
+    if (connection && storageAreaImplID)
+        dispatchEvents(*connection, *storageAreaImplID, key, oldValue, value, urlString);
     updateCacheIfNeeded(key, value);
 
     return { };
@@ -181,11 +193,10 @@ void BrowserDBStorageArea::updateCacheIfNeeded(const String& key, const String& 
     unsigned valueSize = value.sizeInBytes();
     if (itemExists) {
         oldKeySize = iter->key.sizeInBytes();
-        WTF::switchOn(iter->value, [&](unsigned valueSize) {
-            oldValueSize = valueSize;
-        }, [&](const String& value) {
-            oldValueSize = value.sizeInBytes();
-        });
+        if (auto* size = std::get_if<unsigned>(&iter->value))
+            oldValueSize = *size;
+        else if (auto* val = std::get_if<String>(&iter->value))
+            oldValueSize = val->sizeInBytes();
     }
 
     CheckedUint32 newCacheSize = *m_cacheSize;
@@ -208,11 +219,10 @@ void BrowserDBStorageArea::updateCacheIfNeeded(const String& key, const String& 
         RELEASE_LOG_ERROR(Storage, "BrowserDBStorageArea::updateCacheIfNeeded newCacheSize has overflowed: cacheSize - %u, oldKeySize - %u, oldValueSize - %u, keySize - %u, valueSize - %u, will recompute", *m_cacheSize, oldKeySize, oldValueSize, keySize, valueSize);
         newCacheSize = 0;
         for (auto& value : m_cache->values()) {
-            WTF::switchOn(value, [&](unsigned size) {
-                newCacheSize += size;
-            }, [&](const String& value) {
-                newCacheSize += value.sizeInBytes();
-            });
+            if (auto* size = std::get_if<unsigned>(&value))
+                newCacheSize += *size;
+            else if (auto* val = std::get_if<String>(&value))
+                newCacheSize += val->sizeInBytes();
         }
     }
 
@@ -230,11 +240,11 @@ bool BrowserDBStorageArea::requestSpace(const String& key, const String& value)
     if (iter == m_cache->end())
         newCacheSize += key.sizeInBytes();
     else {
-        auto oldValueSize = WTF::switchOn(iter->value, [](unsigned valueSize) {
-            return valueSize;
-        }, [](const String& value) {
-            return value.sizeInBytes();
-        });
+        unsigned oldValueSize = 0;
+        if (auto* size = std::get_if<unsigned>(&iter->value))
+            oldValueSize = *size;
+        else if (auto* val = std::get_if<String>(&iter->value))
+            oldValueSize = val->sizeInBytes();
         newCacheSize -= oldValueSize;
     }
     newCacheSize += value.sizeInBytes();

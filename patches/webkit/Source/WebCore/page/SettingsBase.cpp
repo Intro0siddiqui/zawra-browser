@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009, 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2006-2026 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,45 +26,38 @@
 #include "config.h"
 #include "SettingsBase.h"
 
-#include "AudioSession.h"
 #include "BackForwardCache.h"
-#include "BackForwardController.h"
-#include "CachedResourceLoader.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
-#include "CookieStorage.h"
 #include "DOMTimer.h"
-#if ENABLE(WEBSQL)
-#include "Database.h"
-#endif
-#include "Document.h"
+#include "DocumentResourceLoader.h"
+#include "DocumentView.h"
 #include "FontCache.h"
 #include "FrameTree.h"
-#include "HistoryItem.h"
 #include "LocalFrame.h"
 #include "LocalFrameView.h"
 #include "Page.h"
+#include "RenderObjectInlines.h"
 #include "RenderWidget.h"
-#include "RuntimeApplicationChecks.h"
 #include "Settings.h"
-#include "StorageMap.h"
-#include <limits>
+#include "SystemFontDatabase.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
 
 #if ENABLE(MEDIA_STREAM)
 #include "MockRealtimeMediaSourceCenter.h"
 #endif
-#if HAVE(AVCONTENTKEYSPECIFIER)
-#include "MediaSessionManagerCocoa.h"
-#endif
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SettingsBase);
 
 static void invalidateAfterGenericFamilyChange(Page* page)
 {
     // No need to invalidate FontCascadeCaches in worker threads, since workers
     // do not respond to changes in Settings values.
     FontCascadeCache::forCurrentThread().invalidate();
+    SystemFontDatabase::singleton().invalidate();
 
     if (page)
         page->setNeedsRecalcStyleInAllFrames();
@@ -111,7 +104,7 @@ void SettingsBase::setStandardFontFamily(const String& family, UScriptCode scrip
 {
     bool changes = fontGenericFamilies().setStandardFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 const String& SettingsBase::fixedFontFamily(UScriptCode script) const
@@ -123,7 +116,7 @@ void SettingsBase::setFixedFontFamily(const String& family, UScriptCode script)
 {
     bool changes = fontGenericFamilies().setFixedFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 const String& SettingsBase::serifFontFamily(UScriptCode script) const
@@ -135,7 +128,7 @@ void SettingsBase::setSerifFontFamily(const String& family, UScriptCode script)
 {
     bool changes = fontGenericFamilies().setSerifFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 const String& SettingsBase::sansSerifFontFamily(UScriptCode script) const
@@ -147,7 +140,7 @@ void SettingsBase::setSansSerifFontFamily(const String& family, UScriptCode scri
 {
     bool changes = fontGenericFamilies().setSansSerifFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 const String& SettingsBase::cursiveFontFamily(UScriptCode script) const
@@ -159,7 +152,7 @@ void SettingsBase::setCursiveFontFamily(const String& family, UScriptCode script
 {
     bool changes = fontGenericFamilies().setCursiveFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 const String& SettingsBase::fantasyFontFamily(UScriptCode script) const
@@ -171,7 +164,7 @@ void SettingsBase::setFantasyFontFamily(const String& family, UScriptCode script
 {
     bool changes = fontGenericFamilies().setFantasyFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 const String& SettingsBase::pictographFontFamily(UScriptCode script) const
@@ -183,7 +176,19 @@ void SettingsBase::setPictographFontFamily(const String& family, UScriptCode scr
 {
     bool changes = fontGenericFamilies().setPictographFontFamily(family, script);
     if (changes)
-        invalidateAfterGenericFamilyChange(m_page.get());
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
+}
+
+const String& SettingsBase::mathFontFamily(UScriptCode script) const
+{
+    return fontGenericFamilies().mathFontFamily(script);
+}
+
+void SettingsBase::setMathFontFamily(const String& family, UScriptCode script)
+{
+    bool changes = fontGenericFamilies().setMathFontFamily(family, script);
+    if (changes)
+        invalidateAfterGenericFamilyChange(protect(m_page).get());
 }
 
 void SettingsBase::setMinimumDOMTimerInterval(Seconds interval)
@@ -193,12 +198,12 @@ void SettingsBase::setMinimumDOMTimerInterval(Seconds interval)
     if (!m_page)
         return;
 
-    for (Frame* frame = &m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+    for (RefPtr frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        RefPtr localFrame = dynamicDowncast<LocalFrame>(frame);
         if (!localFrame)
             continue;
-        if (localFrame->document())
-            localFrame->document()->adjustMinimumDOMTimerInterval(oldTimerInterval);
+        if (RefPtr document = localFrame->document())
+            document->adjustMinimumDOMTimerInterval(oldTimerInterval);
     }
 }
 
@@ -225,7 +230,7 @@ void SettingsBase::setAllowedMediaContainerTypes(const String& types)
     for (auto type : StringView(types).split(','))
         newTypes.append(type.toString());
 
-    m_allowedMediaContainerTypes = WTFMove(newTypes);
+    m_allowedMediaContainerTypes = WTF::move(newTypes);
 }
 
 void SettingsBase::setAllowedMediaCodecTypes(const String& types)
@@ -239,7 +244,7 @@ void SettingsBase::setAllowedMediaCodecTypes(const String& types)
     for (auto type : StringView(types).split(','))
         newTypes.append(type.toString());
 
-    m_allowedMediaCodecTypes = WTFMove(newTypes);
+    m_allowedMediaCodecTypes = WTF::move(newTypes);
 }
 
 void SettingsBase::setAllowedMediaVideoCodecIDs(const String& types)
@@ -252,10 +257,10 @@ void SettingsBase::setAllowedMediaVideoCodecIDs(const String& types)
     Vector<FourCC> newTypes;
     for (auto type : StringView(types).split(',')) {
         if (auto fourCC = FourCC::fromString(type))
-            newTypes.append(WTFMove(*fourCC));
+            newTypes.append(WTF::move(*fourCC));
     }
 
-    m_allowedMediaVideoCodecIDs = WTFMove(newTypes);
+    m_allowedMediaVideoCodecIDs = WTF::move(newTypes);
 }
 
 void SettingsBase::setAllowedMediaAudioCodecIDs(const String& types)
@@ -268,10 +273,10 @@ void SettingsBase::setAllowedMediaAudioCodecIDs(const String& types)
     Vector<FourCC> newTypes;
     for (auto type : StringView(types).split(',')) {
         if (auto fourCC = FourCC::fromString(type))
-            newTypes.append(WTFMove(*fourCC));
+            newTypes.append(WTF::move(*fourCC));
     }
 
-    m_allowedMediaAudioCodecIDs = WTFMove(newTypes);
+    m_allowedMediaAudioCodecIDs = WTF::move(newTypes);
 }
 
 void SettingsBase::setAllowedMediaCaptionFormatTypes(const String& types)
@@ -284,10 +289,10 @@ void SettingsBase::setAllowedMediaCaptionFormatTypes(const String& types)
     Vector<FourCC> newTypes;
     for (auto type : StringView(types).split(',')) {
         if (auto fourCC = FourCC::fromString(type))
-            newTypes.append(WTFMove(*fourCC));
+            newTypes.append(WTF::move(*fourCC));
     }
 
-    m_allowedMediaCaptionFormatTypes = WTFMove(newTypes);
+    m_allowedMediaCaptionFormatTypes = WTF::move(newTypes);
 }
 
 void SettingsBase::resetToConsistentState()
@@ -312,7 +317,7 @@ void SettingsBase::resetToConsistentState()
 void SettingsBase::setNeedsRecalcStyleInAllFrames()
 {
     if (m_page)
-        m_page->setNeedsRecalcStyleInAllFrames();
+        protect(m_page)->setNeedsRecalcStyleInAllFrames();
 }
 
 void SettingsBase::setNeedsRelayoutAllFrames()
@@ -320,30 +325,38 @@ void SettingsBase::setNeedsRelayoutAllFrames()
     if (!m_page)
         return;
 
-    for (Frame* frame = &m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+    for (RefPtr frame = &m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        RefPtr localFrame = dynamicDowncast<LocalFrame>(frame);
         if (!localFrame)
             continue;
         if (!localFrame->ownerRenderer())
             continue;
-        localFrame->ownerRenderer()->setNeedsLayoutAndPrefWidthsRecalc();
+        localFrame->ownerRenderer()->setNeedsLayoutAndInvalidateContentLogicalWidths();
     }
+}
+
+void SettingsBase::updateDisplayEDRHeadroom()
+{
+#if HAVE(SUPPORT_HDR_DISPLAY)
+    if (m_page)
+        protect(m_page)->updateDisplayEDRHeadroom();
+#endif
 }
 
 void SettingsBase::mediaTypeOverrideChanged()
 {
-    if (!m_page)
+    RefPtr page = m_page.get();
+    if (!page)
         return;
 
-    auto* localMainFrame = dynamicDowncast<LocalFrame>(m_page->mainFrame());
+    RefPtr localMainFrame = page->localMainFrame();
     if (!localMainFrame)
         return;
 
-    auto* view = localMainFrame->view();
-    if (view)
-        view->setMediaType(AtomString(m_page->settings().mediaTypeOverride()));
+    if (RefPtr view = localMainFrame->view())
+        view->setMediaType(AtomString(page->settings().mediaTypeOverride()));
 
-    m_page->setNeedsRecalcStyleInAllFrames();
+    page->setNeedsRecalcStyleInAllFrames();
 }
 
 void SettingsBase::imagesEnabledChanged()
@@ -363,20 +376,16 @@ void SettingsBase::imageLoadingSettingsTimerFired()
     if (!m_page)
         return;
 
-    for (Frame* frame = &m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+    for (RefPtr frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        RefPtr localFrame = dynamicDowncast<LocalFrame>(frame);
         if (!localFrame)
             continue;
-        if (!localFrame->document())
+        RefPtr document = localFrame->document();
+        if (!document)
             continue;
-        localFrame->document()->cachedResourceLoader().setImagesEnabled(m_page->settings().areImagesEnabled());
-        localFrame->document()->cachedResourceLoader().setAutoLoadImages(m_page->settings().loadsImagesAutomatically());
+        protect(document->cachedResourceLoader())->setImagesEnabled(m_page->settings().areImagesEnabled());
+        protect(document->cachedResourceLoader())->setAutoLoadImages(m_page->settings().loadsImagesAutomatically());
     }
-}
-
-void SettingsBase::pluginsEnabledChanged()
-{
-    Page::refreshPlugins(false);
 }
 
 void SettingsBase::iceCandidateFilteringEnabledChanged()
@@ -385,9 +394,9 @@ void SettingsBase::iceCandidateFilteringEnabledChanged()
         return;
 
     if (m_page->settings().iceCandidateFilteringEnabled())
-        m_page->enableICECandidateFiltering();
+        protect(m_page)->enableICECandidateFiltering();
     else
-        m_page->disableICECandidateFiltering();
+        protect(m_page)->disableICECandidateFiltering();
 }
 
 #if ENABLE(TEXT_AUTOSIZING)
@@ -427,22 +436,20 @@ void SettingsBase::mockCaptureDevicesEnabledChanged()
 
 #endif
 
-#if ENABLE(LAYER_BASED_SVG_ENGINE)
-
 void SettingsBase::layerBasedSVGEngineEnabledChanged()
 {
     if (!m_page)
         return;
 
-    for (auto* frame = &m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+    for (RefPtr frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        RefPtr localFrame = dynamicDowncast<LocalFrame>(frame);
         if (!localFrame)
             continue;
-        auto* document = localFrame->document();
+        RefPtr document = localFrame->document();
         if (!document)
             continue;
 
-        auto* documentElement = document->documentElement();
+        RefPtr documentElement = document->documentElement();
         if (!documentElement)
             continue;
 
@@ -451,12 +458,10 @@ void SettingsBase::layerBasedSVGEngineEnabledChanged()
     }
 }
 
-#endif
-
 void SettingsBase::userStyleSheetLocationChanged()
 {
     if (m_page)
-        m_page->userStyleSheetLocationChanged();
+        protect(m_page)->userStyleSheetLocationChanged();
 }
 
 void SettingsBase::usesBackForwardCacheChanged()
@@ -468,58 +473,69 @@ void SettingsBase::usesBackForwardCacheChanged()
         BackForwardCache::singleton().pruneToSizeNow(0, PruningReason::None);
 }
 
-void SettingsBase::dnsPrefetchingEnabledChanged()
-{
-    if (m_page)
-        m_page->dnsPrefetchingStateChanged();
-}
-
 void SettingsBase::storageBlockingPolicyChanged()
 {
     if (m_page)
-        m_page->storageBlockingStateChanged();
+        protect(m_page)->storageBlockingStateChanged();
 }
 
 void SettingsBase::backgroundShouldExtendBeyondPageChanged()
 {
-    auto* localMainFrame = dynamicDowncast<LocalFrame>(m_page->mainFrame());
-    if (m_page && localMainFrame)
-        localMainFrame->view()->updateExtendBackgroundIfNecessary();
+    RefPtr page = m_page.get();
+    if (!page)
+        return;
+
+    RefPtr localMainFrame = page->localMainFrame();
+    if (!localMainFrame)
+        return;
+
+    if (RefPtr view = localMainFrame->view())
+        view->updateExtendBackgroundIfNecessary();
 }
 
 void SettingsBase::scrollingPerformanceTestingEnabledChanged()
 {
-    auto* localMainFrame = dynamicDowncast<LocalFrame>(m_page->mainFrame());
-    if (m_page && localMainFrame && localMainFrame->view())
-        localMainFrame->view()->setScrollingPerformanceTestingEnabled(m_page->settings().scrollingPerformanceTestingEnabled());
+    RefPtr page = m_page.get();
+    if (!page)
+        return;
+
+    RefPtr localMainFrame = page->localMainFrame();
+    if (!localMainFrame)
+        return;
+
+    if (RefPtr view = localMainFrame->view())
+        view->setScrollingPerformanceTestingEnabled(page->settings().scrollingPerformanceTestingEnabled());
 }
 
 void SettingsBase::hiddenPageDOMTimerThrottlingStateChanged()
 {
     if (m_page)
-        m_page->hiddenPageDOMTimerThrottlingStateChanged();
+        protect(m_page)->hiddenPageDOMTimerThrottlingStateChanged();
 }
 
 void SettingsBase::hiddenPageCSSAnimationSuspensionEnabledChanged()
 {
     if (m_page)
-        m_page->hiddenPageCSSAnimationSuspensionStateChanged();
+        protect(m_page)->hiddenPageCSSAnimationSuspensionStateChanged();
 }
 
 void SettingsBase::resourceUsageOverlayVisibleChanged()
 {
 #if ENABLE(RESOURCE_USAGE)
     if (m_page)
-        m_page->setResourceUsageOverlayVisible(m_page->settings().resourceUsageOverlayVisible());
+        protect(m_page)->setResourceUsageOverlayVisible(m_page->settings().resourceUsageOverlayVisible());
 #endif
 }
 
-#if HAVE(AVCONTENTKEYSPECIFIER)
-void SettingsBase::sampleBufferContentKeySessionSupportEnabledChanged()
+void SettingsBase::useSystemAppearanceChanged()
 {
     if (m_page)
-        MediaSessionManagerCocoa::setSampleBufferContentKeySessionSupportEnabled(m_page->settings().sampleBufferContentKeySessionSupportEnabled());
+        protect(m_page)->useSystemAppearanceChanged();
 }
-#endif
+
+void SettingsBase::fontFallbackPrefersPictographsChanged()
+{
+    invalidateAfterGenericFamilyChange(protect(m_page).get());
+}
 
 } // namespace WebCore

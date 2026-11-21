@@ -15,6 +15,9 @@ public:
 
     ~NetworkDataTaskZNet();
 
+    bool isCancelled() const { return m_isCancelled; }
+    void setCompleted() { m_state = State::Completed; }
+
 private:
     NetworkDataTaskZNet(NetworkSession&, NetworkDataTaskClient&, const NetworkLoadParameters&);
 

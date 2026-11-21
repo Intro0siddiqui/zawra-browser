@@ -31,7 +31,7 @@
 namespace WebKit {
 
 DatabaseUtilities::DatabaseUtilities(String&& storageFilePath)
-    : m_storageFilePath(WTFMove(storageFilePath))
+    : m_storageFilePath(WTF::move(storageFilePath))
 {
 }
 

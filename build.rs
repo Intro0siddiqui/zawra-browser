@@ -11,6 +11,9 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // Declare known custom cfg flags to rustc check-cfg
+    println!("cargo:rustc-check-cfg=cfg(wpe_available)");
+
     // ── Re-run only when relevant files change ──────────────────────────────
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=WPE_PATH");

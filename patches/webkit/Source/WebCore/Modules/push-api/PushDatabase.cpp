@@ -37,8 +37,11 @@
 #include <wtf/FileSystem.h>
 #include <wtf/RunLoop.h>
 #include <wtf/Scope.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/UniqueRef.h>
 #include <wtf/text/StringConcatenateNumbers.h>
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(PushDatabase);
 
 #if 0
 #include "SQLValue.h"
@@ -180,6 +183,16 @@ PushTopics PushTopics::isolatedCopy() &&
     return { crossThreadCopy(WTFMove(enabledTopics)), crossThreadCopy(WTFMove(ignoredTopics)) };
 }
 
+PushSubscriptionSetRecord PushSubscriptionSetRecord::isolatedCopy() const &
+{
+    return { identifier.isolatedCopy(), securityOrigin.isolatedCopy(), enabled };
+}
+
+PushSubscriptionSetRecord PushSubscriptionSetRecord::isolatedCopy() &&
+{
+    return { WTFMove(identifier).isolatedCopy(), WTFMove(securityOrigin).isolatedCopy(), enabled };
+}
+
 #if 0
 enum class ShouldDeleteAndRetry : bool { No, Yes };
 
@@ -266,35 +279,19 @@ void PushDatabase::create(const String& path, CreationHandler&& completionHandle
 {
     ASSERT(RunLoop::isMain());
 
-    auto queue = WorkQueue::create("PushDatabase I/O Thread");
+    auto queue = WorkQueue::create("PushDatabase I/O Thread"_s);
     queue->dispatch([queue, path = crossThreadCopy(path), completionHandler = WTFMove(completionHandler)]() mutable {
         UNUSED_PARAM(path);
-#if 0
-        auto database = openAndMigrateDatabase(path);
-#endif
         WorkQueue::main().dispatch([queue = WTFMove(queue), completionHandler = WTFMove(completionHandler)]() mutable {
-#if 0
-            if (!database) {
-                completionHandler(nullptr);
-                return;
-            }
-
-            completionHandler(std::unique_ptr<PushDatabase>(new PushDatabase(WTFMove(queue), makeUniqueRefFromNonNullUniquePtr(WTFMove(database)))));
-#else
-            UNUSED_PARAM(queue);
-            completionHandler(nullptr);
-#endif
+            completionHandler(adoptRef(*new PushDatabase(WTFMove(queue))));
         });
     });
 }
 
-#if 0
-PushDatabase::PushDatabase(Ref<WorkQueue>&& queue, UniqueRef<SQLiteDatabase>&& db)
+PushDatabase::PushDatabase(Ref<WorkQueue>&& queue)
     : m_queue(WTFMove(queue))
-    , m_db(WTFMove(db))
 {
 }
-#endif
 
 PushDatabase::~PushDatabase()
 {
@@ -968,6 +965,46 @@ void PushDatabase::setPushesEnabledForOrigin(const PushSubscriptionSetIdentifier
 
         scope.release();
         completeOnMainQueue(WTFMove(completionHandler), true);
+    });
+}
+
+void PushDatabase::getPushSubscriptionSetRecords(CompletionHandler<void(Vector<PushSubscriptionSetRecord>&&)>&& completionHandler)
+{
+    dispatchOnWorkQueue([completionHandler = WTFMove(completionHandler)]() mutable {
+        WorkQueue::main().dispatch([completionHandler = WTFMove(completionHandler)]() mutable {
+            completionHandler({ });
+        });
+    });
+}
+
+void PushDatabase::getAllPushSubscriptionOrigins(CompletionHandler<void(Vector<String>&&)>&& completionHandler)
+{
+    dispatchOnWorkQueue([completionHandler = WTFMove(completionHandler)]() mutable {
+        WorkQueue::main().dispatch([completionHandler = WTFMove(completionHandler)]() mutable {
+            completionHandler({ });
+        });
+    });
+}
+
+void PushDatabase::removeRecordsByBundleIdentifierAndDataStore(const String& bundleIdentifier, const std::optional<WTF::UUID>& dataStoreIdentifier, CompletionHandler<void(Vector<RemovedPushRecord>&&)>&& completionHandler)
+{
+    UNUSED_PARAM(bundleIdentifier);
+    UNUSED_PARAM(dataStoreIdentifier);
+    dispatchOnWorkQueue([completionHandler = WTFMove(completionHandler)]() mutable {
+        WorkQueue::main().dispatch([completionHandler = WTFMove(completionHandler)]() mutable {
+            completionHandler({ });
+        });
+    });
+}
+
+void PushDatabase::setPushesEnabled(const PushSubscriptionSetIdentifier& identifier, bool enabled, CompletionHandler<void(bool recordsChanged)>&& completionHandler)
+{
+    UNUSED_PARAM(identifier);
+    UNUSED_PARAM(enabled);
+    dispatchOnWorkQueue([completionHandler = WTFMove(completionHandler)]() mutable {
+        WorkQueue::main().dispatch([completionHandler = WTFMove(completionHandler)]() mutable {
+            completionHandler(false);
+        });
     });
 }
 

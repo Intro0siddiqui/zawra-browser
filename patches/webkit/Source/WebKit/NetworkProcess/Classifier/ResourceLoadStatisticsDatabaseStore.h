@@ -62,7 +62,7 @@ public:
     void clear(CompletionHandler<void()>&&) override;
     bool isEmpty() const override;
 
-    Vector<WebResourceLoadStatisticsStore::ThirdPartyData> aggregatedThirdPartyData() const override;
+    Vector<ITPThirdPartyData> aggregatedThirdPartyData() const override;
     void updateCookieBlocking(CompletionHandler<void()>&&) override;
 
     void classifyPrevalentResources() override;
@@ -142,7 +142,7 @@ private:
     void destroyStatements() final;
 
     bool hasStorageAccess(const TopFrameDomain&, const SubFrameDomain&) const;
-    Vector<WebResourceLoadStatisticsStore::ThirdPartyDataForSpecificFirstParty> getThirdPartyDataForSpecificFirstPartyDomains(unsigned, const RegistrableDomain&) const;
+    Vector<ITPThirdPartyDataForSpecificFirstParty> getThirdPartyDataForSpecificFirstPartyDomains(unsigned, const RegistrableDomain&) const;
     void openAndUpdateSchemaIfNecessary();
     String getDomainStringFromDomainID(unsigned) const final;
     ASCIILiteral getSubStatisticStatement(ASCIILiteral) const;

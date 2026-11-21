@@ -30,6 +30,9 @@
 #include "StorageAreaImplIdentifier.h"
 #include "StorageAreaMapIdentifier.h"
 #include <WebCore/ClientOrigin.h>
+#include <wtf/HashMap.h>
+#include <wtf/Identified.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
 
 namespace WebCore {
@@ -44,39 +47,40 @@ enum class StorageError : uint8_t {
     QuotaExceeded,
 };
 
-class StorageAreaBase : public CanMakeWeakPtr<StorageAreaBase> {
+class StorageAreaBase : public CanMakeWeakPtr<StorageAreaBase>, public Identified<StorageAreaIdentifier> {
+    WTF_MAKE_TZONE_ALLOCATED(StorageAreaBase);
     WTF_MAKE_NONCOPYABLE(StorageAreaBase);
-    WTF_MAKE_FAST_ALLOCATED;
 public:
     static uint64_t nextMessageIdentifier();
     virtual ~StorageAreaBase();
 
-    enum class Type : uint8_t { BrowserDB, Memory, Persistent };
+    enum class Type : uint8_t { SQLite, Memory, BrowserDB };
     virtual Type type() const = 0;
     enum class StorageType : bool { Session, Local };
     virtual StorageType storageType() const = 0;
     virtual bool isEmpty() = 0;
     virtual void clear() = 0;
 
-    StorageAreaIdentifier identifier() const { return m_identifier; }
     WebCore::ClientOrigin origin() const { return m_origin; }
     unsigned quota() const { return m_quota; }
     void addListener(IPC::Connection::UniqueID, StorageAreaMapIdentifier);
     void removeListener(IPC::Connection::UniqueID);
-    bool hasListeners() const;
+    bool hasListeners() const { return !m_listeners.isEmpty(); }
     void notifyListenersAboutClear();
 
     virtual HashMap<String, String> allItems() = 0;
-    virtual Expected<void, StorageError> setItem(IPC::Connection::UniqueID, StorageAreaImplIdentifier, String&& key, String&& value, const String& urlString) = 0;
+    virtual Expected<void, StorageError> setItem(std::optional<IPC::Connection::UniqueID>, std::optional<StorageAreaImplIdentifier>, String&& key, String&& value, const String& urlString) = 0;
     virtual Expected<void, StorageError> removeItem(IPC::Connection::UniqueID, StorageAreaImplIdentifier, const String& key, const String& urlString) = 0;
     virtual Expected<void, StorageError> clear(IPC::Connection::UniqueID, StorageAreaImplIdentifier, const String& urlString) = 0;
+
+    virtual void ref() const = 0;
+    virtual void deref() const = 0;
 
 protected:
     StorageAreaBase(unsigned quota, const WebCore::ClientOrigin&);
     void dispatchEvents(IPC::Connection::UniqueID, StorageAreaImplIdentifier, const String& key, const String& oldValue, const String& newValue, const String& urlString) const;
 
 private:
-    StorageAreaIdentifier m_identifier;
     unsigned m_quota;
     WebCore::ClientOrigin m_origin;
     HashMap<IPC::Connection::UniqueID, StorageAreaMapIdentifier> m_listeners;

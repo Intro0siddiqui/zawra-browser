@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
- * Portions Copyright (c) 2010 Motorola Mobility, Inc.  All rights reserved.
+ * Portions Copyright (c) 2010 Motorola Mobility, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,6 +30,7 @@
 #include "AuxiliaryProcessMain.h"
 #include "WebProcess.h"
 #include <glib.h>
+#include <skia/core/SkGraphics.h>
 
 #if USE(GCRYPT)
 #include <pal/crypto/gcrypt/Initialization.h>
@@ -39,6 +40,16 @@
 #include <WebCore/GStreamerCommon.h>
 #endif
 
+#if USE(SYSPROF_CAPTURE)
+#include <wtf/SystemTracing.h>
+#endif
+
+#if USE(SKIA_OPENTYPE_SVG)
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+#include <skia/modules/svg/SkSVGOpenTypeSVGDecoder.h>
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
+#endif
+
 namespace WebKit {
 using namespace WebCore;
 
@@ -46,12 +57,21 @@ class WebProcessMainWPE final : public AuxiliaryProcessMainBase<WebProcess> {
 public:
     bool platformInitialize() override
     {
+#if USE(SYSPROF_CAPTURE)
+        SysprofAnnotator::createIfNeeded("WebKit (Web)"_s);
+#endif
+
 #if USE(GCRYPT)
         PAL::GCrypt::initialize();
 #endif
 
+        SkGraphics::Init();
+#if USE(SKIA_OPENTYPE_SVG)
+        SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
+#endif
+
 #if ENABLE(DEVELOPER_MODE)
-        if (g_getenv("WEBKIT2_PAUSE_WEB_PROCESS_ON_LAUNCH"))
+        if (g_getenv("WEBKIT_PAUSE_WEB_PROCESS_ON_LAUNCH"))
             WTF::sleep(30_s);
 #endif
 
@@ -71,12 +91,12 @@ public:
 };
 
 extern "C" int Z_Init_Subsystems(const char* profile_path);
+extern "C" void hajr_trace_set_process_kind(uint8_t);
 
 int WebProcessMain(int argc, char** argv)
 {
-    fprintf(stderr, "[CRASH-V2] WebProcessMain: STARTED (pid=%d, argc=%d)\n", getpid(), argc);
+    hajr_trace_set_process_kind(2);
     Z_Init_Subsystems("/tmp/zawra-profile");
-    fprintf(stderr, "[CRASH-V2] WebProcessMain: Zawra_Init_Subsystems done\n");
     return AuxiliaryProcessMain<WebProcessMainWPE>(argc, argv);
 }
 

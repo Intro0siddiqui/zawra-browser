@@ -26,26 +26,37 @@
 #pragma once
 
 #include "StorageAreaBase.h"
+#include <variant>
+#include <wtf/RefCounted.h>
+#include <wtf/TZoneMalloc.h>
+#include <wtf/WorkQueue.h>
 
 namespace WebKit {
 
-class BrowserDBStorageArea final : public StorageAreaBase {
+class BrowserDBStorageArea final : public StorageAreaBase, public RefCounted<BrowserDBStorageArea> {
+    WTF_MAKE_TZONE_ALLOCATED(BrowserDBStorageArea);
 public:
-    BrowserDBStorageArea(unsigned quota, const WebCore::ClientOrigin&, Ref<WorkQueue>&&);
+    static Ref<BrowserDBStorageArea> create(unsigned quota, const WebCore::ClientOrigin&, Ref<WorkQueue>&&);
+    ~BrowserDBStorageArea();
 
     void close();
     void handleLowMemoryWarning();
     void commitTransactionIfNecessary();
 
-private:
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
+
     Type type() const final { return StorageAreaBase::Type::BrowserDB; };
     StorageType storageType() const final { return StorageAreaBase::StorageType::Local; };
     bool isEmpty() final;
     void clear() final;
     HashMap<String, String> allItems() final;
-    Expected<void, StorageError> setItem(IPC::Connection::UniqueID, StorageAreaImplIdentifier, String&& key, String&& value, const String& urlString) final;
+    Expected<void, StorageError> setItem(std::optional<IPC::Connection::UniqueID>, std::optional<StorageAreaImplIdentifier>, String&& key, String&& value, const String& urlString) final;
     Expected<void, StorageError> removeItem(IPC::Connection::UniqueID, StorageAreaImplIdentifier, const String& key, const String& urlString) final;
     Expected<void, StorageError> clear(IPC::Connection::UniqueID, StorageAreaImplIdentifier, const String& urlString) final;
+
+private:
+    BrowserDBStorageArea(unsigned quota, const WebCore::ClientOrigin&, Ref<WorkQueue>&&);
 
     Expected<String, StorageError> getItem(const String& key);
     Expected<String, StorageError> getItemFromDatabase(const String& key);

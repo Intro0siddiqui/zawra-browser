@@ -47,6 +47,7 @@ static bool isSandboxEnabled(const ProcessLauncher::LaunchOptions& launchOptions
 #include <sys/syscall.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #ifndef __NR_pidfd_open
@@ -59,10 +60,13 @@ void ProcessLauncher::launchProcess()
     // pidfd_getfd requires CAP_SYS_PTRACE which sandboxed children don't have,
     // so we use SCM_RIGHTS on a side-channel socket instead.
     int fdTransferFds[2] = { -1, -1 };
-    if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, fdTransferFds) == -1) {
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, fdTransferFds) == -1) {
         fprintf(stderr, "[CRASH-V2] socketpair for FD transfer failed: errno=%d\n", errno);
         fdTransferFds[0] = -1;
         fdTransferFds[1] = -1;
+    } else {
+        fcntl(fdTransferFds[0], F_SETFD, FD_CLOEXEC);
+        // fdTransferFds[1] does not have FD_CLOEXEC so it survives child execve
     }
 
     int parentPidFD = syscall(__NR_pidfd_open, getpid(), 0);
@@ -173,8 +177,8 @@ void ProcessLauncher::launchProcess()
     int serverSocket = ringPair.signal2_fd;
     int fdTransferSendFd = fdTransferFds[0];
 
-    RunLoop::main().dispatch([protectedThis = Ref { *this }, this, serverSocket, ringPair, childPidFD, fdTransferSendFd, processTypeName] {
-        IPC::Connection::Identifier identifier(serverSocket);
+    RunLoop::mainSingleton().dispatch([protectedThis = Ref { *this }, this, serverSocket, ringPair, childPidFD, fdTransferSendFd, processTypeName] {
+        IPC::Connection::Identifier identifier { UnixFileDescriptor { serverSocket, UnixFileDescriptor::Adopt } };
         // Populate Hajr ring bootstrap info so the parent's platformOpen()
         // uses the correct ring pair per-connection (not global env vars).
         identifier.hasHajrInfo = true;
@@ -187,7 +191,7 @@ void ProcessLauncher::launchProcess()
         fprintf(stderr, "[HAJR-CONN] didFinishLaunching: processType=%s pid=%d ring1=%" PRIu64 " ring2=%" PRIu64 " sig1=%d sig2=%d serverSocket=%d fdTransferSendFd=%d\n",
             processTypeName, (int)m_processID, ringPair.ring1_id, ringPair.ring2_id,
             ringPair.signal1_fd, ringPair.signal2_fd, serverSocket, fdTransferSendFd);
-        didFinishLaunchingProcess(m_processID, WTFMove(identifier));
+        didFinishLaunchingProcess(m_processID, WTF::move(identifier));
     });
     fprintf(stderr, "[CRASH-V2] launchProcess: dispatch complete, returning\n");
 }

@@ -23,17 +23,17 @@ void ZawraCacheBridge::storeRecord(const SHA1::Digest& keyHash, WallTime timesta
     Vector<uint8_t> buf;
     buf.reserveInitialCapacity(totalSize);
 
-    buf.append(reinterpret_cast<const uint8_t*>(&ts), sizeof(ts));
+    buf.append(std::span { reinterpret_cast<const uint8_t*>(&ts), sizeof(ts) });
     uint32_t hdrSz = static_cast<uint32_t>(headerSize);
-    buf.append(reinterpret_cast<const uint8_t*>(&hdrSz), sizeof(hdrSz));
+    buf.append(std::span { reinterpret_cast<const uint8_t*>(&hdrSz), sizeof(hdrSz) });
     if (headerSize)
-        buf.append(headerData, headerSize);
+        buf.append(std::span { headerData, headerSize });
     uint32_t bdySz = static_cast<uint32_t>(bodySize);
-    buf.append(reinterpret_cast<const uint8_t*>(&bdySz), sizeof(bdySz));
+    buf.append(std::span { reinterpret_cast<const uint8_t*>(&bdySz), sizeof(bdySz) });
     if (bodySize)
-        buf.append(bodyData, bodySize);
+        buf.append(std::span { bodyData, bodySize });
 
-    Z_CacheStore_Store(keyHash.data(), keyHash.size(), buf.data(), buf.size());
+    Z_CacheStore_Store(keyHash.data(), keyHash.size(), buf.span().data(), buf.size());
 }
 
 bool ZawraCacheBridge::retrieveRecord(const SHA1::Digest& keyHash, WallTime& timestamp, Vector<uint8_t>& header, Vector<uint8_t>& body)
@@ -69,7 +69,7 @@ bool ZawraCacheBridge::retrieveRecord(const SHA1::Digest& keyHash, WallTime& tim
         Z_Free_Buffer(outPtr, outLen);
         return false;
     }
-    header.append(data, hdrSz);
+    header.append(std::span { data, static_cast<size_t>(hdrSz) });
     data += hdrSz;
 
     if (data + sizeof(uint32_t) > end) {
@@ -83,7 +83,7 @@ bool ZawraCacheBridge::retrieveRecord(const SHA1::Digest& keyHash, WallTime& tim
         Z_Free_Buffer(outPtr, outLen);
         return false;
     }
-    body.append(data, bdySz);
+    body.append(std::span { data, static_cast<size_t>(bdySz) });
 
     Z_Free_Buffer(outPtr, outLen);
     return true;

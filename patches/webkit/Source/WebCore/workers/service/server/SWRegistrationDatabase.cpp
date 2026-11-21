@@ -26,8 +26,6 @@
 #include "config.h"
 #include "SWRegistrationDatabase.h"
 
-#if ENABLE(SERVICE_WORKER)
-
 #include "ContentSecurityPolicyResponseHeaders.h"
 #include "CrossOriginEmbedderPolicy.h"
 #include "Logging.h"
@@ -45,10 +43,21 @@
 #include "ServiceWorkerRegistrationKey.h"
 #include "WebCorePersistentCoders.h"
 #include "WorkerType.h"
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/persistence/PersistentCoders.h>
 #include <wtf/persistence/PersistentDecoder.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SWRegistrationDatabase);
+
+String SWRegistrationDatabase::databaseFilePath(const String& directory)
+{
+    if (directory.isEmpty())
+        return emptyString();
+
+    return FileSystem::pathByAppendingComponent(directory, makeString("ServiceWorkerRegistrations-"_s, SWRegistrationDatabase::schemaVersion, ".sqlite3"_s));
+}
 
 #if 0
 static constexpr auto scriptVersion = "V1"_s;
@@ -174,7 +183,7 @@ static MemoryCompactRobinHoodHashMap<URL, ServiceWorkerContextData::ImportedScri
             RELEASE_LOG_ERROR(ServiceWorker, "RegistrationDatabase::populateScriptSourcesFromDisk: Failed to retrieve imported script for %s from disk", pair.key.string().utf8().data());
             continue;
         }
-        importedScripts.add(pair.key, ServiceWorkerContextData::ImportedScript { WTFMove(importedScript), WTFMove(pair.value.responseURL), WTFMove(pair.value.mimeType) });
+        importedScripts.add(pair.key, ServiceWorkerContextData::ImportedScript { WTF::move(importedScript), WTF::move(pair.value.responseURL), WTF::move(pair.value.mimeType) });
     }
     return importedScripts;
 }
@@ -385,7 +394,7 @@ std::optional<Vector<ServiceWorkerContextData>> SWRegistrationDatabase::importRe
                 RELEASE_LOG_ERROR(ServiceWorker, "SWRegistrationDatabase::importRegistrations failed to decode scriptResourceMapWithoutScripts");
                 continue;
             }
-            scriptResourceMap = populateScriptSourcesFromDisk(scriptStorage(), *key, WTFMove(*scriptResourceMapWithoutScripts));
+            scriptResourceMap = populateScriptSourcesFromDisk(scriptStorage(), *key, WTF::move(*scriptResourceMapWithoutScripts));
         }
 
         auto certificateInfoDataSpan = statement->columnBlobAsSpan(12);
@@ -428,10 +437,10 @@ std::optional<Vector<ServiceWorkerContextData>> SWRegistrationDatabase::importRe
         auto workerIdentifier = ServiceWorkerIdentifier::generate();
         auto registrationIdentifier = ServiceWorkerRegistrationIdentifier::generate();
         auto serviceWorkerData = ServiceWorkerData { workerIdentifier, registrationIdentifier, scriptURL, ServiceWorkerState::Activated, *workerType };
-        auto registration = ServiceWorkerRegistrationData { WTFMove(*key), registrationIdentifier, WTFMove(scopeURL), *updateViaCache, lastUpdateCheckTime, std::nullopt, std::nullopt, WTFMove(serviceWorkerData) };
-        auto contextData = ServiceWorkerContextData { std::nullopt, WTFMove(registration), workerIdentifier, WTFMove(script), WTFMove(*certificateInfo), WTFMove(*contentSecurityPolicy), WTFMove(*coep), WTFMove(referrerPolicy), WTFMove(scriptURL), *workerType, true, LastNavigationWasAppInitiated::Yes, WTFMove(scriptResourceMap), std::nullopt, WTFMove(*navigationPreloadState) };
+        auto registration = ServiceWorkerRegistrationData { WTF::move(*key), registrationIdentifier, WTF::move(scopeURL), *updateViaCache, lastUpdateCheckTime, std::nullopt, std::nullopt, WTF::move(serviceWorkerData) };
+        auto contextData = ServiceWorkerContextData { std::nullopt, WTF::move(registration), workerIdentifier, WTF::move(script), WTF::move(*certificateInfo), WTF::move(*contentSecurityPolicy), WTF::move(*coep), WTF::move(referrerPolicy), WTF::move(scriptURL), *workerType, true, LastNavigationWasAppInitiated::Yes, WTF::move(scriptResourceMap), std::nullopt, WTF::move(*navigationPreloadState) };
 
-        registrations.append(WTFMove(contextData));
+        registrations.append(WTF::move(contextData));
     }
 
     if (result != SQLITE_DONE)
@@ -548,25 +557,69 @@ std::optional<Vector<ServiceWorkerScripts>> SWRegistrationDatabase::updateRegist
             if (importedScript)
                 importedScripts.add(scriptURL, importedScript);
         }
-        result.append(ServiceWorkerScripts { data.serviceWorkerIdentifier, WTFMove(mainScript), WTFMove(importedScripts) });
+        result.append(ServiceWorkerScripts { data.serviceWorkerIdentifier, WTF::move(mainScript), WTF::move(importedScripts) });
     }
 
     return result;
 }
 
-void SWRegistrationDatabase::clearAllRegistrations()
+std::optional<Vector<ServiceWorkerContextData>> SWRegistrationDatabase::importRegistrations(const SecurityOriginData& topOrigin)
+{
+    auto allRegistrations = importRegistrations();
+    if (!allRegistrations)
+        return std::nullopt;
+
+    Vector<ServiceWorkerContextData> filtered;
+    for (auto& contextData : *allRegistrations) {
+        if (contextData.registration.key.topOrigin() == topOrigin)
+            filtered.append(WTF::move(contextData));
+    }
+    return filtered;
+}
+
+std::optional<HashSet<ClientOrigin>> SWRegistrationDatabase::importOrigins()
+{
+    auto allRegistrations = importRegistrations();
+    if (!allRegistrations)
+        return std::nullopt;
+
+    HashSet<ClientOrigin> origins;
+    for (auto& contextData : *allRegistrations)
+        origins.add(ClientOrigin { contextData.registration.key.topOrigin(), SecurityOriginData::fromURL(contextData.registration.scopeURL) });
+    return origins;
+}
+
+std::optional<ServiceWorkerScripts> SWRegistrationDatabase::retrieveWorkerScripts(ServiceWorkerIdentifier identifier, const ServiceWorkerRegistrationKey& registrationKey, const URL& mainScriptURL, const Vector<URL>& importedScriptURLs)
+{
+    auto mainScript = scriptStorage().retrieve(registrationKey, mainScriptURL);
+    if (!mainScript) {
+        RELEASE_LOG_ERROR(ServiceWorker, "SWRegistrationDatabase::retrieveWorkerScripts failed to retrieve main script from disk for service worker %" PRIu64, identifier.toUInt64());
+        return std::nullopt;
+    }
+
+    MemoryCompactRobinHoodHashMap<URL, ScriptBuffer> importedScripts;
+    for (auto& url : importedScriptURLs) {
+        auto script = scriptStorage().retrieve(registrationKey, url);
+        if (!script) {
+            RELEASE_LOG_ERROR(ServiceWorker, "SWRegistrationDatabase::retrieveWorkerScripts failed to retrieve imported script from disk for service worker %" PRIu64, identifier.toUInt64());
+            return std::nullopt;
+        }
+        importedScripts.add(url, WTF::move(script));
+    }
+    return ServiceWorkerScripts { identifier, WTF::move(mainScript), WTF::move(importedScripts) };
+}
+
+void SWRegistrationDatabase::deleteAllFiles()
 {
     close();
-#if 0
-    SQLiteFileSystem::deleteDatabaseFile(databaseFilePath(m_directory));
-    FileSystem::deleteNonEmptyDirectory(scriptDirectoryPath(m_directory));
-    FileSystem::deleteEmptyDirectory(m_directory);
-#endif
     FileSystem::deleteNonEmptyDirectory(scriptDirectoryPath(m_directory));
     FileSystem::deleteEmptyDirectory(m_directory);
     ZSWRegBridge::deleteAll();
 }
 
-} // namespace WebCore
+void SWRegistrationDatabase::clearAllRegistrations()
+{
+    deleteAllFiles();
+}
 
-#endif
+} // namespace WebCore

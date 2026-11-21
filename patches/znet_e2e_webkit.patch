@@ -1,0 +1,380 @@
+diff --git a/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp b/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp
+index 592129a5..d44e07ee 100644
+--- a/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp
++++ b/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp
+@@ -4,33 +4,69 @@
+ #include "AuthenticationManager.h"
+ #include "NetworkLoadParameters.h"
+ #include "NetworkSession.h"
++#include <WebCore/FormData.h>
+ #include <WebCore/ResourceError.h>
+ #include <WebCore/ResourceRequest.h>
+ #include <WebCore/ResourceResponse.h>
+ #include <WebCore/SharedBuffer.h>
++#include <mutex>
++#include <span>
+ #include <wtf/ASCIICType.h>
+ #include <wtf/URL.h>
++#include <wtf/text/ASCIILiteral.h>
+ #include <wtf/text/AtomString.h>
++#include <wtf/text/MakeString.h>
+ #include <wtf/text/StringBuilder.h>
+ #include <wtf/text/StringToIntegerConversion.h>
+ 
+ extern "C" {
+ typedef void* NetEngineHandle;
+ typedef void* ConnectionHandle;
++
+ NetEngineHandle net_engine_create();
+ void net_engine_destroy(NetEngineHandle handle);
+-ConnectionHandle net_connect(NetEngineHandle engine_handle, const char* host, uint16_t port);
+-int32_t net_close(NetEngineHandle engine_handle, ConnectionHandle conn_handle);
+-int32_t net_read(NetEngineHandle engine_handle, ConnectionHandle conn_handle, uint8_t* buffer, size_t buffer_len, size_t* bytes_read);
+-int32_t net_write(NetEngineHandle engine_handle, ConnectionHandle conn_handle, const uint8_t* data, size_t data_len, size_t* bytes_written);
+-int32_t net_poll(NetEngineHandle engine_handle, int32_t timeout_ms);
++
++struct ZNetHttpStreamCallbacks {
++    void* user_data;
++    void (*on_headers)(uint16_t status, const char* reason, size_t header_count, const char* const* header_names, const char* const* header_values, void* user_data);
++    void (*on_data)(const uint8_t* chunk, size_t chunk_len, void* user_data);
++    void (*on_complete)(bool keep_alive, void* user_data);
++};
++
++int32_t net_http_execute_streaming(
++    NetEngineHandle engine_handle,
++    uint64_t session_id,
++    const char* method,
++    const char* url,
++    const char* const* header_names,
++    const char* const* header_values,
++    size_t header_count,
++    const uint8_t* body,
++    size_t body_len,
++    uint64_t body_ring_id,
++    const ZNetHttpStreamCallbacks* callbacks
++);
++
++int32_t net_cookie_jar_store(NetEngineHandle engine, uint64_t session_id, const char* url, const char* set_cookie_str);
++int32_t net_cookie_jar_get_header(NetEngineHandle engine, uint64_t session_id, const char* url, char* out_buf, size_t max_len);
++void net_cookie_jar_clear(NetEngineHandle engine, uint64_t session_id);
+ }
+ 
+ namespace WebKit {
+ using namespace WebCore;
+ 
++static NetEngineHandle sharedNetEngine()
++{
++    static NetEngineHandle s_engine = nullptr;
++    static std::once_flag s_once;
++    std::call_once(s_once, [] {
++        s_engine = net_engine_create();
++    });
++    return s_engine;
++}
++
+ NetworkDataTaskZNet::NetworkDataTaskZNet(NetworkSession& session, NetworkDataTaskClient& client, const NetworkLoadParameters& parameters)
+-    : NetworkDataTask(session, client, parameters.request, parameters.storedCredentialsPolicy, parameters.shouldClearReferrerOnHTTPSToHTTPRedirect, parameters.isMainFrameNavigation)
++    : NetworkDataTask(session, client, parameters.request, parameters.storedCredentialsPolicy, parameters.shouldClearReferrerOnHTTPSToHTTPRedirect, parameters.isMainFrameNavigation, parameters.isInitiatedByDedicatedWorker)
+ {
+ }
+ 
+@@ -57,7 +93,7 @@ void NetworkDataTaskZNet::resume()
+         return;
+ 
+     m_state = State::Running;
+-    m_thread = Thread::create("ZNetFetcher", [this, protectedThis = Ref { *this }] {
++    m_thread = Thread::create("ZNetFetcher"_s, [this, protectedThis = Ref { *this }] {
+         startFetch();
+     });
+ }
+@@ -72,160 +108,146 @@ NetworkDataTask::State NetworkDataTaskZNet::state() const
+     return m_state;
+ }
+ 
++struct StreamContext {
++    Ref<NetworkDataTaskZNet> task;
++    bool responseDispatched { false };
++    bool completedDispatched { false };
++};
++
+ void NetworkDataTaskZNet::startFetch()
+ {
+     URL url = m_firstRequest.url();
+     WTFLogAlways("NetworkDataTaskZNet::startFetch() started for %s", url.string().utf8().data());
+-    String host = url.host().toString();
+-    uint16_t port = url.port().value_or(url.protocolIs("https"_s) ? 443 : 80);
+-    String path = url.path().toString();
+-    if (path.isEmpty())
+-        path = "/"_s;
+-    if (url.hasQuery())
+-        path = path + "?"_s + url.query().toString();
+-
+-    NetEngineHandle engine = net_engine_create();
++
++    NetEngineHandle engine = sharedNetEngine();
+     if (!engine) {
+-        RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
++        RunLoop::mainSingleton().dispatch([this, protectedThis = Ref { *this }] {
+             if (m_isCancelled) return;
+-            if (client())
+-                client()->didCompleteWithError(ResourceError(String(), 0, m_firstRequest.url(), "Failed to create net engine"_s));
++            if (RefPtr client = this->client())
++                client->didCompleteWithError(ResourceError(String(), 0, m_firstRequest.url(), "Failed to initialize z-net engine"_s));
+         });
+         m_state = State::Completed;
+         return;
+     }
+ 
+-    ConnectionHandle conn = net_connect(engine, host.utf8().data(), port);
+-    if (!conn) {
+-        net_engine_destroy(engine);
+-        RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
+-            if (m_isCancelled) return;
+-            if (client())
+-                client()->didCompleteWithError(ResourceError(String(), 0, m_firstRequest.url(), "Failed to connect to host"_s));
+-        });
+-        m_state = State::Completed;
+-        return;
++    uint64_t sessionId = 0;
++    if (RefPtr session = m_session.get()) {
++        sessionId = session->sessionID().toUInt64();
+     }
+ 
+-    // 2. Format Request
+-    StringBuilder requestBuilder;
+-    requestBuilder.append(m_firstRequest.httpMethod(), " ", path, " HTTP/1.1\r\n");
+-    requestBuilder.append("Host: ", host, "\r\n");
++    // 1. Prepare Request Headers
++    Vector<CString> headerNames;
++    Vector<CString> headerValues;
++    Vector<const char*> headerNamePtrs;
++    Vector<const char*> headerValPtrs;
++
+     for (auto& header : m_firstRequest.httpHeaderFields()) {
+-        requestBuilder.append(header.key, ": ", header.value, "\r\n");
++        headerNames.append(header.key.utf8());
++        headerValues.append(header.value.utf8());
+     }
+-    if (!m_firstRequest.httpHeaderFields().contains("Connection"_s)) {
+-        requestBuilder.append("Connection: close\r\n");
++
++    headerNamePtrs.reserveInitialCapacity(headerNames.size());
++    headerValPtrs.reserveInitialCapacity(headerValues.size());
++    for (size_t i = 0; i < headerNames.size(); ++i) {
++        headerNamePtrs.append(headerNames[i].data());
++        headerValPtrs.append(headerValues[i].data());
+     }
+-    requestBuilder.append("\r\n");
+-
+-    CString requestStr = requestBuilder.toString().utf8();
+-    size_t written = 0;
+-    while (!m_isCancelled) {
+-        int32_t res = net_write(engine, conn, reinterpret_cast<const uint8_t*>(requestStr.data()), requestStr.length(), &written);
+-        if (res == -5) { // WouldBlock
+-            net_poll(engine, 10);
+-            continue;
+-        }
+-        if (res == 0)
+-            break;
+-        
+-        break;
++
++    // 2. Prepare Request Body (POST/PUT/FormData)
++    Vector<uint8_t> bodyBytes;
++    if (RefPtr body = m_firstRequest.httpBody()) {
++        if (!body->isEmpty())
++            bodyBytes = body->flatten();
+     }
+ 
+-    // 3. Read loop
+-    Vector<uint8_t> responseData;
+-    uint8_t buffer[8192];
+-    size_t headerEnd = WTF::notFound;
+-
+-    while (!m_isCancelled) {
+-        size_t bytesRead = 0;
+-        int32_t res = net_read(engine, conn, buffer, sizeof(buffer), &bytesRead);
+-        if (res == -5) { // WouldBlock
+-            net_poll(engine, 10);
+-            continue;
+-        }
+-        if (res != 0 || bytesRead == 0) {
+-            break; // EOF or error
+-        }
++    // 3. Setup Streaming Callbacks
++    auto context = makeUnique<StreamContext>(StreamContext { Ref { *this }, false, false });
+ 
+-        responseData.append(buffer, bytesRead);
++    auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {
++        auto* ctx = static_cast<StreamContext*>(userData);
++        if (!ctx || ctx->task->isCancelled())
++            return;
+ 
+-        if (headerEnd == WTF::notFound) {
+-            for (size_t i = 0; i + 3 < responseData.size(); ++i) {
+-                if (responseData[i] == '\r' && responseData[i+1] == '\n' && responseData[i+2] == '\r' && responseData[i+3] == '\n') {
+-                    headerEnd = i + 4;
+-                    break;
+-                }
+-            }
++        auto response = makeUnique<ResourceResponse>(URL { ctx->task->firstRequest().url() }, "text/html"_s, 0, "utf-8"_s);
++        response->setHTTPStatusCode(status);
++        if (reason)
++            response->setHTTPStatusText(String::fromUTF8(reason));
+ 
+-            if (headerEnd != WTF::notFound) {
+-                // Parse headers
+-                String headerStr = String::fromUTF8(responseData.data(), headerEnd);
+-                auto lines = headerStr.split("\r\n"_s);
+-                if (!lines.isEmpty()) {
+-                    auto statusLine = lines[0];
+-                    auto statusParts = statusLine.split(" "_s);
+-                    int status = 200;
+-                    String statusText = "OK"_s;
+-                    if (statusParts.size() >= 2) {
+-                        status = parseIntegerAllowingTrailingJunk<int>(statusParts[1]).value_or(200);
+-                    }
+-                    if (statusParts.size() >= 3) {
+-                        statusText = statusParts[2];
+-                    }
+-
+-                    auto response = makeUnique<ResourceResponse>(url, "text/html"_s, 0, "utf-8"_s);
+-                    response->setHTTPStatusCode(status);
+-                    response->setHTTPStatusText(AtomString(statusText));
+-
+-                    for (size_t i = 1; i < lines.size(); ++i) {
+-                        auto line = lines[i];
+-                        if (line.isEmpty()) continue;
+-                        size_t colon = line.find(':');
+-                        if (colon == WTF::notFound) continue;
+-                        auto name = line.left(colon).simplifyWhiteSpace(isASCIIWhitespace<UChar>);
+-                        auto value = line.substring(colon + 1).simplifyWhiteSpace(isASCIIWhitespace<UChar>);
+-                        response->setHTTPHeaderField(name, value);
+-                    }
+-
+-                    RunLoop::main().dispatch([this, protectedThis = Ref { *this }, rawResponse = response.release()] {
+-                        std::unique_ptr<ResourceResponse> response(rawResponse);
+-                        if (m_isCancelled) return;
+-                        didReceiveResponse(WTFMove(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, [](WebCore::PolicyAction) {});
+-                    });
+-                }
+-
+-                // If there's initial body data read, dispatch it
+-                if (responseData.size() > headerEnd) {
+-                    auto bodyData = SharedBuffer::create(responseData.data() + headerEnd, responseData.size() - headerEnd);
+-                    RunLoop::main().dispatch([this, protectedThis = Ref { *this }, bodyData = WTFMove(bodyData)] {
+-                        if (m_isCancelled) return;
+-                        if (client())
+-                            client()->didReceiveData(bodyData);
+-                    });
+-                }
++        for (size_t i = 0; i < headerCount; ++i) {
++            if (names && values && names[i] && values[i]) {
++                response->setHTTPHeaderField(String::fromUTF8(names[i]), String::fromUTF8(values[i]));
+             }
+-        } else {
+-            // Streaming body data
+-            auto bodyData = SharedBuffer::create(buffer, bytesRead);
+-            RunLoop::main().dispatch([this, protectedThis = Ref { *this }, bodyData = WTFMove(bodyData)] {
+-                if (m_isCancelled) return;
+-                if (client())
+-                    client()->didReceiveData(bodyData);
+-            });
+         }
+-    }
+-
+-    net_close(engine, conn);
+-    net_engine_destroy(engine);
+ 
+-    RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
+-        if (m_isCancelled) return;
+-        m_state = State::Completed;
+-        if (client())
+-            client()->didCompleteWithError(ResourceError());
+-    });
++        RunLoop::mainSingleton().dispatch([task = ctx->task, response = WTF::move(response)]() mutable {
++            if (task->isCancelled())
++                return;
++            task->didReceiveResponse(WTF::move(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [](WebCore::PolicyAction) {});
++        });
++        ctx->responseDispatched = true;
++    };
++
++    auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
++        auto* ctx = static_cast<StreamContext*>(userData);
++        if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
++            return;
++
++        auto bodyData = SharedBuffer::create(std::span<const uint8_t>(chunk, chunkLen));
++        RunLoop::mainSingleton().dispatch([task = ctx->task, bodyData = WTF::move(bodyData)]() mutable {
++            if (task->isCancelled())
++                return;
++            if (RefPtr client = task->client())
++                client->didReceiveData(bodyData.get());
++        });
++    };
++
++    auto onCompleteCallback = [](bool /*keepAlive*/, void* userData) {
++        auto* ctx = static_cast<StreamContext*>(userData);
++        if (!ctx || ctx->completedDispatched)
++            return;
++        ctx->completedDispatched = true;
++
++        RunLoop::mainSingleton().dispatch([task = ctx->task]() mutable {
++            if (task->isCancelled())
++                return;
++            task->setCompleted();
++            if (RefPtr client = task->client())
++                client->didCompleteWithError(ResourceError());
++        });
++    };
++
++    ZNetHttpStreamCallbacks callbacks;
++    callbacks.user_data = context.get();
++    callbacks.on_headers = onHeadersCallback;
++    callbacks.on_data = onDataCallback;
++    callbacks.on_complete = onCompleteCallback;
++
++    CString methodStr = m_firstRequest.httpMethod().utf8();
++    CString urlStr = m_firstRequest.url().string().utf8();
++
++    int32_t res = net_http_execute_streaming(
++        engine,
++        sessionId,
++        methodStr.data(),
++        urlStr.data(),
++        headerNamePtrs.isEmpty() ? nullptr : headerNamePtrs.data(),
++        headerValPtrs.isEmpty() ? nullptr : headerValPtrs.data(),
++        headerNamePtrs.size(),
++        bodyBytes.isEmpty() ? nullptr : bodyBytes.data(),
++        bodyBytes.size(),
++        0, // body_ring_id
++        &callbacks
++    );
++
++    if (res != 0 && !context->completedDispatched) {
++        RunLoop::mainSingleton().dispatch([task = context->task]() mutable {
++            if (task->isCancelled())
++                return;
++            task->setCompleted();
++            if (RefPtr client = task->client())
++                client->didCompleteWithError(ResourceError(String(), 0, task->firstRequest().url(), "Network request failed in z-net"_s));
++        });
++    }
+ }
+ 
+ } // namespace WebKit
+diff --git a/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.h b/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.h
+index 351d144a..54cc3926 100644
+--- a/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.h
++++ b/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.h
+@@ -15,6 +15,9 @@ public:
+ 
+     ~NetworkDataTaskZNet();
+ 
++    bool isCancelled() const { return m_isCancelled; }
++    void setCompleted() { m_state = State::Completed; }
++
+ private:
+     NetworkDataTaskZNet(NetworkSession&, NetworkDataTaskClient&, const NetworkLoadParameters&);
+ 

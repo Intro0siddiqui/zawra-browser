@@ -60,6 +60,7 @@ namespace WebKit {
 using namespace WebCore;
 
 struct StreamContext {
+    WTF_MAKE_FAST_ALLOCATED;
     Ref<NetworkDataTaskZNet> task;
     bool responseDispatched { false };
     bool completedDispatched { false };
@@ -217,7 +218,7 @@ void NetworkDataTaskZNet::startFetch()
             return;
 
         auto bodyData = SharedBuffer::create(std::span<const uint8_t>(chunk, chunkLen));
-        RunLoop::mainSingleton().dispatch([protectedTask = ctx->task, bodyData = WTF::move(bodyData)]() mutable {
+        RunLoop::mainSingleton().dispatch([protectedTask = Ref { ctx->task.get() }, bodyData = WTF::move(bodyData)]() mutable {
             if (protectedTask->isCancelled())
                 return;
             if (RefPtr client = protectedTask->client())
@@ -231,7 +232,7 @@ void NetworkDataTaskZNet::startFetch()
             return;
         ctx->completedDispatched = true;
 
-        RunLoop::mainSingleton().dispatch([protectedTask = ctx->task]() mutable {
+        RunLoop::mainSingleton().dispatch([protectedTask = Ref { ctx->task.get() }]() mutable {
             if (protectedTask->isCancelled())
                 return;
             protectedTask->setCompleted();
@@ -278,7 +279,7 @@ void NetworkDataTaskZNet::startFetch()
     m_streamContext.store(nullptr);
 
     if (res != 0 && !context->completedDispatched) {
-        RunLoop::mainSingleton().dispatch([protectedTask = context->task]() mutable {
+        RunLoop::mainSingleton().dispatch([protectedTask = Ref { *this }]() mutable {
             if (protectedTask->isCancelled())
                 return;
             protectedTask->setCompleted();

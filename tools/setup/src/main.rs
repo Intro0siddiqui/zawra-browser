@@ -36,11 +36,16 @@ fn copy_newer(src: &Path, dst: &Path) -> Result<u32, Box<dyn std::error::Error>>
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .ok_or("Could not resolve project root from CARGO_MANIFEST_DIR")?
-        .to_path_buf();
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    let project_root = if current_dir.join("patches/webkit").exists() {
+        current_dir
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or("Could not resolve project root from CARGO_MANIFEST_DIR")?
+            .to_path_buf()
+    };
 
     let webkit_version = "2.54.3";
     let url = format!("https://wpewebkit.org/releases/wpewebkit-{}.tar.xz", webkit_version);

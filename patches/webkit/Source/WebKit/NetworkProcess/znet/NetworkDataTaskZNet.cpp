@@ -214,6 +214,7 @@ void NetworkDataTaskZNet::startFetch()
         m_streamContext.store(context.get());
 
         auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {
+            WTFLogAlways("NetworkDataTaskZNet: onHeadersCallback status=%u, count=%zu", status, headerCount);
             auto* ctx = static_cast<StreamContext*>(userData);
             if (!ctx || ctx->task->isCancelled())
                 return;
@@ -329,6 +330,7 @@ void NetworkDataTaskZNet::startFetch()
         };
 
         auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
+            WTFLogAlways("NetworkDataTaskZNet: onDataCallback chunkLen=%zu", chunkLen);
             auto* ctx = static_cast<StreamContext*>(userData);
             if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
                 return;
@@ -345,6 +347,7 @@ void NetworkDataTaskZNet::startFetch()
         };
 
         auto onCompleteCallback = [](bool /*keepAlive*/, void* userData) {
+            WTFLogAlways("NetworkDataTaskZNet: onCompleteCallback");
             auto* ctx = static_cast<StreamContext*>(userData);
             if (!ctx || ctx->completedDispatched)
                 return;
@@ -387,6 +390,7 @@ void NetworkDataTaskZNet::startFetch()
         CString methodStr = m_firstRequest.httpMethod().utf8();
         CString urlStr = m_firstRequest.url().string().utf8();
 
+        WTFLogAlways("NetworkDataTaskZNet: calling net_http_execute_streaming for %s", urlStr.data());
         int32_t res = net_http_execute_streaming(
             engine,
             sessionId,
@@ -400,6 +404,7 @@ void NetworkDataTaskZNet::startFetch()
             0, // body_ring_id
             &callbacks
         );
+        WTFLogAlways("NetworkDataTaskZNet: net_http_execute_streaming returned %d", res);
 
         m_streamContext.store(nullptr);
 
@@ -428,13 +433,20 @@ void NetworkDataTaskZNet::startFetch()
             continue; // Loop to fetch redirected URL!
         }
 
-        if (res != 0 && !context->completedDispatched) {
-            RunLoop::mainSingleton().dispatch([protectedTask = Ref { context->task.get() }]() mutable {
+        if (!context->completedDispatched) {
+            context->completedDispatched = true;
+            RunLoop::mainSingleton().dispatch([protectedTask = Ref { context->task.get() }, res]() mutable {
                 if (protectedTask->isCancelled())
                     return;
                 protectedTask->setCompleted();
-                if (RefPtr client = protectedTask->client())
-                    client->didCompleteWithError(ResourceError(String(), 0, protectedTask->firstRequest().url(), "Network request failed in z-net"_s));
+                if (RefPtr client = protectedTask->client()) {
+                    if (res == 0) {
+                        WTFLogAlways("NetworkDataTaskZNet: dispatching didCompleteWithError(success)");
+                        client->didCompleteWithError(ResourceError());
+                    } else {
+                        client->didCompleteWithError(ResourceError(String(), 0, protectedTask->firstRequest().url(), "Network request failed in z-net"_s));
+                    }
+                }
             });
         }
 

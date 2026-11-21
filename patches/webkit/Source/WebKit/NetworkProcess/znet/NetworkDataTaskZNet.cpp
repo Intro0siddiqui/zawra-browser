@@ -60,6 +60,11 @@ namespace WebKit {
 using namespace WebCore;
 
 struct StreamContext {
+    explicit StreamContext(Ref<NetworkDataTaskZNet>&& task)
+        : task(WTFMove(task))
+    {
+    }
+
     Ref<NetworkDataTaskZNet> task;
     bool responseDispatched { false };
     bool completedDispatched { false };
@@ -170,7 +175,7 @@ void NetworkDataTaskZNet::startFetch()
     }
 
     // 3. Setup Streaming Callbacks & Flow Control Context
-    auto context = std::make_unique<StreamContext>(StreamContext { Ref { *this }, false, false, WTF::BinarySemaphore(), WebCore::PolicyAction::Ignore, false });
+    auto context = std::make_unique<StreamContext>(Ref { *this });
     m_streamContext.store(context.get());
 
     auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {

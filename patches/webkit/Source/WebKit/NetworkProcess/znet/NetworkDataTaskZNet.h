@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NetworkDataTask.h"
+#include "NetworkLoadParameters.h"
 #include <atomic>
 #include <wtf/RunLoop.h>
 #include <wtf/Threading.h>
@@ -34,6 +35,7 @@ private:
     State m_state { State::Suspended };
     RefPtr<Thread> m_thread;
     bool m_isCancelled { false };
+    PreconnectOnly m_shouldPreconnectOnly { PreconnectOnly::No };
     std::atomic<StreamContext*> m_streamContext { nullptr };
 };
 

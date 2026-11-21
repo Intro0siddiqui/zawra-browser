@@ -110,9 +110,15 @@ static gboolean hajrSourceCheck(GSource* source)
 static gboolean hajrSourceDispatch(GSource* source, GSourceFunc callback, gpointer userData)
 {
     auto* hajrSource = reinterpret_cast<HajrSource*>(source);
+    GIOCondition revents = static_cast<GIOCondition>(hajrSource->pollFd.revents);
     hajrSource->pollFd.revents = 0;
+    uint64_t val = 0;
+    ssize_t rc = read(hajrSource->pollFd.fd, &val, sizeof(val));
+    (void)rc;
     if (callback)
-        return callback(userData);
+        callback(userData);
+    if (revents & (G_IO_HUP | G_IO_ERR))
+        return G_SOURCE_REMOVE;
     return G_SOURCE_CONTINUE;
 }
 
@@ -195,17 +201,11 @@ void Connection::platformInitialize(Identifier&& identifier)
         }
     }
 
-    if (!m_hasHajrInfo && identifier.handle) {
-        m_socketDescriptor = WTF::move(identifier.handle);
-#if USE(GLIB)
-        m_socket = adoptGRef(g_socket_new_from_fd(m_socketDescriptor.value(), nullptr));
-#endif
-    }
-
     if (m_hasHajrInfo) {
         // When Hajr is enabled, identifier.handle is an eventfd (signal2_fd), not a socket.
-        // Keep m_socketDescriptor invalid.
-    } else {
+        // Explicitly release so its destructor does not close the eventfd.
+        identifier.handle.release();
+    } else if (identifier.handle) {
         m_socketDescriptor = WTF::move(identifier.handle);
 #if USE(GLIB)
         if (m_socketDescriptor.value() != -1)
@@ -704,6 +704,11 @@ void Connection::platformOpen()
 #if USE(GLIB)
         if (m_isHajrEnabled) {
             int hajrFd = hajr_ring_get_signal_fd(m_inboundRing);
+            if (hajrFd != -1) {
+                int flags = fcntl(hajrFd, F_GETFL, 0);
+                if (flags >= 0)
+                    fcntl(hajrFd, F_SETFL, flags | O_NONBLOCK);
+            }
             m_hajrSignalSource = g_source_new(&s_hajrSourceFuncs, sizeof(HajrSource));
             auto* hajrSource = reinterpret_cast<HajrSource*>(m_hajrSignalSource);
             hajrSource->pollFd.fd = hajrFd;

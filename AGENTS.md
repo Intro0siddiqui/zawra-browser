@@ -124,6 +124,28 @@ The startup sequence across `WebProcessMainWPE`, `NetworkProcessMainSoup`, `GPUP
 *   **1MB Ring Inlining vs Out-of-Line SharedMemory**: Hajr provides 1MB circular shared-memory ring buffers. Avoid WebKit's legacy 4KB out-of-line threshold by setting `maxInlineSize = (512 * 1024)` for Hajr connections. This eliminates unnecessary POSIX shared memory allocations and descriptor overhead for inline messages.
 *   **Debugging Seccomp Traps (`HAJR_SEAL_DEBUG=1`)**: When debugging auxiliary process crashes, run with `HAJR_SEAL_DEBUG=1`. This instructs Hajr's Seccomp filter to use `SECCOMP_RET_LOG` instead of `SECCOMP_RET_KILL_PROCESS`, logging the blocked syscall to `dmesg` without killing the process. Always inspect `dmesg` when processes exit unexpectedly.
 
+### 13. Kernel & Sudo Diagnostic Playbook (Process Hangs, Seccomp & EventFD)
+*   **Sudo & Root Capabilities**: Sudo access is available for kernel and process diagnosis (`sudo` commands).
+*   **Inspecting Blocked/Stalled Threads**: When any WebKit process (`WPENetworkProcess`, `WPEWebProcess`, `WPEGPUProcess`, `MiniBrowser`) appears hung, stalls, or fails to respond to IPC:
+    *   **Do NOT guess.** Read the exact kernel syscall and FD state directly:
+        ```bash
+        sudo cat /proc/<pid>/task/<tid>/syscall
+        ```
+        (Syscall `0` = `sys_read`, `232` = `epoll_wait`, `202` = `futex`).
+    *   **Check EventFD counters**:
+        ```bash
+        sudo cat /proc/<pid>/fdinfo/<fd>
+        ```
+        If `eventfd-count: 0`, the reader is blocked waiting for signals. Verify the sender's outbound signal FD matches the receiver's inbound signal FD.
+*   **Seccomp Auditing (`sudo dmesg`)**:
+    *   When running with `HAJR_SEAL_DEBUG=1`, inspect kernel messages to see any blocked or audited syscalls:
+        ```bash
+        sudo dmesg | rg -i '(audit|seccomp|hajr)'
+        ```
+*   **PID Namespace Trace Isolation**:
+    *   Auxiliary processes run in dedicated Linux user/PID namespaces where `getpid() == 1`.
+    *   Never name trace files using raw PIDs alone (e.g. `/tmp/zawra.<pid>.json`). Always qualify trace files with the process kind (`ui`, `net`, `web`, `gpu`) or host PID to prevent child processes from clobbering each other's traces.
+
 ---
 
 ## 🔍 Project Intelligence (`zw` Tool)

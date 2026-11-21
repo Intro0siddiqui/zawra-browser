@@ -48,6 +48,20 @@
 #include <wtf/Threading.h>
 #include <wtf/WTFProcess.h>
 #include <wtf/text/WTFString.h>
+
+extern "C" void hajr_trace_register_msg(uint32_t msg_name_id, const char* name);
+extern "C" void hajr_trace_ipc_msg(uint32_t msg_name_id, uint64_t dst_id, uint32_t payload_len, uint8_t direction);
+
+static inline void traceIPCMessage(IPC::MessageName messageName, uint64_t destinationID, uint32_t payloadSize, uint8_t direction)
+{
+    static std::atomic<bool> s_registered[4096];
+    auto id = static_cast<uint32_t>(messageName);
+    if (id < 4096 && !s_registered[id].load(std::memory_order_relaxed)) {
+        hajr_trace_register_msg(id, description(messageName).characters());
+        s_registered[id].store(true, std::memory_order_relaxed);
+    }
+    hajr_trace_ipc_msg(id, destinationID, payloadSize, direction);
+}
 #include <wtf/threads/BinarySemaphore.h>
 
 #if PLATFORM(COCOA)
@@ -437,6 +451,7 @@ void Connection::removeMessageReceiver(ReceiverName receiverName, uint64_t desti
 template<typename MessageReceiverType>
 void Connection::dispatchMessageReceiverMessage(MessageReceiverType& messageReceiver, UniqueRef<Decoder>&& decoder)
 {
+    traceIPCMessage(decoder->messageName(), decoder->destinationID(), static_cast<uint32_t>(decoder->span().size()), 1);
 #if ASSERT_ENABLED
     ++m_inDispatchMessageCount;
 #endif
@@ -583,6 +598,7 @@ static uintptr_t generateSignpostIdentifier()
 
 Error Connection::sendMessage(UniqueRef<Encoder>&& encoder, OptionSet<SendOption> sendOptions, std::optional<Thread::QOS> qos)
 {
+    traceIPCMessage(encoder->messageName(), encoder->destinationID(), static_cast<uint32_t>(encoder->span().size()), 0);
 #if ENABLE(CORE_IPC_SIGNPOSTS)
     // Signposts can turn in to log message IPCs when emitted from WebContent. Don't emit a signpost
     // for log messages to avoid an infinite number of signposts.
@@ -694,6 +710,7 @@ Error Connection::sendMessageImpl(UniqueRef<Encoder>&& encoder, OptionSet<SendOp
 
 Error Connection::sendMessageWithAsyncReply(UniqueRef<Encoder>&& encoder, AsyncReplyHandler replyHandler, OptionSet<SendOption> sendOptions, std::optional<Thread::QOS> qos)
 {
+    traceIPCMessage(encoder->messageName(), encoder->destinationID(), static_cast<uint32_t>(encoder->span().size()), 0);
     ASSERT(replyHandler.replyID);
     ASSERT(replyHandler.completionHandler);
     auto replyID = *replyHandler.replyID;
@@ -889,6 +906,7 @@ void Connection::popPendingSyncRequestID(SyncRequestID syncRequestID)
 
 auto Connection::sendSyncMessage(SyncRequestID syncRequestID, UniqueRef<Encoder>&& encoder, Timeout timeout, OptionSet<SendSyncOption> sendSyncOptions) -> DecoderOrError
 {
+    traceIPCMessage(encoder->messageName(), encoder->destinationID(), static_cast<uint32_t>(encoder->span().size()), 0);
     if (!isValid()) {
         didFailToSendSyncMessage(Error::InvalidConnection);
         return makeUnexpected(Error::InvalidConnection);
@@ -1285,6 +1303,7 @@ void Connection::sendOutgoingMessages()
 
 void Connection::dispatchSyncMessage(Decoder& decoder)
 {
+    traceIPCMessage(decoder.messageName(), decoder.destinationID(), static_cast<uint32_t>(decoder.span().size()), 1);
     assertIsCurrent(dispatcher());
     ASSERT(decoder.isSyncMessage());
 
@@ -1404,6 +1423,7 @@ void Connection::enqueueIncomingMessage(UniqueRef<Decoder> incomingMessage)
 
 void Connection::dispatchMessage(Decoder& decoder)
 {
+    traceIPCMessage(decoder.messageName(), decoder.destinationID(), static_cast<uint32_t>(decoder.span().size()), 1);
     assertIsCurrent(dispatcher());
     RefPtr client = m_client.get();
     RELEASE_ASSERT(client);

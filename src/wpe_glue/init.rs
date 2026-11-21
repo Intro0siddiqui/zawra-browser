@@ -33,7 +33,9 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
     if std::env::var_os("WEBKIT_INJECTED_BUNDLE_PATH").is_none() {
         let default_bundle = "/home/intro/spectre-enviroment/browser/zawra-browser/webkit/build/lib";
         if std::path::Path::new(default_bundle).is_dir() {
-            std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", default_bundle);
+            unsafe {
+                std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", default_bundle);
+            }
         }
     }
 

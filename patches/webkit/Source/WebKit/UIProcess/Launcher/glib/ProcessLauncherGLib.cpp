@@ -178,7 +178,7 @@ void ProcessLauncher::launchProcess()
     int fdTransferSendFd = fdTransferFds[0];
 
     RunLoop::mainSingleton().dispatch([protectedThis = Ref { *this }, this, serverSocket, ringPair, childPidFD, fdTransferSendFd, processTypeName] {
-        IPC::Connection::Identifier identifier { UnixFileDescriptor { serverSocket, UnixFileDescriptor::Adopt } };
+        IPC::Connection::Identifier identifier { UnixFileDescriptor { serverSocket, UnixFileDescriptor::Borrow } };
         // Populate Hajr ring bootstrap info so the parent's platformOpen()
         // uses the correct ring pair per-connection (not global env vars).
         identifier.hasHajrInfo = true;

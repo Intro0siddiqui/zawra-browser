@@ -7,6 +7,8 @@
 #include <WebCore/CookieJar.h>
 #include <WebCore/FormData.h>
 #include <WebCore/HTTPHeaderNames.h>
+#include <WebCore/HTTPParsers.h>
+#include <WebCore/MIMETypeRegistry.h>
 #include <WebCore/NetworkStorageSession.h>
 #include <WebCore/ResourceError.h>
 #include <WebCore/ResourceRequest.h>
@@ -96,6 +98,7 @@ static NetEngineHandle sharedNetEngine()
 
 NetworkDataTaskZNet::NetworkDataTaskZNet(NetworkSession& session, NetworkDataTaskClient& client, const NetworkLoadParameters& parameters)
     : NetworkDataTask(session, client, parameters.request, parameters.storedCredentialsPolicy, parameters.shouldClearReferrerOnHTTPSToHTTPRedirect, parameters.isMainFrameNavigation, parameters.isInitiatedByDedicatedWorker)
+    , m_shouldPreconnectOnly(parameters.shouldPreconnectOnly)
 {
 }
 
@@ -106,6 +109,7 @@ NetworkDataTaskZNet::~NetworkDataTaskZNet()
 
 void NetworkDataTaskZNet::cancel()
 {
+    WTFLogAlways("NetworkDataTaskZNet::cancel() called for %s", m_firstRequest.url().string().utf8().data());
     m_isCancelled = true;
     m_state = State::Canceling;
     if (auto* ctx = m_streamContext.load()) {
@@ -120,9 +124,22 @@ void NetworkDataTaskZNet::cancel()
 
 void NetworkDataTaskZNet::resume()
 {
-    WTFLogAlways("NetworkDataTaskZNet::resume() called for %s", m_firstRequest.url().string().utf8().data());
+    WTFLogAlways("NetworkDataTaskZNet::resume() called for %s, preconnectOnly=%d",
+        m_firstRequest.url().string().utf8().data(), m_shouldPreconnectOnly == PreconnectOnly::Yes);
     if (m_state != State::Suspended)
         return;
+
+    if (m_shouldPreconnectOnly == PreconnectOnly::Yes) {
+        WTFLogAlways("NetworkDataTaskZNet: Handling PreconnectOnly task for %s", m_firstRequest.url().string().utf8().data());
+        m_state = State::Completed;
+        RunLoop::mainSingleton().dispatch([this, protectedThis = Ref { *this }] {
+            if (m_isCancelled)
+                return;
+            if (RefPtr client = this->client())
+                client->didCompleteWithError(ResourceError());
+        });
+        return;
+    }
 
     // Cookie synchronization: query WebKit's NetworkStorageSession before launch
     if (auto* session = networkSession()) {
@@ -219,16 +236,43 @@ void NetworkDataTaskZNet::startFetch()
             if (!ctx || ctx->task->isCancelled())
                 return;
 
-            auto response = WTF::makeUnique<ResourceResponse>(URL { ctx->task->firstRequest().url() }, "text/html"_s, 0, "utf-8"_s);
+            auto response = WTF::makeUnique<ResourceResponse>();
+            response->setURL(URL { ctx->task->firstRequest().url() });
             response->setHTTPStatusCode(status);
             if (reason)
-                response->setHTTPStatusText(String::fromUTF8(reason));
+                response->setHTTPStatusText(String::fromLatin1(reason));
+            response->setHTTPVersion("HTTP/1.1"_s);
+
+            long long expectedLength = -1;
+            String contentType;
 
             for (size_t i = 0; i < headerCount; ++i) {
                 if (names && values && names[i] && values[i]) {
-                    response->addHTTPHeaderField(String::fromUTF8(names[i]), String::fromUTF8(values[i]));
+                    String key = String::fromLatin1(names[i]);
+                    String val = String::fromLatin1(values[i]);
+                    if (equalLettersIgnoringASCIICase(key, "content-type"_s))
+                        contentType = val;
+                    else if (equalLettersIgnoringASCIICase(key, "content-length"_s)) {
+                        if (auto len = parseContentLength(val))
+                            expectedLength = static_cast<long long>(*len);
+                    }
+                    response->addHTTPHeaderField(WTF::move(key), WTF::move(val));
                 }
             }
+
+            if (!contentType.isEmpty()) {
+                response->setMimeType(extractMIMETypeFromMediaType(contentType));
+                response->setTextEncodingName(extractCharsetFromMediaType(contentType).toString());
+            }
+            if (response->mimeType().isEmpty()) {
+                response->setMimeType(MIMETypeRegistry::mimeTypeForPath(response->url().path()));
+                if (response->mimeType().isEmpty())
+                    response->setMimeType("text/html"_s);
+            }
+            response->setExpectedContentLength(expectedLength);
+            WTFLogAlways("NetworkDataTaskZNet: onHeadersCallback url=%s mimeType=%s textEncoding=%s expectedLength=%lld httpVersion=%s",
+                response->url().string().utf8().data(), response->mimeType().utf8().data(), response->textEncodingName().utf8().data(),
+                response->expectedContentLength(), response->httpVersion().utf8().data());
 
             String location = response->httpHeaderField(HTTPHeaderName::Location);
             bool isRedirect = (status >= 300 && status < 400 && !location.isEmpty());
@@ -318,6 +362,7 @@ void NetworkDataTaskZNet::startFetch()
 
                 // Normal (non-redirect) response: dispatch to WebKit's didReceiveResponse
                 ctx->task->didReceiveResponse(WTF::move(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [ctx](WebCore::PolicyAction action) {
+                    WTFLogAlways("NetworkDataTaskZNet: didReceiveResponse callback action=%u", static_cast<unsigned>(action));
                     ctx->policyAction.store(action);
                     ctx->policyDispatched.store(true);
                     ctx->policySemaphore.signal();
@@ -371,12 +416,16 @@ void NetworkDataTaskZNet::startFetch()
             auto* ctx = static_cast<StreamContext*>(userData);
             if (!ctx)
                 return true;
-            if (ctx->task->isCancelled())
+            if (ctx->task->isCancelled()) {
+                WTFLogAlways("NetworkDataTaskZNet: isCancelled true: task->isCancelled()");
                 return true;
+            }
             if (ctx->isRedirected)
                 return true; // Stop reading 3xx body early and proceed to fetch the redirect target
-            if (ctx->policyDispatched.load() && ctx->policyAction.load() != WebCore::PolicyAction::Use)
+            if (ctx->policyDispatched.load() && ctx->policyAction.load() != WebCore::PolicyAction::Use) {
+                WTFLogAlways("NetworkDataTaskZNet: isCancelled true: policyAction=%u", static_cast<unsigned>(ctx->policyAction.load()));
                 return true;
+            }
             return false;
         };
 

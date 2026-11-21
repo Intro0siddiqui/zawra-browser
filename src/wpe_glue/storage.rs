@@ -63,8 +63,16 @@ pub struct ZawraStorageStats {
     pub disk_usage_mb:      u64,
 }
 
-unsafe extern "C" {
-    fn hajr_trace_get_process_kind() -> u8;
+fn hajr_trace_get_process_kind() -> u8 {
+    unsafe {
+        let sym = libc::dlsym(libc::RTLD_DEFAULT, b"hajr_trace_get_process_kind\0".as_ptr() as *const _);
+        if !sym.is_null() {
+            let func: extern "C" fn() -> u8 = std::mem::transmute(sym);
+            func()
+        } else {
+            0
+        }
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -92,7 +100,7 @@ pub unsafe extern "C" fn Z_Storage_Init(profile_path: *const c_char) -> i32 {
         return NS_OK;
     }
 
-    let process_kind = unsafe { hajr_trace_get_process_kind() };
+    let process_kind = hajr_trace_get_process_kind();
     match process_kind {
         // WebProcess (2) and GPUProcess (4): Aux processes do not own local DB files
         2 | 4 => {

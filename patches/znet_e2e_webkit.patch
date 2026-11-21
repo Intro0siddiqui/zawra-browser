@@ -1,16 +1,21 @@
 diff --git a/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp b/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp
-index 592129a5..5783d89e 100644
+index 592129a5..e262874a 100644
 --- a/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp
 +++ b/patches/webkit/Source/WebKit/NetworkProcess/znet/NetworkDataTaskZNet.cpp
-@@ -4,33 +4,82 @@
+@@ -4,33 +4,92 @@
  #include "AuthenticationManager.h"
  #include "NetworkLoadParameters.h"
  #include "NetworkSession.h"
 +#include <WebCore/FormData.h>
++#include <WebCore/HTTPHeaderNames.h>
++#include <WebCore/NetworkStorageSession.h>
  #include <WebCore/ResourceError.h>
  #include <WebCore/ResourceRequest.h>
  #include <WebCore/ResourceResponse.h>
++#include <WebCore/SameSiteInfo.h>
++#include <WebCore/SecurityOrigin.h>
  #include <WebCore/SharedBuffer.h>
++#include <WebCore/ShouldRelaxThirdPartyCookieBlocking.h>
 +#include <atomic>
 +#include <memory>
 +#include <mutex>
@@ -73,6 +78,11 @@ index 592129a5..5783d89e 100644
 +    WTF::BinarySemaphore policySemaphore;
 +    std::atomic<WebCore::PolicyAction> policyAction { WebCore::PolicyAction::Ignore };
 +    std::atomic<bool> policyDispatched { false };
++
++    // Redirection tracking
++    bool isRedirected { false };
++    ResourceRequest redirectRequest;
++    bool redirectRejected { false };
 +};
 +
 +static NetEngineHandle sharedNetEngine()
@@ -91,7 +101,7 @@ index 592129a5..5783d89e 100644
  {
  }
  
-@@ -43,6 +92,9 @@ void NetworkDataTaskZNet::cancel()
+@@ -43,6 +102,9 @@ void NetworkDataTaskZNet::cancel()
  {
      m_isCancelled = true;
      m_state = State::Canceling;
@@ -101,19 +111,42 @@ index 592129a5..5783d89e 100644
      if (m_thread) {
          m_thread->waitForCompletion();
          m_thread = nullptr;
-@@ -57,7 +109,7 @@ void NetworkDataTaskZNet::resume()
+@@ -56,8 +118,28 @@ void NetworkDataTaskZNet::resume()
+     if (m_state != State::Suspended)
          return;
  
++    // Cookie synchronization: query WebKit's NetworkStorageSession before launch
++    if (auto* session = networkSession()) {
++        if (auto* storageSession = session->networkStorageSession()) {
++            auto [cookieHeader, secure] = storageSession->cookieRequestHeaderFieldValue(
++                m_firstRequest.firstPartyForCookies(),
++                SameSiteInfo::create(m_firstRequest),
++                m_firstRequest.url(),
++                std::nullopt,
++                std::nullopt,
++                m_firstRequest.url().protocolIs("https"_s) ? IncludeSecureCookies::Yes : IncludeSecureCookies::No,
++                ApplyTrackingPrevention::Yes,
++                ShouldRelaxThirdPartyCookieBlocking::No,
++                IsKnownCrossSiteTracker::No
++            );
++            if (!cookieHeader.isEmpty()) {
++                m_firstRequest.setHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeader);
++            }
++        }
++    }
++
      m_state = State::Running;
 -    m_thread = Thread::create("ZNetFetcher", [this, protectedThis = Ref { *this }] {
 +    m_thread = Thread::create("ZNetFetcher"_s, [this, protectedThis = Ref { *this }] {
          startFetch();
      });
  }
-@@ -76,156 +128,164 @@ void NetworkDataTaskZNet::startFetch()
+@@ -74,158 +156,294 @@ NetworkDataTask::State NetworkDataTaskZNet::state() const
+ 
+ void NetworkDataTaskZNet::startFetch()
  {
-     URL url = m_firstRequest.url();
-     WTFLogAlways("NetworkDataTaskZNet::startFetch() started for %s", url.string().utf8().data());
+-    URL url = m_firstRequest.url();
+-    WTFLogAlways("NetworkDataTaskZNet::startFetch() started for %s", url.string().utf8().data());
 -    String host = url.host().toString();
 -    uint16_t port = url.port().value_or(url.protocolIs("https"_s) ? 443 : 80);
 -    String path = url.path().toString();
@@ -123,7 +156,6 @@ index 592129a5..5783d89e 100644
 -        path = path + "?"_s + url.query().toString();
 -
 -    NetEngineHandle engine = net_engine_create();
-+
 +    NetEngineHandle engine = sharedNetEngine();
      if (!engine) {
 -        RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
@@ -150,33 +182,19 @@ index 592129a5..5783d89e 100644
 -        return;
 -    }
 +    uint64_t sessionId = 0;
-+    if (auto* session = m_session.get())
++    if (auto* session = networkSession())
 +        sessionId = session->sessionID().toUInt64();
-+
-+    // 1. Prepare Request Headers
-+    Vector<CString> headerNames;
-+    Vector<CString> headerValues;
-+    Vector<const char*> headerNamePtrs;
-+    Vector<const char*> headerValPtrs;
  
 -    // 2. Format Request
 -    StringBuilder requestBuilder;
 -    requestBuilder.append(m_firstRequest.httpMethod(), " ", path, " HTTP/1.1\r\n");
 -    requestBuilder.append("Host: ", host, "\r\n");
-     for (auto& header : m_firstRequest.httpHeaderFields()) {
+-    for (auto& header : m_firstRequest.httpHeaderFields()) {
 -        requestBuilder.append(header.key, ": ", header.value, "\r\n");
-+        headerNames.append(header.key.utf8());
-+        headerValues.append(header.value.utf8());
-     }
+-    }
 -    if (!m_firstRequest.httpHeaderFields().contains("Connection"_s)) {
 -        requestBuilder.append("Connection: close\r\n");
-+
-+    headerNamePtrs.reserveInitialCapacity(headerNames.size());
-+    headerValPtrs.reserveInitialCapacity(headerValues.size());
-+    for (size_t i = 0; i < headerNames.size(); ++i) {
-+        headerNamePtrs.append(headerNames[i].data());
-+        headerValPtrs.append(headerValues[i].data());
-     }
+-    }
 -    requestBuilder.append("\r\n");
 -
 -    CString requestStr = requestBuilder.toString().utf8();
@@ -186,18 +204,28 @@ index 592129a5..5783d89e 100644
 -        if (res == -5) { // WouldBlock
 -            net_poll(engine, 10);
 -            continue;
--        }
++    unsigned redirectCount = 0;
++    const unsigned maxRedirects = 20;
++
++    while (!m_isCancelled && m_state != State::Canceling) {
++        URL url = m_firstRequest.url();
++        WTFLogAlways("NetworkDataTaskZNet::startFetch() fetching %s", url.string().utf8().data());
++
++        // 1. Prepare Request Headers
++        Vector<CString> headerNames;
++        Vector<CString> headerValues;
++        Vector<const char*> headerNamePtrs;
++        Vector<const char*> headerValPtrs;
++
++        for (auto& header : m_firstRequest.httpHeaderFields()) {
++            headerNames.append(header.key.utf8());
++            headerValues.append(header.value.utf8());
+         }
 -        if (res == 0)
 -            break;
 -        
 -        break;
-+
-+    // 2. Prepare Request Body (POST/PUT/FormData)
-+    Vector<uint8_t> bodyBytes;
-+    if (RefPtr body = m_firstRequest.httpBody()) {
-+        if (!body->isEmpty())
-+            bodyBytes = body->flatten();
-     }
+-    }
  
 -    // 3. Read loop
 -    Vector<uint8_t> responseData;
@@ -210,36 +238,57 @@ index 592129a5..5783d89e 100644
 -        if (res == -5) { // WouldBlock
 -            net_poll(engine, 10);
 -            continue;
--        }
++        headerNamePtrs.reserveInitialCapacity(headerNames.size());
++        headerValPtrs.reserveInitialCapacity(headerValues.size());
++        for (size_t i = 0; i < headerNames.size(); ++i) {
++            headerNamePtrs.append(headerNames[i].data());
++            headerValPtrs.append(headerValues[i].data());
+         }
 -        if (res != 0 || bytesRead == 0) {
 -            break; // EOF or error
--        }
-+    // 3. Setup Streaming Callbacks & Flow Control Context
-+    auto context = WTF::makeUnique<StreamContext>(StreamContext { Ref { *this }, false, false, WTF::BinarySemaphore(), WebCore::PolicyAction::Ignore, false });
-+    m_streamContext.store(context.get());
++
++        // 2. Prepare Request Body (POST/PUT/FormData)
++        Vector<uint8_t> bodyBytes;
++        if (RefPtr body = m_firstRequest.httpBody()) {
++            if (!body->isEmpty())
++                bodyBytes = body->flatten();
+         }
  
 -        responseData.append(buffer, bytesRead);
-+    auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {
-+        auto* ctx = static_cast<StreamContext*>(userData);
-+        if (!ctx || ctx->task->isCancelled())
-+            return;
++        // 3. Setup Streaming Callbacks & Flow Control Context
++        auto context = WTF::makeUnique<StreamContext>(StreamContext {
++            Ref { *this },
++            false,
++            false,
++            WTF::BinarySemaphore(),
++            WebCore::PolicyAction::Ignore,
++            false,
++            false,
++            ResourceRequest(),
++            false
++        });
++        m_streamContext.store(context.get());
++
++        auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {
++            auto* ctx = static_cast<StreamContext*>(userData);
++            if (!ctx || ctx->task->isCancelled())
++                return;
++
++            auto response = WTF::makeUnique<ResourceResponse>(URL { ctx->task->firstRequest().url() }, "text/html"_s, 0, "utf-8"_s);
++            response->setHTTPStatusCode(status);
++            if (reason)
++                response->setHTTPStatusText(String::fromUTF8(reason));
  
 -        if (headerEnd == WTF::notFound) {
 -            for (size_t i = 0; i + 3 < responseData.size(); ++i) {
 -                if (responseData[i] == '\r' && responseData[i+1] == '\n' && responseData[i+2] == '\r' && responseData[i+3] == '\n') {
 -                    headerEnd = i + 4;
 -                    break;
--                }
-+        auto response = WTF::makeUnique<ResourceResponse>(URL { ctx->task->firstRequest().url() }, "text/html"_s, 0, "utf-8"_s);
-+        response->setHTTPStatusCode(status);
-+        if (reason)
-+            response->setHTTPStatusText(String::fromUTF8(reason));
-+
-+        for (size_t i = 0; i < headerCount; ++i) {
-+            if (names && values && names[i] && values[i]) {
-+                response->setHTTPHeaderField(String::fromUTF8(names[i]), String::fromUTF8(values[i]));
++            for (size_t i = 0; i < headerCount; ++i) {
++                if (names && values && names[i] && values[i]) {
++                    response->addHTTPHeaderField(String::fromUTF8(names[i]), String::fromUTF8(values[i]));
+                 }
              }
-+        }
  
 -            if (headerEnd != WTF::notFound) {
 -                // Parse headers
@@ -252,11 +301,62 @@ index 592129a5..5783d89e 100644
 -                    String statusText = "OK"_s;
 -                    if (statusParts.size() >= 2) {
 -                        status = parseIntegerAllowingTrailingJunk<int>(statusParts[1]).value_or(200);
--                    }
++            String location = response->httpHeaderField(HTTPHeaderName::Location);
++            bool isRedirect = (status >= 300 && status < 400 && !location.isEmpty());
++
++            RunLoop::mainSingleton().dispatch([ctx, response = WTF::move(response), isRedirect, location = WTF::move(location)]() mutable {
++                if (ctx->task->isCancelled()) {
++                    if (isRedirect)
++                        ctx->redirectRejected = true;
++                    ctx->policyAction.store(WebCore::PolicyAction::Ignore);
++                    ctx->policyDispatched.store(true);
++                    ctx->policySemaphore.signal();
++                    return;
++                }
++
++                // Two-way cookie sync: synchronize any Set-Cookie headers into WebKit's NetworkStorageSession
++                if (auto* session = ctx->task->networkSession()) {
++                    if (auto* storageSession = session->networkStorageSession()) {
++                        for (auto& header : response->httpHeaderFields()) {
++                            if (equalLettersIgnoringASCIICase(header.key, "set-cookie"_s)) {
++                                storageSession->setCookiesFromDOM(
++                                    ctx->task->firstRequest().firstPartyForCookies(),
++                                    SameSiteInfo(),
++                                    response->url(),
++                                    std::nullopt,
++                                    std::nullopt,
++                                    ApplyTrackingPrevention::No,
++                                    RequiresScriptTrackingPrivacy::No,
++                                    header.value,
++                                    ShouldRelaxThirdPartyCookieBlocking::No,
++                                    IsKnownCrossSiteTracker::No
++                                );
++                            }
++                        }
+                     }
 -                    if (statusParts.size() >= 3) {
 -                        statusText = statusParts[2];
--                    }
--
++                }
++
++                if (isRedirect) {
++                    URL redirectURL = URL(ctx->task->firstRequest().url(), location);
++                    if (!redirectURL.hasFragmentIdentifier() && ctx->task->firstRequest().url().hasFragmentIdentifier())
++                        redirectURL.setFragmentIdentifier(ctx->task->firstRequest().url().fragmentIdentifier());
++
++                    ResourceRequest redirectRequest = ctx->task->firstRequest();
++                    redirectRequest.setURL(WTF::move(redirectURL));
++
++                    // RFC 7231 method rewriting:
++                    // 303 See Other: Always switch to GET and drop payload
++                    // 301 Moved Permanently / 302 Found: If POST, switch to GET and drop payload
++                    if (response->httpStatusCode() == 303 || 
++                        ((response->httpStatusCode() == 301 || response->httpStatusCode() == 302) && 
++                         equalLettersIgnoringASCIICase(redirectRequest.httpMethod(), "post"_s))) {
++                        redirectRequest.setHTTPMethod("GET"_s);
++                        redirectRequest.setHTTPBody(nullptr);
++                        redirectRequest.clearHTTPContentType();
+                     }
+ 
 -                    auto response = makeUnique<ResourceResponse>(url, "text/html"_s, 0, "utf-8"_s);
 -                    response->setHTTPStatusCode(status);
 -                    response->setHTTPStatusText(AtomString(statusText));
@@ -269,15 +369,23 @@ index 592129a5..5783d89e 100644
 -                        auto name = line.left(colon).simplifyWhiteSpace(isASCIIWhitespace<UChar>);
 -                        auto value = line.substring(colon + 1).simplifyWhiteSpace(isASCIIWhitespace<UChar>);
 -                        response->setHTTPHeaderField(name, value);
--                    }
--
++                    // Cross-origin redirect protection: strip sensitive authorization & origin headers
++                    bool isCrossOrigin = !protocolHostAndPortAreEqual(ctx->task->firstRequest().url(), redirectRequest.url());
++                    if (isCrossOrigin) {
++                        redirectRequest.clearHTTPAuthorization();
++                        redirectRequest.clearHTTPOrigin();
+                     }
+ 
 -                    RunLoop::main().dispatch([this, protectedThis = Ref { *this }, rawResponse = response.release()] {
 -                        std::unique_ptr<ResourceResponse> response(rawResponse);
 -                        if (m_isCancelled) return;
 -                        didReceiveResponse(WTFMove(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, [](WebCore::PolicyAction) {});
 -                    });
 -                }
--
++                    // HTTPS to HTTP downgrade: strip referer
++                    if (!redirectRequest.url().protocolIs("https"_s) && protocolIs(redirectRequest.httpReferrer(), "https"_s))
++                        redirectRequest.clearHTTPReferrer();
+ 
 -                // If there's initial body data read, dispatch it
 -                if (responseData.size() > headerEnd) {
 -                    auto bodyData = SharedBuffer::create(responseData.data() + headerEnd, responseData.size() - headerEnd);
@@ -286,12 +394,64 @@ index 592129a5..5783d89e 100644
 -                        if (client())
 -                            client()->didReceiveData(bodyData);
 -                    });
--                }
-+        RunLoop::mainSingleton().dispatch([ctx, response = WTF::move(response)]() mutable {
-+            if (ctx->task->isCancelled()) {
-+                ctx->policyAction.store(WebCore::PolicyAction::Ignore);
-+                ctx->policyDispatched.store(true);
-+                ctx->policySemaphore.signal();
++                    if (RefPtr client = ctx->task->client()) {
++                        client->willPerformHTTPRedirection(WTF::move(*response), WTF::move(redirectRequest), [ctx](ResourceRequest&& newRequest) {
++                            if (newRequest.isNull()) {
++                                ctx->redirectRejected = true;
++                            } else {
++                                ctx->isRedirected = true;
++                                ctx->redirectRequest = WTF::move(newRequest);
++                            }
++                            ctx->policyAction.store(WebCore::PolicyAction::Ignore);
++                            ctx->policyDispatched.store(true);
++                            ctx->policySemaphore.signal();
++                        });
++                    } else {
++                        ctx->redirectRejected = true;
++                        ctx->policyAction.store(WebCore::PolicyAction::Ignore);
++                        ctx->policyDispatched.store(true);
++                        ctx->policySemaphore.signal();
++                    }
++                    return;
+                 }
++
++                // Normal (non-redirect) response: dispatch to WebKit's didReceiveResponse
++                ctx->task->didReceiveResponse(WTF::move(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [ctx](WebCore::PolicyAction action) {
++                    ctx->policyAction.store(action);
++                    ctx->policyDispatched.store(true);
++                    ctx->policySemaphore.signal();
++                });
++            });
++
++            // Block ZNetFetcher thread until WebKit's main thread completes evaluation
++            ctx->policySemaphore.wait();
++            ctx->responseDispatched = true;
++        };
++
++        auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
++            auto* ctx = static_cast<StreamContext*>(userData);
++            if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
++                return;
++            if (ctx->policyAction.load() != WebCore::PolicyAction::Use)
++                return;
++
++            auto bodyData = SharedBuffer::create(std::span<const uint8_t>(chunk, chunkLen));
++            RunLoop::mainSingleton().dispatch([protectedTask = ctx->task, bodyData = WTF::move(bodyData)]() mutable {
++                if (protectedTask->isCancelled())
++                    return;
++                if (RefPtr client = protectedTask->client())
++                    client->didReceiveData(bodyData.get());
++            });
++        };
++
++        auto onCompleteCallback = [](bool /*keepAlive*/, void* userData) {
++            auto* ctx = static_cast<StreamContext*>(userData);
++            if (!ctx || ctx->completedDispatched)
++                return;
++            ctx->completedDispatched = true;
++
++            if (ctx->isRedirected) {
++                // Intermediate redirect complete; do not dispatch didCompleteWithError to client
 +                return;
              }
 -        } else {
@@ -302,21 +462,91 @@ index 592129a5..5783d89e 100644
 -                if (client())
 -                    client()->didReceiveData(bodyData);
 +
-+            ctx->task->didReceiveResponse(WTF::move(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [ctx](WebCore::PolicyAction action) {
-+                ctx->policyAction.store(action);
-+                ctx->policyDispatched.store(true);
-+                ctx->policySemaphore.signal();
++            RunLoop::mainSingleton().dispatch([protectedTask = ctx->task]() mutable {
++                if (protectedTask->isCancelled())
++                    return;
++                protectedTask->setCompleted();
++                if (RefPtr client = protectedTask->client())
++                    client->didCompleteWithError(ResourceError());
              });
--        }
++        };
++
++        auto isCancelledCallback = [](void* userData) -> bool {
++            auto* ctx = static_cast<StreamContext*>(userData);
++            if (!ctx)
++                return true;
++            if (ctx->task->isCancelled())
++                return true;
++            if (ctx->isRedirected)
++                return true; // Stop reading 3xx body early and proceed to fetch the redirect target
++            if (ctx->policyDispatched.load() && ctx->policyAction.load() != WebCore::PolicyAction::Use)
++                return true;
++            return false;
++        };
++
++        ZNetHttpStreamCallbacks callbacks;
++        callbacks.user_data = context.get();
++        callbacks.on_headers = onHeadersCallback;
++        callbacks.on_data = onDataCallback;
++        callbacks.on_complete = onCompleteCallback;
++        callbacks.is_cancelled = isCancelledCallback;
++
++        CString methodStr = m_firstRequest.httpMethod().utf8();
++        CString urlStr = m_firstRequest.url().string().utf8();
++
++        int32_t res = net_http_execute_streaming(
++            engine,
++            sessionId,
++            methodStr.data(),
++            urlStr.data(),
++            headerNamePtrs.isEmpty() ? nullptr : headerNamePtrs.span().data(),
++            headerValPtrs.isEmpty() ? nullptr : headerValPtrs.span().data(),
++            headerNamePtrs.size(),
++            bodyBytes.isEmpty() ? nullptr : bodyBytes.span().data(),
++            bodyBytes.size(),
++            0, // body_ring_id
++            &callbacks
++        );
++
++        m_streamContext.store(nullptr);
++
++        if (m_isCancelled || m_state == State::Canceling)
++            break;
++
++        if (context->isRedirected) {
++            if (context->redirectRejected) {
++                m_state = State::Completed;
++                break;
++            }
++            if (++redirectCount > maxRedirects) {
++                RunLoop::mainSingleton().dispatch([protectedTask = Ref { *this }] {
++                    if (protectedTask->isCancelled())
++                        return;
++                    protectedTask->setCompleted();
++                    if (RefPtr client = protectedTask->client())
++                        client->didCompleteWithError(ResourceError(String(), 0, protectedTask->firstRequest().url(), "Too many redirects"_s));
++                });
++                m_state = State::Completed;
++                break;
++            }
++
++            m_firstRequest = WTF::move(context->redirectRequest);
++            WTFLogAlways("NetworkDataTaskZNet: Following redirect #%u to %s", redirectCount, m_firstRequest.url().string().utf8().data());
++            continue; // Loop to fetch redirected URL!
+         }
 -    }
-+        });
  
 -    net_close(engine, conn);
 -    net_engine_destroy(engine);
-+        // Block ZNetFetcher thread until WebKit's main thread completes PolicyAction evaluation
-+        ctx->policySemaphore.wait();
-+        ctx->responseDispatched = true;
-+    };
++        if (res != 0 && !context->completedDispatched) {
++            RunLoop::mainSingleton().dispatch([protectedTask = context->task]() mutable {
++                if (protectedTask->isCancelled())
++                    return;
++                protectedTask->setCompleted();
++                if (RefPtr client = protectedTask->client())
++                    client->didCompleteWithError(ResourceError(String(), 0, protectedTask->firstRequest().url(), "Network request failed in z-net"_s));
++            });
++        }
  
 -    RunLoop::main().dispatch([this, protectedThis = Ref { *this }] {
 -        if (m_isCancelled) return;
@@ -324,82 +554,7 @@ index 592129a5..5783d89e 100644
 -        if (client())
 -            client()->didCompleteWithError(ResourceError());
 -    });
-+    auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
-+        auto* ctx = static_cast<StreamContext*>(userData);
-+        if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
-+            return;
-+        if (ctx->policyAction.load() != WebCore::PolicyAction::Use)
-+            return;
-+
-+        auto bodyData = SharedBuffer::create(std::span<const uint8_t>(chunk, chunkLen));
-+        RunLoop::mainSingleton().dispatch([protectedTask = ctx->task, bodyData = WTF::move(bodyData)]() mutable {
-+            if (protectedTask->isCancelled())
-+                return;
-+            if (RefPtr client = protectedTask->client())
-+                client->didReceiveData(bodyData.get());
-+        });
-+    };
-+
-+    auto onCompleteCallback = [](bool /*keepAlive*/, void* userData) {
-+        auto* ctx = static_cast<StreamContext*>(userData);
-+        if (!ctx || ctx->completedDispatched)
-+            return;
-+        ctx->completedDispatched = true;
-+
-+        RunLoop::mainSingleton().dispatch([protectedTask = ctx->task]() mutable {
-+            if (protectedTask->isCancelled())
-+                return;
-+            protectedTask->setCompleted();
-+            if (RefPtr client = protectedTask->client())
-+                client->didCompleteWithError(ResourceError());
-+        });
-+    };
-+
-+    auto isCancelledCallback = [](void* userData) -> bool {
-+        auto* ctx = static_cast<StreamContext*>(userData);
-+        if (!ctx)
-+            return true;
-+        if (ctx->task->isCancelled())
-+            return true;
-+        if (ctx->policyDispatched.load() && ctx->policyAction.load() != WebCore::PolicyAction::Use)
-+            return true;
-+        return false;
-+    };
-+
-+    ZNetHttpStreamCallbacks callbacks;
-+    callbacks.user_data = context.get();
-+    callbacks.on_headers = onHeadersCallback;
-+    callbacks.on_data = onDataCallback;
-+    callbacks.on_complete = onCompleteCallback;
-+    callbacks.is_cancelled = isCancelledCallback;
-+
-+    CString methodStr = m_firstRequest.httpMethod().utf8();
-+    CString urlStr = m_firstRequest.url().string().utf8();
-+
-+    int32_t res = net_http_execute_streaming(
-+        engine,
-+        sessionId,
-+        methodStr.data(),
-+        urlStr.data(),
-+        headerNamePtrs.isEmpty() ? nullptr : headerNamePtrs.span().data(),
-+        headerValPtrs.isEmpty() ? nullptr : headerValPtrs.span().data(),
-+        headerNamePtrs.size(),
-+        bodyBytes.isEmpty() ? nullptr : bodyBytes.span().data(),
-+        bodyBytes.size(),
-+        0, // body_ring_id
-+        &callbacks
-+    );
-+
-+    m_streamContext.store(nullptr);
-+
-+    if (res != 0 && !context->completedDispatched) {
-+        RunLoop::mainSingleton().dispatch([protectedTask = context->task]() mutable {
-+            if (protectedTask->isCancelled())
-+                return;
-+            protectedTask->setCompleted();
-+            if (RefPtr client = protectedTask->client())
-+                client->didCompleteWithError(ResourceError(String(), 0, protectedTask->firstRequest().url(), "Network request failed in z-net"_s));
-+        });
++        break; // Request done, exit loop
 +    }
  }
  

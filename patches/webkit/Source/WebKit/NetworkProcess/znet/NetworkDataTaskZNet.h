@@ -1,10 +1,13 @@
 #pragma once
 
 #include "NetworkDataTask.h"
+#include <atomic>
 #include <wtf/RunLoop.h>
 #include <wtf/Threading.h>
 
 namespace WebKit {
+
+struct StreamContext;
 
 class NetworkDataTaskZNet final : public NetworkDataTask {
 public:
@@ -31,6 +34,7 @@ private:
     State m_state { State::Suspended };
     RefPtr<Thread> m_thread;
     bool m_isCancelled { false };
+    std::atomic<StreamContext*> m_streamContext { nullptr };
 };
 
 } // namespace WebKit

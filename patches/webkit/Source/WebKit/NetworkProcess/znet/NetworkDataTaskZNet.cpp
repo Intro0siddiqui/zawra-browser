@@ -13,7 +13,9 @@
 #include <memory>
 #include <mutex>
 #include <span>
+#include <utility>
 #include <wtf/ASCIICType.h>
+#include <wtf/StdLibExtras.h>
 #include <wtf/URL.h>
 #include <wtf/text/ASCIILiteral.h>
 #include <wtf/text/AtomString.h>
@@ -61,7 +63,7 @@ using namespace WebCore;
 
 struct StreamContext {
     explicit StreamContext(Ref<NetworkDataTaskZNet>&& task)
-        : task(WTFMove(task))
+        : task(WTF::move(task))
     {
     }
 

@@ -9,6 +9,7 @@
 #include <WebCore/ResourceRequest.h>
 #include <WebCore/ResourceResponse.h>
 #include <WebCore/SharedBuffer.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -19,6 +20,7 @@
 #include <wtf/text/MakeString.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/StringToIntegerConversion.h>
+#include <wtf/threads/BinarySemaphore.h>
 
 extern "C" {
 typedef void* NetEngineHandle;
@@ -32,6 +34,7 @@ struct ZNetHttpStreamCallbacks {
     void (*on_headers)(uint16_t status, const char* reason, size_t header_count, const char* const* header_names, const char* const* header_values, void* user_data);
     void (*on_data)(const uint8_t* chunk, size_t chunk_len, void* user_data);
     void (*on_complete)(bool keep_alive, void* user_data);
+    bool (*is_cancelled)(void* user_data);
 };
 
 int32_t net_http_execute_streaming(
@@ -55,6 +58,15 @@ void net_cookie_jar_clear(NetEngineHandle engine, uint64_t session_id);
 
 namespace WebKit {
 using namespace WebCore;
+
+struct StreamContext {
+    Ref<NetworkDataTaskZNet> task;
+    bool responseDispatched { false };
+    bool completedDispatched { false };
+    WTF::BinarySemaphore policySemaphore;
+    std::atomic<WebCore::PolicyAction> policyAction { WebCore::PolicyAction::Ignore };
+    std::atomic<bool> policyDispatched { false };
+};
 
 static NetEngineHandle sharedNetEngine()
 {
@@ -80,6 +92,9 @@ void NetworkDataTaskZNet::cancel()
 {
     m_isCancelled = true;
     m_state = State::Canceling;
+    if (auto* ctx = m_streamContext.load()) {
+        ctx->policySemaphore.signal();
+    }
     if (m_thread) {
         m_thread->waitForCompletion();
         m_thread = nullptr;
@@ -108,12 +123,6 @@ NetworkDataTask::State NetworkDataTaskZNet::state() const
 {
     return m_state;
 }
-
-struct StreamContext {
-    Ref<NetworkDataTaskZNet> task;
-    bool responseDispatched { false };
-    bool completedDispatched { false };
-};
 
 void NetworkDataTaskZNet::startFetch()
 {
@@ -160,15 +169,16 @@ void NetworkDataTaskZNet::startFetch()
             bodyBytes = body->flatten();
     }
 
-    // 3. Setup Streaming Callbacks
-    auto context = std::make_unique<StreamContext>(StreamContext { Ref { *this }, false, false });
+    // 3. Setup Streaming Callbacks & Flow Control Context
+    auto context = WTF::makeUnique<StreamContext>(StreamContext { Ref { *this }, false, false, WTF::BinarySemaphore(), WebCore::PolicyAction::Ignore, false });
+    m_streamContext.store(context.get());
 
     auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {
         auto* ctx = static_cast<StreamContext*>(userData);
         if (!ctx || ctx->task->isCancelled())
             return;
 
-        auto response = makeUnique<ResourceResponse>(URL { ctx->task->firstRequest().url() }, "text/html"_s, 0, "utf-8"_s);
+        auto response = WTF::makeUnique<ResourceResponse>(URL { ctx->task->firstRequest().url() }, "text/html"_s, 0, "utf-8"_s);
         response->setHTTPStatusCode(status);
         if (reason)
             response->setHTTPStatusText(String::fromUTF8(reason));
@@ -179,17 +189,31 @@ void NetworkDataTaskZNet::startFetch()
             }
         }
 
-        RunLoop::mainSingleton().dispatch([protectedTask = ctx->task, response = WTF::move(response)]() mutable {
-            if (protectedTask->isCancelled())
+        RunLoop::mainSingleton().dispatch([ctx, response = WTF::move(response)]() mutable {
+            if (ctx->task->isCancelled()) {
+                ctx->policyAction.store(WebCore::PolicyAction::Ignore);
+                ctx->policyDispatched.store(true);
+                ctx->policySemaphore.signal();
                 return;
-            protectedTask->didReceiveResponse(WTF::move(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [](WebCore::PolicyAction) {});
+            }
+
+            ctx->task->didReceiveResponse(WTF::move(*response), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [ctx](WebCore::PolicyAction action) {
+                ctx->policyAction.store(action);
+                ctx->policyDispatched.store(true);
+                ctx->policySemaphore.signal();
+            });
         });
+
+        // Block ZNetFetcher thread until WebKit's main thread completes PolicyAction evaluation
+        ctx->policySemaphore.wait();
         ctx->responseDispatched = true;
     };
 
     auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
         auto* ctx = static_cast<StreamContext*>(userData);
         if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
+            return;
+        if (ctx->policyAction.load() != WebCore::PolicyAction::Use)
             return;
 
         auto bodyData = SharedBuffer::create(std::span<const uint8_t>(chunk, chunkLen));
@@ -216,11 +240,23 @@ void NetworkDataTaskZNet::startFetch()
         });
     };
 
+    auto isCancelledCallback = [](void* userData) -> bool {
+        auto* ctx = static_cast<StreamContext*>(userData);
+        if (!ctx)
+            return true;
+        if (ctx->task->isCancelled())
+            return true;
+        if (ctx->policyDispatched.load() && ctx->policyAction.load() != WebCore::PolicyAction::Use)
+            return true;
+        return false;
+    };
+
     ZNetHttpStreamCallbacks callbacks;
     callbacks.user_data = context.get();
     callbacks.on_headers = onHeadersCallback;
     callbacks.on_data = onDataCallback;
     callbacks.on_complete = onCompleteCallback;
+    callbacks.is_cancelled = isCancelledCallback;
 
     CString methodStr = m_firstRequest.httpMethod().utf8();
     CString urlStr = m_firstRequest.url().string().utf8();
@@ -238,6 +274,8 @@ void NetworkDataTaskZNet::startFetch()
         0, // body_ring_id
         &callbacks
     );
+
+    m_streamContext.store(nullptr);
 
     if (res != 0 && !context->completedDispatched) {
         RunLoop::mainSingleton().dispatch([protectedTask = context->task]() mutable {

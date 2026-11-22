@@ -31,17 +31,58 @@ const NS_ERROR_FAILURE: i32 = -2147467259i32;
 pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
     // Ensure WEBKIT_INJECTED_BUNDLE_PATH is populated so WPEWebProcess finds libWPEInjectedBundle.so
     if std::env::var_os("WEBKIT_INJECTED_BUNDLE_PATH").is_none() {
-        let default_bundle = "/home/intro/spectre-enviroment/browser/zawra-browser/webkit/build/lib";
-        if std::path::Path::new(default_bundle).is_dir() {
-            unsafe {
-                std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", default_bundle);
+        #[cfg(target_os = "android")]
+        {
+            let android_bundle_dirs = [
+                std::env::var("ZAWRA_NATIVE_LIB_DIR").ok(),
+                Some("/data/data/com.zawra.browser/lib".to_string()),
+                Some("/data/local/tmp".to_string()),
+            ];
+            for maybe_dir in &android_bundle_dirs {
+                if let Some(dir) = maybe_dir {
+                    if std::path::Path::new(dir).is_dir() {
+                        unsafe {
+                            std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", dir);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let default_bundle = "/home/intro/spectre-enviroment/browser/zawra-browser/webkit/build/lib";
+            if std::path::Path::new(default_bundle).is_dir() {
+                unsafe {
+                    std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", default_bundle);
+                }
             }
         }
     }
 
     // ── 1. Resolve DB path ──────────────────────────────────────────────────
     let profile_str = if profile_path.is_null() {
-        "./zawra_profile".to_string()
+        if let Ok(p) = std::env::var("ZAWRA_PROFILE") {
+            p
+        } else if let Ok(p) = std::env::var("ZAWRA_ANDROID_DATA_DIR") {
+            PathBuf::from(p).join("profile").to_string_lossy().into_owned()
+        } else {
+            #[cfg(target_os = "android")]
+            {
+                let android_dir = PathBuf::from("/data/data/com.zawra.browser/files/profile");
+                if std::fs::create_dir_all(&android_dir).is_ok() {
+                    android_dir.to_string_lossy().into_owned()
+                } else {
+                    let fallback = PathBuf::from("/data/local/tmp/zawra_profile");
+                    std::fs::create_dir_all(&fallback).ok();
+                    fallback.to_string_lossy().into_owned()
+                }
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                "./zawra_profile".to_string()
+            }
+        }
     } else {
         match unsafe { CStr::from_ptr(profile_path).to_str() } {
             Ok(s) => s.to_string(),
@@ -132,6 +173,25 @@ pub extern "C" fn Z_Shutdown_Subsystems() {
 #[unsafe(no_mangle)]
 pub extern "C" fn Zawra_Shutdown_Subsystems() {
     Z_Shutdown_Subsystems();
+}
+
+/// Android-specific entrypoint to initialize Zawra with an explicit data directory and injected bundle directory.
+///
+/// `data_dir` – directory for database and storage (e.g. `Context.getFilesDir().getAbsolutePath()`).
+/// `injected_bundle_dir` – directory where `libWPEInjectedBundle.so` resides (e.g. app native lib dir).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Z_Android_Init(
+    data_dir: *const c_char,
+    injected_bundle_dir: *const c_char,
+) -> i32 {
+    if !injected_bundle_dir.is_null() {
+        if let Ok(bundle_str) = unsafe { CStr::from_ptr(injected_bundle_dir).to_str() } {
+            unsafe {
+                std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", bundle_str);
+            }
+        }
+    }
+    unsafe { Z_Init_Subsystems(data_dir) }
 }
 
 unsafe extern "C" {

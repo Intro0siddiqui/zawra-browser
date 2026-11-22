@@ -642,8 +642,8 @@ pub unsafe extern "C" fn Z_Cookie_DeleteAll() -> i32 {
 /// `out_buf` must be valid and `out_buf_len` must be its capacity.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_LocalStorage_GetAll(
-    origin_hash_hi: u64,
-    origin_hash_lo: u64,
+    _origin_hash_hi: u64,
+    _origin_hash_lo: u64,
     out_buf:        *mut c_char,
     out_buf_len:    usize,
 ) -> i32 {
@@ -812,6 +812,74 @@ pub unsafe extern "C" fn Z_History_Put(
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_FAILURE,
     }
+}
+
+fn escape_json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Query BrowserDB's history table and return recent visits (`title`, `url`, `visit_time`) as JSON.
+///
+/// Returns the number of bytes written to `out_json_buf` (excluding NUL terminator).
+///
+/// # Safety
+/// `out_json_buf` must be a valid pointer with at least `out_max_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_GetRecentHistory(
+    limit: u32,
+    out_json_buf: *mut u8,
+    out_max_len: usize,
+) -> usize {
+    if out_json_buf.is_null() || out_max_len == 0 {
+        return 0;
+    }
+
+    let entries = if let Some(db) = GLOBAL_DB.get() {
+        match db.history().hot_search("", limit as usize) {
+            Ok(e) => e,
+            Err(_) => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+
+    let mut json = String::from("[");
+    for (i, entry) in entries.iter().enumerate() {
+        if i > 0 {
+            json.push(',');
+        }
+        json.push_str(&format!(
+            "{{\"title\":{},\"url\":{},\"visit_time\":{}}}",
+            escape_json_str(&entry.title),
+            escape_json_str(&entry.url),
+            entry.timestamp
+        ));
+    }
+    json.push(']');
+
+    let bytes = json.as_bytes();
+    let write_len = bytes.len().min(out_max_len - 1);
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_json_buf, write_len);
+        *out_json_buf.add(write_len) = 0;
+    }
+    write_len
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

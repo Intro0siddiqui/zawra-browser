@@ -32,24 +32,40 @@ fn main() {
         }
 
         // 2. Common distro locations
-        dirs.push(PathBuf::from("/usr/lib"));
-        dirs.push(PathBuf::from("/usr/lib/wpe-webkit-1.0"));
-        dirs.push(PathBuf::from("/usr/lib64/wpe-webkit-1.0"));
-        dirs.push(PathBuf::from("/usr/lib/x86_64-linux-gnu"));
-        dirs.push(PathBuf::from("/usr/local/lib"));
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        if target_os == "macos" {
+            dirs.push(PathBuf::from("/opt/homebrew/lib"));
+            dirs.push(PathBuf::from("/usr/local/lib"));
+        } else {
+            dirs.push(PathBuf::from("/usr/lib"));
+            dirs.push(PathBuf::from("/usr/lib/wpe-webkit-1.0"));
+            dirs.push(PathBuf::from("/usr/lib64/wpe-webkit-1.0"));
+            dirs.push(PathBuf::from("/usr/lib/x86_64-linux-gnu"));
+            dirs.push(PathBuf::from("/usr/local/lib"));
+        }
 
         dirs
     };
 
     // ── Locate libWPE (or WebKitWPE) ──────────────────────────────────────────
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let is_macos = target_os == "macos";
+
     let wpe_info = search_dirs.iter().find_map(|dir| {
-        let candidate = dir.join("libWPEBackend-fdo.so");
+        let ext = if is_macos { "dylib" } else { "so" };
+        let candidate = dir.join(format!("libWPEBackend-fdo.{}", ext));
         if candidate.exists() {
             return Some((dir.clone(), "WPEBackend-fdo"));
         }
-        let candidate_alt = dir.join("libWPEBackend-fdo-1.0.so");
+        let candidate_alt = dir.join(format!("libWPEBackend-fdo-1.0.{}", ext));
         if candidate_alt.exists() {
             return Some((dir.clone(), "WPEBackend-fdo-1.0"));
+        }
+        if is_macos {
+            let candidate_so = dir.join("libWPEBackend-fdo.so");
+            if candidate_so.exists() {
+                return Some((dir.clone(), "WPEBackend-fdo"));
+            }
         }
         None
     });
@@ -74,7 +90,9 @@ fn main() {
         }
     }
 
-    // ── System libs always needed ────────────────────────────────────────────
-    // dl is required for dlopen() which we use to dynamically probe WPE
-    println!("cargo:rustc-link-lib=dylib=dl");
+    // ── System libs ──────────────────────────────────────────────────────────
+    // dl is required for dlopen() on desktop Linux/glibc, but is part of libc/libSystem on modern Android and macOS
+    if target_os != "android" && target_os != "macos" {
+        println!("cargo:rustc-link-lib=dylib=dl");
+    }
 }

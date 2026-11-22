@@ -601,6 +601,15 @@ unsafe impl Sync for ZNetChannel {}
 
 impl ZNetChannel {
     pub fn new(url: &str, host: &str, port: u16) -> Option<*mut ZNetChannel> {
+        // Native Zawra Shield check: Block ads, tracking, and telemetry early
+        let shield = crate::shield::ZawraShield::global();
+        if let crate::shield::ShieldDecision::Block { .. } =
+            shield.check_network_request(url, "", "other")
+        {
+            eprintln!("[ZAWRA-SHIELD] 🛡️ Blocked: {}", url);
+            return None;
+        }
+
         let ring = OwnedBodyRing::new(512 * 1024)?; // 512 KB ring per channel
         let ring = Arc::new(Mutex::new(ring));
 

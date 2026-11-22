@@ -20,4 +20,7 @@ pub use lean_net;
 // JavaScriptCore zero-copy ArrayBuffer bridge (jsc_glue)
 pub mod zero_copy;
 
+/// Native Shield & Adblock engine (Brave adblock)
+pub mod shield;
+
 

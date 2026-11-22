@@ -105,6 +105,18 @@ struct GtkLib {
 fn load_gtk() -> Option<&'static GtkLib> {
     static GTK_LIB: OnceLock<Option<GtkLib>> = OnceLock::new();
     GTK_LIB.get_or_init(|| {
+        #[cfg(target_os = "macos")]
+        let paths = [
+            "libgtk-4.1.dylib",
+            "libgtk-4.dylib",
+            "/opt/homebrew/lib/libgtk-4.1.dylib",
+            "/opt/homebrew/lib/libgtk-4.dylib",
+            "/usr/local/lib/libgtk-4.1.dylib",
+            "/usr/local/lib/libgtk-4.dylib",
+            "libgtk-4.so.1",
+            "libgtk-4.so",
+        ];
+        #[cfg(not(target_os = "macos"))]
         let paths = ["libgtk-4.so.1", "libgtk-4.so"];
         let mut handle = std::ptr::null_mut();
         for path in &paths {
@@ -149,28 +161,40 @@ fn load_gtk() -> Option<&'static GtkLib> {
 }
 
 fn create_native_window(config: &WindowConfig) -> *mut std::ffi::c_void {
-    if let Some(gtk) = load_gtk() {
-        unsafe {
-            static INIT: std::sync::Once = std::sync::Once::new();
-            INIT.call_once(|| {
-                (gtk.gtk_init)();
-            });
-
-            let window = (gtk.gtk_window_new)();
-            if window.is_null() {
-                eprintln!("[zawra-ui] Failed to create GtkWindow");
-                return std::ptr::null_mut();
-            }
-
-            if let Ok(title_c) = CString::new(config.title.clone()) {
-                (gtk.gtk_window_set_title)(window, title_c.as_ptr());
-            }
-            (gtk.gtk_window_set_default_size)(window, config.width as i32, config.height as i32);
-
-            window
+    #[cfg(target_os = "android")]
+    {
+        let _ = config;
+        return std::ptr::null_mut();
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        if std::env::var("ZAWRA_HEADLESS").is_ok() {
+            return std::ptr::null_mut();
         }
-    } else {
-        std::ptr::null_mut()
+
+        if let Some(gtk) = load_gtk() {
+            unsafe {
+                static INIT: std::sync::Once = std::sync::Once::new();
+                INIT.call_once(|| {
+                    (gtk.gtk_init)();
+                });
+
+                let window = (gtk.gtk_window_new)();
+                if window.is_null() {
+                    eprintln!("[zawra-ui] Failed to create GtkWindow");
+                    return std::ptr::null_mut();
+                }
+
+                if let Ok(title_c) = CString::new(config.title.clone()) {
+                    (gtk.gtk_window_set_title)(window, title_c.as_ptr());
+                }
+                (gtk.gtk_window_set_default_size)(window, config.width as i32, config.height as i32);
+
+                window
+            }
+        } else {
+            std::ptr::null_mut()
+        }
     }
 }
 

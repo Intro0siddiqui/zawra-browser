@@ -323,6 +323,23 @@ mod networking_modernization_tests {
             assert_ne!(Z_Net_GetContentCharset(null_mut(), &mut out_cs), 0);
         }
     }
+
+    #[test]
+    fn test_shield_network_blocking_integration() {
+        use zawra_browser::shield::ZawraShield;
+
+        let shield = ZawraShield::global();
+        let ad_url = CString::new("https://googleads.g.doubleclick.net/pagead/ads").unwrap();
+
+        unsafe {
+            let blocked_before = shield.blocked_count();
+            let chan = Z_Net_CreateChannel(ad_url.as_ptr());
+            // Must return NULL because Shield blocked the ad request early
+            assert!(chan.is_null(), "Ad channel should be aborted early by Zawra Shield");
+            let blocked_after = shield.blocked_count();
+            assert!(blocked_after > blocked_before, "Blocked count must increment");
+        }
+    }
 }
 
 // ── Subsystem lifecycle tests ─────────────────────────────────────────────────

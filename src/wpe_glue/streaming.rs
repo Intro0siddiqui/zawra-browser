@@ -135,12 +135,13 @@ unsafe impl Sync for AsyncReaderState {}
 /// 5. On EOF → calls `OnStopRequest(NS_OK)`.
 /// 6. On error → calls `OnStopRequest(NS_ERROR_FAILURE)`.
 pub fn spawn_async_reader(state: Arc<AsyncReaderState>) {
-    thread::Builder::new()
+    if let Err(e) = thread::Builder::new()
         .name("zawra-async-reader".into())
         .spawn(move || {
             async_reader_loop(state);
-        })
-        .expect("failed to spawn zawra-async-reader thread");
+        }) {
+        eprintln!("[zawra-streaming] failed to spawn zawra-async-reader thread: {}", e);
+    }
 }
 
 fn async_reader_loop(state: Arc<AsyncReaderState>) {

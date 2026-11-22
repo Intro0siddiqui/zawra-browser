@@ -48,6 +48,7 @@ static GLOBAL_NET_ENGINE: OnceLock<SendSyncEngineHandle> = OnceLock::new();
 static NET_ENGINE_STARTED: AtomicBool = AtomicBool::new(false);
 static NET_POLL_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
 static NET_POLL_THREAD_RUNNING: AtomicBool = AtomicBool::new(true);
+static NET_POLL_THREAD_HANDLE: Mutex<Option<thread::JoinHandle<()>>> = Mutex::new(None);
 
 fn ensure_net_poll_thread() {
     if NET_POLL_THREAD_STARTED.swap(true, Ordering::SeqCst) {
@@ -67,9 +68,16 @@ fn ensure_net_poll_thread() {
                 }
             }
         });
-    if let Err(e) = spawn_res {
-        eprintln!("[zawra-net] failed to spawn zawra-net-poll thread: {}", e);
-        NET_POLL_THREAD_STARTED.store(false, Ordering::SeqCst);
+    match spawn_res {
+        Ok(handle) => {
+            if let Ok(mut lock) = NET_POLL_THREAD_HANDLE.lock() {
+                *lock = Some(handle);
+            }
+        }
+        Err(e) => {
+            eprintln!("[zawra-net] failed to spawn zawra-net-poll thread: {}", e);
+            NET_POLL_THREAD_STARTED.store(false, Ordering::SeqCst);
+        }
     }
 }
 
@@ -100,6 +108,13 @@ pub unsafe fn init_net_engine() -> bool {
 /// Shut down the global z-net engine and background polling thread.
 pub fn shutdown_net_engine() {
     NET_POLL_THREAD_RUNNING.store(false, Ordering::SeqCst);
+    if let Ok(mut lock) = NET_POLL_THREAD_HANDLE.lock() {
+        if let Some(handle) = lock.take() {
+            if let Err(e) = handle.join() {
+                eprintln!("[zawra-net] warning: net-poll thread failed to join cleanly: {:?}", e);
+            }
+        }
+    }
     NET_POLL_THREAD_STARTED.store(false, Ordering::SeqCst);
     NET_ENGINE_STARTED.store(false, Ordering::SeqCst);
 }
@@ -605,8 +620,20 @@ impl ZNetChannel {
             net_conn_bind_body_ring(engine, conn, ring_guard.id);
         }
 
-        let default_content_type = CString::new("application/octet-stream").unwrap();
-        let default_charset = CString::new("UTF-8").unwrap();
+        let default_content_type = match CString::new("application/octet-stream") {
+            Ok(cs) => cs,
+            Err(e) => {
+                eprintln!("[zawra-net] failed to create default content type CString: {}", e);
+                CString::default()
+            }
+        };
+        let default_charset = match CString::new("UTF-8") {
+            Ok(cs) => cs,
+            Err(e) => {
+                eprintln!("[zawra-net] failed to create default charset CString: {}", e);
+                CString::default()
+            }
+        };
 
         let channel = Box::new(ZNetChannel {
             vtable: &ZNET_CHANNEL_VTABLE,

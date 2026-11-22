@@ -45,20 +45,29 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
     } else {
         match unsafe { CStr::from_ptr(profile_path).to_str() } {
             Ok(s) => s.to_string(),
-            Err(_) => return NS_ERROR_FAILURE,
+            Err(e) => {
+                eprintln!("[zawra-init] Invalid UTF-8 sequence in profile_path: {}", e);
+                return NS_ERROR_FAILURE;
+            }
         }
     };
 
     let db_path: PathBuf = PathBuf::from(&profile_str).join("zawra_db");
     let db_path_str = match db_path.to_str() {
         Some(s) => s.to_string(),
-        None => return NS_ERROR_FAILURE,
+        None => {
+            eprintln!("[zawra-init] Database path is not valid UTF-8: {:?}", db_path);
+            return NS_ERROR_FAILURE;
+        }
     };
 
     // ── 2. Init BrowserDB ───────────────────────────────────────────────────
     let db_path_c = match CString::new(db_path_str) {
         Ok(c) => c,
-        Err(_) => return NS_ERROR_FAILURE,
+        Err(e) => {
+            eprintln!("[zawra-init] Failed to create CString for DB path: {}", e);
+            return NS_ERROR_FAILURE;
+        }
     };
     let db_ret = unsafe { Z_Storage_Init(db_path_c.as_ptr()) };
     if db_ret != NS_OK {
@@ -117,6 +126,12 @@ pub extern "C" fn Z_Shutdown_Subsystems() {
     eprintln!("[zawra] z-net engine poll thread stopped and resources released");
 
     eprintln!("[zawra] Subsystems shutdown complete");
+}
+
+/// C-ABI alias for Z_Shutdown_Subsystems.
+#[unsafe(no_mangle)]
+pub extern "C" fn Zawra_Shutdown_Subsystems() {
+    Z_Shutdown_Subsystems();
 }
 
 unsafe extern "C" {

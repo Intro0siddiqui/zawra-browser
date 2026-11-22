@@ -98,17 +98,88 @@ fn resolve_profile_dir() -> PathBuf {
     fallback
 }
 
-/// Search common locations for WPE libraries, return the directory path.
+/// Search common locations for WPE libraries, returning the path to the library.
+/// Checks WPE_PATH, WEBKIT_EXEC_PATH, relative ../../webkit/build/lib/, and system paths.
 fn find_wpe_lib() -> Option<PathBuf> {
-    let candidates = [
+    const WPE_LIB_NAMES: &[&str] = &[
+        "libWPEBackend-fdo.so",
+        "libWPEWebKit-2.0.so",
+        "libWPEWebKit-1.0.so",
+    ];
+
+    // 1. Check WPE_PATH environment variable
+    if let Ok(wpe_env) = std::env::var("WPE_PATH") {
+        let path = PathBuf::from(&wpe_env);
+        if path.is_file() {
+            return Some(path);
+        } else if path.is_dir() {
+            for name in WPE_LIB_NAMES {
+                let candidate = path.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    // 2. Check WEBKIT_EXEC_PATH environment variable
+    if let Ok(exec_env) = std::env::var("WEBKIT_EXEC_PATH") {
+        let path = PathBuf::from(&exec_env);
+        if path.is_file() {
+            return Some(path);
+        } else if path.is_dir() {
+            for name in WPE_LIB_NAMES {
+                let candidate = path.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+            let lib_dir = path.join("lib");
+            if lib_dir.is_dir() {
+                for name in WPE_LIB_NAMES {
+                    let candidate = lib_dir.join(name);
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Check relative ../../webkit/build/lib/ and local build locations
+    let relative_candidates = [
+        "../../webkit/build/lib/libWPEBackend-fdo.so",
+        "../../webkit/build/lib/libWPEWebKit-2.0.so",
+        "webkit/build/lib/libWPEBackend-fdo.so",
+        "webkit/build/lib/libWPEWebKit-2.0.so",
+        "../zawra-browser/webkit/build/lib/libWPEBackend-fdo.so",
+        "../zawra-browser/webkit/build/lib/libWPEWebKit-2.0.so",
+    ];
+    for c in &relative_candidates {
+        let p = PathBuf::from(c);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+
+    // 4. Fallback to standard system paths
+    let system_candidates = [
         "/usr/lib/wpe-webkit-1.0/libWPEBackend-fdo.so",
         "/usr/lib64/wpe-webkit-1.0/libWPEBackend-fdo.so",
         "/usr/lib/x86_64-linux-gnu/libWPEBackend-fdo.so",
         "/usr/local/lib/libWPEBackend-fdo.so",
+        "/usr/lib/x86_64-linux-gnu/libWPEWebKit-2.0.so",
+        "/usr/lib64/libWPEWebKit-2.0.so",
+        "/usr/lib/libWPEWebKit-2.0.so",
     ];
-    candidates.iter().find_map(|c| {
-        if std::path::Path::new(c).exists() { Some(PathBuf::from(c)) } else { None }
-    })
+    for c in &system_candidates {
+        let p = PathBuf::from(c);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+
+    None
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -154,7 +225,15 @@ pub fn launch_wpe(profile_path: &str) -> i32 {
         }
     };
 
-    let lib = match DynLib::open(wpe_path.to_str().unwrap_or("")) {
+    let path_str = match wpe_path.to_str() {
+        Some(s) => s,
+        None => {
+            eprintln!("[zawra-launcher] WPE path is not valid UTF-8: {}", wpe_path.display());
+            return NS_ERROR_FAILURE;
+        }
+    };
+
+    let lib = match DynLib::open(path_str) {
         Some(l) => l,
         None => {
             eprintln!("[zawra-launcher] Failed to dlopen {}", wpe_path.display());
@@ -176,18 +255,24 @@ pub fn launch_wpe(profile_path: &str) -> i32 {
     // Build argc/argv to pass to WPE (mirrors what firefox-bin does)
     let profile_flag = match CString::new("--profile") {
         Ok(s) => s,
-        Err(_) => return -1,
+        Err(e) => {
+            eprintln!("[zawra-launcher] Failed to create --profile CString: {}", e);
+            return -1;
+        }
     };
     let profile_val = match CString::new(profile_path) {
         Ok(s) => s,
-        Err(_) => {
-            eprintln!("[zawra-launcher] invalid profile_path with interior NUL");
+        Err(e) => {
+            eprintln!("[zawra-launcher] Invalid profile_path with interior NUL: {}", e);
             return -1;
         }
     };
     let prog_name = match CString::new("zawra-browser") {
         Ok(s) => s,
-        Err(_) => return -1,
+        Err(e) => {
+            eprintln!("[zawra-launcher] Failed to create prog_name CString: {}", e);
+            return -1;
+        }
     };
     let mut argv: Vec<*mut c_char> = vec![
         prog_name.into_raw(),

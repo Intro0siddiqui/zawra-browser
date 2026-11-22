@@ -77,13 +77,17 @@ void BrowserDBStorageArea::clear()
 
 Expected<String, StorageError> BrowserDBStorageArea::getItem(const String& key)
 {
+    if (key.isNull())
+        return makeUnexpected(StorageError::ItemNotFound);
+
     if (m_cache) {
         auto iterator = m_cache->find(key);
         if (iterator == m_cache->end())
             return makeUnexpected(StorageError::ItemNotFound);
 
         if (auto* valueString = std::get_if<String>(&iterator->value)) {
-            ASSERT(!valueString->isNull());
+            if (valueString->isNull())
+                return makeUnexpected(StorageError::ItemNotFound);
             return *valueString;
         }
     }
@@ -93,7 +97,14 @@ Expected<String, StorageError> BrowserDBStorageArea::getItem(const String& key)
 
 Expected<String, StorageError> BrowserDBStorageArea::getItemFromDatabase(const String& key)
 {
-    return WebCore::ZSB::getData(m_originHashHi, m_originHashLo, key);
+    if (key.isNull())
+        return makeUnexpected(StorageError::ItemNotFound);
+
+    String value = WebCore::ZSB::getData(m_originHashHi, m_originHashLo, key);
+    if (value.isNull())
+        return makeUnexpected(StorageError::ItemNotFound);
+
+    return value;
 }
 
 HashMap<String, String> BrowserDBStorageArea::allItems()
@@ -106,7 +117,8 @@ HashMap<String, String> BrowserDBStorageArea::allItems()
     m_cacheSize = 0;
 
     for (auto& item : items) {
-        updateCacheIfNeeded(item.key, item.value);
+        if (!item.key.isNull() && !item.value.isNull())
+            updateCacheIfNeeded(item.key, item.value);
     }
 
     return items;
@@ -115,6 +127,9 @@ HashMap<String, String> BrowserDBStorageArea::allItems()
 Expected<void, StorageError> BrowserDBStorageArea::setItem(std::optional<IPC::Connection::UniqueID> connection, std::optional<StorageAreaImplIdentifier> storageAreaImplID, String&& key, String&& value, const String& urlString)
 {
     ASSERT(!isMainRunLoop());
+
+    if (key.isNull())
+        return makeUnexpected(StorageError::Database);
 
     if (!requestSpace(key, value))
         return makeUnexpected(StorageError::QuotaExceeded);
@@ -135,6 +150,9 @@ Expected<void, StorageError> BrowserDBStorageArea::setItem(std::optional<IPC::Co
 Expected<void, StorageError> BrowserDBStorageArea::removeItem(IPC::Connection::UniqueID connection, StorageAreaImplIdentifier storageAreaImplID, const String& key, const String& urlString)
 {
     ASSERT(!isMainRunLoop());
+
+    if (key.isNull())
+        return makeUnexpected(StorageError::ItemNotFound);
 
     String oldValue;
     if (auto valueOrError = getItem(key))
@@ -181,7 +199,7 @@ void BrowserDBStorageArea::handleLowMemoryWarning()
 
 void BrowserDBStorageArea::updateCacheIfNeeded(const String& key, const String& value)
 {
-    if (!m_cache)
+    if (key.isNull() || !m_cache)
         return;
 
     ASSERT(m_cacheSize);
@@ -231,6 +249,8 @@ void BrowserDBStorageArea::updateCacheIfNeeded(const String& key, const String& 
 
 bool BrowserDBStorageArea::requestSpace(const String& key, const String& value)
 {
+    if (key.isNull())
+        return false;
     if (!m_cache)
         return key.sizeInBytes() + value.sizeInBytes() <= quota();
     if (value.isNull())

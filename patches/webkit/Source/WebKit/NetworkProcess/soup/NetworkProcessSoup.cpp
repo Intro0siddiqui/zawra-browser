@@ -132,7 +132,6 @@ void NetworkProcess::userPreferredLanguagesChanged(const Vector<String>& languag
 
 void NetworkProcess::platformInitializeNetworkProcess(const NetworkProcessCreationParameters& parameters)
 {
-    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::platformInitializeNetworkProcess ENTER tid=%d\n", (int)syscall(SYS_gettid));
     GRefPtr<GResolver> cachedResolver = adoptGRef(webkitCachedResolverNew(adoptGRef(g_resolver_get_default())));
     g_resolver_set_default(cachedResolver.get());
 
@@ -164,9 +163,7 @@ void NetworkProcess::platformInitializeNetworkProcess(const NetworkProcessCreati
     }
 #endif
 
-    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::platformInitializeNetworkProcess BEFORE hajr_seal_process tid=%d\n", (int)syscall(SYS_gettid));
     hajr_seal_process(1); // HAJR_NETWORK_PROCESS
-    fprintf(stderr, "[NETCONN-HANDLER] NetworkProcess::platformInitializeNetworkProcess AFTER hajr_seal_process tid=%d\n", (int)syscall(SYS_gettid));
 }
 
 void NetworkProcess::setIgnoreTLSErrors(PAL::SessionID sessionID, bool ignoreTLSErrors)

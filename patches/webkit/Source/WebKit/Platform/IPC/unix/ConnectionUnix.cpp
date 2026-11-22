@@ -167,6 +167,22 @@ int Connection::socketDescriptor() const
     return m_socketDescriptor.value();
 }
 
+static void unsetHajrEnvironmentVariables()
+{
+    unsetenv("ZAWRA_HAJR_RING1");
+    unsetenv("ZAWRA_HAJR_RING2");
+    unsetenv("ZAWRA_HAJR_SIGNAL1");
+    unsetenv("ZAWRA_HAJR_SIGNAL2");
+    unsetenv("ZAWRA_HAJR_PARENT_PIDFD");
+    unsetenv("ZAWRA_HAJR_FDTRANSFER");
+    unsetenv("ZAWRA_HAJR_INBOUND");
+    unsetenv("ZAWRA_HAJR_OUTBOUND");
+    unsetenv("ZAWRA_HAJR_INBOUND_SIGNAL");
+    unsetenv("ZAWRA_HAJR_OUTBOUND_SIGNAL");
+    unsetenv("ZAWRA_HAJR_FD_TRANSFER");
+    unsetenv("ZAWRA_HAJR_PIDFD");
+}
+
 void Connection::platformInitialize(Identifier&& identifier)
 {
     m_hasHajrInfo = identifier.hasHajrInfo;
@@ -178,26 +194,33 @@ void Connection::platformInitialize(Identifier&& identifier)
     m_fdTransferFd = identifier.hajrFdTransferFd;
 
     const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
+    if (!ring1Str)
+        ring1Str = getenv("ZAWRA_HAJR_INBOUND");
     if (!m_hasHajrInfo && ring1Str) {
         const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
+        if (!ring2Str)
+            ring2Str = getenv("ZAWRA_HAJR_OUTBOUND");
         const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
+        if (!sig1Str)
+            sig1Str = getenv("ZAWRA_HAJR_INBOUND_SIGNAL");
         const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
+        if (!sig2Str)
+            sig2Str = getenv("ZAWRA_HAJR_OUTBOUND_SIGNAL");
         if (ring2Str && sig1Str && sig2Str) {
             m_hajrRing1 = strtoull(ring1Str, nullptr, 10);
             m_hajrRing2 = strtoull(ring2Str, nullptr, 10);
             m_hajrSig1 = atoi(sig1Str);
             m_hajrSig2 = atoi(sig2Str);
             const char* parentPidFDStr = getenv("ZAWRA_HAJR_PARENT_PIDFD");
+            if (!parentPidFDStr)
+                parentPidFDStr = getenv("ZAWRA_HAJR_PIDFD");
             m_hajrPidfd = parentPidFDStr ? atoi(parentPidFDStr) : -1;
             const char* fdTransferStr = getenv("ZAWRA_HAJR_FDTRANSFER");
+            if (!fdTransferStr)
+                fdTransferStr = getenv("ZAWRA_HAJR_FD_TRANSFER");
             m_fdTransferFd = fdTransferStr ? atoi(fdTransferStr) : -1;
             m_hasHajrInfo = true;
-            unsetenv("ZAWRA_HAJR_RING1");
-            unsetenv("ZAWRA_HAJR_RING2");
-            unsetenv("ZAWRA_HAJR_SIGNAL1");
-            unsetenv("ZAWRA_HAJR_SIGNAL2");
-            unsetenv("ZAWRA_HAJR_PARENT_PIDFD");
-            unsetenv("ZAWRA_HAJR_FDTRANSFER");
+            unsetHajrEnvironmentVariables();
         }
     }
 
@@ -634,12 +657,23 @@ void Connection::platformOpen()
         sig2 = m_hajrSig2;
         pidfd = m_hajrPidfd;
         haveHajrInfo = true;
+        unsetHajrEnvironmentVariables();
     } else {
         const char* ring1Str = getenv("ZAWRA_HAJR_RING1");
+        if (!ring1Str)
+            ring1Str = getenv("ZAWRA_HAJR_INBOUND");
         const char* ring2Str = getenv("ZAWRA_HAJR_RING2");
+        if (!ring2Str)
+            ring2Str = getenv("ZAWRA_HAJR_OUTBOUND");
         const char* sig1Str = getenv("ZAWRA_HAJR_SIGNAL1");
+        if (!sig1Str)
+            sig1Str = getenv("ZAWRA_HAJR_INBOUND_SIGNAL");
         const char* sig2Str = getenv("ZAWRA_HAJR_SIGNAL2");
+        if (!sig2Str)
+            sig2Str = getenv("ZAWRA_HAJR_OUTBOUND_SIGNAL");
         const char* parentPidFDStr = getenv("ZAWRA_HAJR_PARENT_PIDFD");
+        if (!parentPidFDStr)
+            parentPidFDStr = getenv("ZAWRA_HAJR_PIDFD");
 
         if (ring1Str && ring2Str && sig1Str && sig2Str) {
             ring1 = strtoull(ring1Str, nullptr, 10);
@@ -648,15 +682,12 @@ void Connection::platformOpen()
             sig2 = atoi(sig2Str);
             pidfd = parentPidFDStr ? atoi(parentPidFDStr) : -1;
             const char* fdTransferStr = getenv("ZAWRA_HAJR_FDTRANSFER");
+            if (!fdTransferStr)
+                fdTransferStr = getenv("ZAWRA_HAJR_FD_TRANSFER");
             if (fdTransferStr && m_fdTransferFd == -1)
                 m_fdTransferFd = atoi(fdTransferStr);
             haveHajrInfo = true;
-            unsetenv("ZAWRA_HAJR_RING1");
-            unsetenv("ZAWRA_HAJR_RING2");
-            unsetenv("ZAWRA_HAJR_SIGNAL1");
-            unsetenv("ZAWRA_HAJR_SIGNAL2");
-            unsetenv("ZAWRA_HAJR_PARENT_PIDFD");
-            unsetenv("ZAWRA_HAJR_FDTRANSFER");
+            unsetHajrEnvironmentVariables();
         }
     }
 
@@ -694,7 +725,7 @@ void Connection::platformOpen()
             m_outboundRing = static_cast<C_HardenedRingBuffer*>(Z_Hajr_MapBootstrapRingWithSignal(ring2, sig2));
         }
         m_isHajrEnabled = (m_inboundRing && m_outboundRing);
-        fprintf(stderr, "[HAJR-CONN] platformOpen: this=%p isServer=%d m_isHajrEnabled=%d inbound=%p outbound=%p inboundSig=%d outboundSig=%d ring1=%llu ring2=%llu sig1=%d sig2=%d pidfd=%d\n",
+        LOG(IPC, "[HAJR-CONN] platformOpen: this=%p isServer=%d m_isHajrEnabled=%d inbound=%p outbound=%p inboundSig=%d outboundSig=%d ring1=%llu ring2=%llu sig1=%d sig2=%d pidfd=%d",
             (void*)this, m_isServer, m_isHajrEnabled,
             (void*)m_inboundRing, (void*)m_outboundRing,
             m_inboundRing ? hajr_ring_get_signal_fd(m_inboundRing) : -1,
@@ -847,7 +878,7 @@ bool Connection::sendOutputMessage(UnixMessage&& outputMessage)
 
                 ssize_t sendResult = sendmsg(m_fdTransferFd, &msg, MSG_NOSIGNAL);
                 if (sendResult == -1)
-                    fprintf(stderr, "[ZAWRA] sendOutputMessage: SCM_RIGHTS FAILED fd=%d errno=%d (%s)\n", m_fdTransferFd, errno, strerror(errno));
+                    LOG(IPC, "sendOutputMessage: SCM_RIGHTS failed fd=%d errno=%d (%s)", m_fdTransferFd, errno, strerror(errno));
             }
             hajr_ring_signal(m_outboundRing);
             return true;
@@ -872,15 +903,15 @@ bool Connection::sendOutputMessage(UnixMessage&& outputMessage)
 
     auto& attachments = outputMessage.attachments();
     if (!attachments.isEmpty()) {
-        int* fdPtr = 0;
+        int* fdPtr = nullptr;
 
-        size_t attachmentFDBufferLength = std::count_if(attachments.begin(), attachments.end(),
+        size_t validFdCount = std::count_if(attachments.begin(), attachments.end(),
             [](const Attachment& attachment) {
-                return !!attachment;
+                return attachment.value() >= 0;
             });
 
-        if (attachmentFDBufferLength) {
-            attachmentFDBuffer = MallocSpan<char>::zeroedMalloc(CMSG_SPACE(sizeof(int) * attachmentFDBufferLength));
+        if (validFdCount > 0) {
+            attachmentFDBuffer = MallocSpan<char>::zeroedMalloc(CMSG_SPACE(sizeof(int) * validFdCount));
             auto span = attachmentFDBuffer.mutableSpan();
             message.msg_control = span.data();
             message.msg_controllen = span.size();
@@ -888,7 +919,7 @@ bool Connection::sendOutputMessage(UnixMessage&& outputMessage)
             struct cmsghdr* cmsg = CMSG_FIRSTHDR(&message);
             cmsg->cmsg_level = SOL_SOCKET;
             cmsg->cmsg_type = SCM_RIGHTS;
-            cmsg->cmsg_len = CMSG_LEN(sizeof(int) * attachmentFDBufferLength);
+            cmsg->cmsg_len = CMSG_LEN(sizeof(int) * validFdCount);
 
             fdPtr = reinterpret_cast<int*>(CMSG_DATA(cmsg));
         }
@@ -897,7 +928,7 @@ bool Connection::sendOutputMessage(UnixMessage&& outputMessage)
 
         size_t fdIndex = 0;
         for (size_t i = 0; i < attachments.size(); ++i) {
-            if (!!attachments[i]) {
+            if (attachments[i].value() >= 0) {
                 ASSERT(fdPtr);
                 fdPtr[fdIndex++] = attachments[i].value();
             } else

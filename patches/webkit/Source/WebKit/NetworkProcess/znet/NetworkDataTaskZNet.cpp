@@ -375,7 +375,6 @@ void NetworkDataTaskZNet::startFetch()
         };
 
         auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
-            WTFLogAlways("NetworkDataTaskZNet: onDataCallback chunkLen=%zu", chunkLen);
             auto* ctx = static_cast<StreamContext*>(userData);
             if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
                 return;

@@ -1273,7 +1273,10 @@ void NetworkResourceLoader::didFinishLoading(const NetworkLoadMetrics& originalN
             contentFilter->stopFilteringMainResource();
         }
 #endif
-        send(Messages::WebResourceLoader::DidFinishResourceLoad(networkLoadMetrics));
+        NetworkLoadMetrics finalMetrics = networkLoadMetrics;
+        if (finalMetrics.responseBodyBytesReceived == std::numeric_limits<uint64_t>::max())
+            finalMetrics.responseBodyBytesReceived = m_numBytesReceived;
+        send(Messages::WebResourceLoader::DidFinishResourceLoad(finalMetrics));
     }
 
 #if ENABLE(CONTENT_EXTENSIONS)

@@ -14,7 +14,7 @@
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr::null_mut;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
@@ -146,7 +146,9 @@ impl OwnedBodyRing {
             head: AtomicU64::new(0),
             _pad2: [0u8; 64],
             tail: AtomicU64::new(0),
-            _pad3: [0u8; 64],
+            _pad3: [0u8; 48],
+            pause_fd: AtomicI32::new(-1),
+            futex_word: AtomicU32::new(0),
             is_closed: AtomicBool::new(false),
         });
 
@@ -347,6 +349,9 @@ unsafe extern "C" fn stream_read(
             .descriptor
             .tail
             .fetch_add(to_copy as u64, Ordering::Release);
+        if ring_guard.descriptor.should_resume_reading() {
+            ring_guard.descriptor.signal_resume();
+        }
         *bytes_read = to_copy as u32;
     }
     0 // NS_OK

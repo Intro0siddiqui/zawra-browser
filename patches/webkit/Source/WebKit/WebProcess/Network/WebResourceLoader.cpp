@@ -102,6 +102,7 @@ void WebResourceLoader::detachFromCoreLoader()
 {
     RELEASE_ASSERT(RunLoop::isMain());
     m_coreLoader = nullptr;
+    m_pendingFinishMetrics = std::nullopt;
 }
 
 MainFrameMainResource WebResourceLoader::mainFrameMainResource() const
@@ -305,6 +306,15 @@ void WebResourceLoader::didReceiveData(IPC::SharedBufferReference&& data, uint64
             resourceMonitor->addNetworkUsage(delta);
     }
 #endif
+
+    if (m_pendingFinishMetrics) {
+        uint64_t finalByteOffset = m_pendingFinishMetrics->responseBodyBytesReceived;
+        if (finalByteOffset != std::numeric_limits<uint64_t>::max() && m_numBytesReceived >= finalByteOffset) {
+            auto metrics = WTF::move(*m_pendingFinishMetrics);
+            m_pendingFinishMetrics = std::nullopt;
+            didFinishResourceLoad(WTF::move(metrics));
+        }
+    }
 }
 
 void WebResourceLoader::didFinishResourceLoad(NetworkLoadMetrics&& networkLoadMetrics)
@@ -318,6 +328,15 @@ void WebResourceLoader::didFinishResourceLoad(NetworkLoadMetrics&& networkLoadMe
             if (m_coreLoader)
                 didFinishResourceLoad(WTF::move(networkLoadMetrics));
         });
+        return;
+    }
+
+    uint64_t finalByteOffset = networkLoadMetrics.responseBodyBytesReceived;
+    if (finalByteOffset != std::numeric_limits<uint64_t>::max() && m_numBytesReceived < finalByteOffset) {
+        // Control-plane vs Data-plane race: DidFinishResourceLoad arrived before the
+        // data-plane finished streaming the remaining bytes. Defer completion until
+        // ring_consumed == final_byte_offset.
+        m_pendingFinishMetrics = WTF::move(networkLoadMetrics);
         return;
     }
 
@@ -370,6 +389,7 @@ void WebResourceLoader::updateResultingClientIdentifier(WTF::UUID currentIdentif
 
 void WebResourceLoader::didFailResourceLoad(const ResourceError& error)
 {
+    m_pendingFinishMetrics = std::nullopt;
     RefPtr coreLoader = m_coreLoader;
     LOG(Network, "(WebProcess) WebResourceLoader::didFailResourceLoad for '%s'", coreLoader->url().string().latin1().data());
     WEBRESOURCELOADER_RELEASE_LOG(WebResourceLoaderDidFailResourceLoad);

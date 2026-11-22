@@ -236,8 +236,7 @@ ClipStack& TextureMapper::clipStack()
 void TextureMapper::beginPainting(FlipY flipY, BitmapTexture* surface)
 {
     if (!surface) {
-        int fd = ZawraGraphicsBridge::singleton().exportCompositorFD();
-        if (fd >= 0) {
+        if (ZawraGraphicsBridge::singleton().hasCompositor()) {
             int width = ZawraGraphicsBridge::singleton().compositorWidth();
             int height = ZawraGraphicsBridge::singleton().compositorHeight();
             data().viewport[0] = 0;
@@ -282,7 +281,7 @@ void TextureMapper::endPainting()
     else
         glDisable(GL_DEPTH_TEST);
 
-    if (ZawraGraphicsBridge::singleton().exportCompositorFD() >= 0)
+    if (ZawraGraphicsBridge::singleton().hasCompositor())
         ZawraGraphicsBridge::singleton().presentFrame();
 }
 

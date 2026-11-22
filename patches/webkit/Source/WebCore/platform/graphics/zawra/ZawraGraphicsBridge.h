@@ -40,6 +40,7 @@ public:
 
     bool initialize(void* windowHandle, int width, int height);
     int exportCompositorFD();
+    bool hasCompositor() const { return m_surfaceHandle != nullptr; }
     bool exportDMABuf(ZawraGraphicsDMABufInfo* info);
     int compositorWidth() const { return m_compositorWidth; }
     int compositorHeight() const { return m_compositorHeight; }

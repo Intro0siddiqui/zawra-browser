@@ -585,6 +585,8 @@ static void activate(GApplication* application, gpointer)
         "enable-media-stream", TRUE,
         "enable-webrtc", TRUE,
         "enable-encrypted-media", TRUE,
+        "media-playback-allows-inline", TRUE,
+        "media-playback-requires-user-gesture", FALSE,
         nullptr);
 
     if (featureList) {

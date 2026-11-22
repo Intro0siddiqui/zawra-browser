@@ -14,9 +14,9 @@ export WEBKIT_USE_SCCACHE=1
 # --- Configuration ---
 BUILD_DIR="webkit/build"
 TARGET="${1:-MiniBrowser}"
-JOBS="${JOBS:-4}"        # Set to 4 for optimal performance within memory/thermal envelope
-TEMP_HIGH=80        # User preferred — conservative pause threshold
-TEMP_LOW=60         # User preferred — conservative resume threshold
+JOBS="${JOBS:-12}"       # 12 parallel jobs across 14 CPU cores
+TEMP_HIGH=92            # Safe threshold for Intel Core Ultra (TjMax 105C)
+TEMP_LOW=72             # Quick resume threshold
 POLL_INTERVAL=5     # seconds between temperature checks
 
 # Find the thermal zone

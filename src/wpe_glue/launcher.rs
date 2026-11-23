@@ -48,6 +48,7 @@ unsafe fn resolve_global_sym(name: &[u8]) -> *mut c_void {
     GetProcAddress(h, name.as_ptr() as *const c_char)
 }
 
+#[allow(dead_code)]
 #[cfg(not(target_os = "windows"))]
 unsafe fn resolve_global_sym(name: &[u8]) -> *mut c_void {
     unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr() as *const _) }
@@ -364,6 +365,11 @@ struct WpeSymbols {
     wpe_toplevel_resize: unsafe extern "C" fn(*mut c_void, c_int, c_int),
     wpe_view_resized: Option<unsafe extern "C" fn(*mut c_void, c_int, c_int)>,
     wpe_view_buffer_rendered: Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
+    wpe_view_event: Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
+    wpe_event_unref: Option<unsafe extern "C" fn(*mut c_void)>,
+    wpe_event_pointer_move_new: Option<unsafe extern "C" fn(u32, *mut c_void, u32, u32, u32, f64, f64, f64, f64) -> *mut c_void>,
+    wpe_event_pointer_button_new: Option<unsafe extern "C" fn(u32, *mut c_void, u32, u32, u32, u32, f64, f64, u32) -> *mut c_void>,
+    wpe_event_keyboard_new: Option<unsafe extern "C" fn(u32, *mut c_void, u32, u32, u32, u32, u32) -> *mut c_void>,
 }
 
 static WPE_SYMS: Mutex<Option<WpeSymbols>> = Mutex::new(None);
@@ -597,7 +603,57 @@ pub extern "C" fn Zawra_NotifyWpeBufferRendered(view: *mut c_void, buffer: *mut 
     }
 }
 
-/// Input event forwarding: pointer events (motion, button, scroll)
+struct PointerEventMsg {
+    event_type: u32,
+    local_x: f64,
+    local_y: f64,
+    button: u32,
+    #[allow(dead_code)]
+    state: u32,
+}
+
+unsafe extern "C" fn idle_pointer_event(data: *mut c_void) -> i32 {
+    let msg = unsafe { Box::from_raw(data as *mut PointerEventMsg) };
+    let view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
+    if !view.is_null() {
+        if let Ok(guard) = WPE_SYMS.lock() {
+            if let Some(syms) = *guard {
+                if let (Some(wpe_view_event), Some(wpe_event_unref)) = (syms.wpe_view_event, syms.wpe_event_unref) {
+                    let ev: *mut c_void = match msg.event_type {
+                        0 => {
+                            // Motion (WPE_EVENT_POINTER_MOVE = 3)
+                            syms.wpe_event_pointer_move_new.map(|f| unsafe {
+                                f(3, view, 0, 0, 0, msg.local_x, msg.local_y, 0.0, 0.0)
+                            }).unwrap_or(null_mut())
+                        }
+                        1 => {
+                            // Button down (WPE_EVENT_POINTER_DOWN = 1)
+                            syms.wpe_event_pointer_button_new.map(|f| unsafe {
+                                f(1, view, 0, 0, 0, if msg.button == 0 { 1 } else { msg.button }, msg.local_x, msg.local_y, 1)
+                            }).unwrap_or(null_mut())
+                        }
+                        2 => {
+                            // Button up (WPE_EVENT_POINTER_UP = 2)
+                            syms.wpe_event_pointer_button_new.map(|f| unsafe {
+                                f(2, view, 0, 0, 0, if msg.button == 0 { 1 } else { msg.button }, msg.local_x, msg.local_y, 1)
+                            }).unwrap_or(null_mut())
+                        }
+                        _ => null_mut(),
+                    };
+                    if !ev.is_null() {
+                        unsafe {
+                            wpe_view_event(view, ev);
+                            wpe_event_unref(ev);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    0 // G_SOURCE_REMOVE
+}
+
+/// Input event forwarding: pointer events (motion, button, scroll) dispatched via GLib idle
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wpe_view_event_pointer(
     event_type: u32,
@@ -606,33 +662,75 @@ pub unsafe extern "C" fn wpe_view_event_pointer(
     button: u32,
     state: u32,
 ) {
-    let view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
-    if view.is_null() { return; }
-    unsafe {
-        type WpePointerEventFn = unsafe extern "C" fn(*mut c_void, u32, f64, f64, u32, u32);
-        let sym = resolve_global_sym(b"wpe_view_event_pointer\0");
-        if !sym.is_null() {
-            let func: WpePointerEventFn = std::mem::transmute(sym);
-            func(view, event_type, local_x, local_y, button, state);
+    let syms = match WPE_SYMS.lock() {
+        Ok(g) => *g,
+        Err(_) => None,
+    };
+    if let Some(syms) = syms {
+        let msg = Box::into_raw(Box::new(PointerEventMsg {
+            event_type,
+            local_x,
+            local_y,
+            button,
+            state,
+        }));
+        unsafe {
+            (syms.g_idle_add)(idle_pointer_event, msg as *mut c_void);
         }
     }
 }
 
-/// Input event forwarding: keyboard events
+struct KeyboardEventMsg {
+    key: u32,
+    state: u32,
+    modifiers: u32,
+}
+
+unsafe extern "C" fn idle_keyboard_event(data: *mut c_void) -> i32 {
+    let msg = unsafe { Box::from_raw(data as *mut KeyboardEventMsg) };
+    let view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
+    if !view.is_null() {
+        if let Ok(guard) = WPE_SYMS.lock() {
+            if let Some(syms) = *guard {
+                if let (Some(wpe_view_event), Some(wpe_event_unref), Some(key_new)) =
+                    (syms.wpe_view_event, syms.wpe_event_unref, syms.wpe_event_keyboard_new)
+                {
+                    let ev_type = if msg.state == 1 { 7 /* KEY_DOWN */ } else { 8 /* KEY_UP */ };
+                    let ev = unsafe {
+                        key_new(ev_type, view, 2 /* KEYBOARD */, 0, msg.modifiers, msg.key, msg.key)
+                    };
+                    if !ev.is_null() {
+                        unsafe {
+                            wpe_view_event(view, ev);
+                            wpe_event_unref(ev);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    0 // G_SOURCE_REMOVE
+}
+
+/// Input event forwarding: keyboard events dispatched via GLib idle
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wpe_view_event_keyboard(
     key: u32,
     state: u32,
     modifiers: u32,
 ) {
-    let view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
-    if view.is_null() { return; }
-    unsafe {
-        type WpeKeyboardEventFn = unsafe extern "C" fn(*mut c_void, u32, u32, u32);
-        let sym = resolve_global_sym(b"wpe_view_event_keyboard\0");
-        if !sym.is_null() {
-            let func: WpeKeyboardEventFn = std::mem::transmute(sym);
-            func(view, key, state, modifiers);
+    let syms = match WPE_SYMS.lock() {
+        Ok(g) => *g,
+        Err(_) => None,
+    };
+    if let Some(syms) = syms {
+        let msg = Box::into_raw(Box::new(KeyboardEventMsg {
+            key,
+            state,
+            modifiers,
+        }));
+        unsafe {
+            (syms.g_idle_add)(idle_keyboard_event, msg as *mut c_void);
         }
     }
 }
@@ -722,6 +820,11 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
             wpe_toplevel_resize: wpe_toplevel_resize.expect("wpe_toplevel_resize missing"),
             wpe_view_resized: lib.sym("wpe_view_resized"),
             wpe_view_buffer_rendered: lib.sym("wpe_view_buffer_rendered"),
+            wpe_view_event: lib.sym("wpe_view_event"),
+            wpe_event_unref: lib.sym("wpe_event_unref"),
+            wpe_event_pointer_move_new: lib.sym("wpe_event_pointer_move_new"),
+            wpe_event_pointer_button_new: lib.sym("wpe_event_pointer_button_new"),
+            wpe_event_keyboard_new: lib.sym("wpe_event_keyboard_new"),
         };
         *WPE_SYMS.lock().unwrap() = Some(sym_cache);
 

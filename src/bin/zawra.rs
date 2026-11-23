@@ -2,6 +2,9 @@
 
 unsafe extern "C" {
     fn Zawra_UI_Run(argc: std::ffi::c_int, argv: *const *const std::ffi::c_char) -> std::ffi::c_int;
+    fn Zawra_SetLoadURLCallback(cb: Option<unsafe extern "C" fn(*const u8, usize)>);
+    fn Zawra_SetPointerEventHandler(cb: Option<unsafe extern "C" fn(u32, f64, f64, u32, u32)>);
+    fn Zawra_SetKeyboardEventHandler(cb: Option<unsafe extern "C" fn(u32, u32, u32)>);
 }
 
 fn main() {
@@ -37,6 +40,13 @@ fn main() {
             eprintln!("[zawra] WPE exited with code {}", code);
         })
         .expect("Failed to spawn webkit-glib thread");
+
+    // Register UI Shell FFI callbacks so omnibar navigation & input flow into WebKit
+    unsafe {
+        Zawra_SetLoadURLCallback(Some(launcher::Zawra_LoadURL));
+        Zawra_SetPointerEventHandler(Some(launcher::wpe_view_event_pointer));
+        Zawra_SetKeyboardEventHandler(Some(launcher::wpe_view_event_keyboard));
+    }
 
     // Run the native Vulkan UI Shell on the main thread (Wayland requirement)
     let exit_code = unsafe { Zawra_UI_Run(0, std::ptr::null()) };

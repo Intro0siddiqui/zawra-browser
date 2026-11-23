@@ -30,6 +30,10 @@ name = "zawra_browser"
 path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
 
+[[bin]]
+name = "zawra"
+path = "src/bin/zawra.rs"
+
 
 [dev-dependencies]
 # No extra deps needed — tests use only the library

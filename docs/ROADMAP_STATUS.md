@@ -64,7 +64,7 @@ Zawra Browser has verified **65 completed items (67.7%)**, **10 partial/in-progr
   - All 8 Phase 2 RHI Exports in `src/lib.zig` and `src/vulkan.zig` (`ZG_CreateFramebuffer`, `ZG_CreateRenderbuffer`, `ZG_UploadTextureRegion`, `ZG_SetTextureParams`, `ZG_GetDeviceProperty`, `ZG_CreateShaderModule`, `ZG_CmdClearAttachments`, `ZG_CmdCopyTexture`).
   - Direct Wayland XDG shell rendering and swapchain present (`linux_wayland.zig`).
 - **Partial Items:** macOS Metal backend (dynamic Obj-C runtime dispatch, IOSurface), Windows D3D12 backend (`exportSurfaceSharedHandle`), DRM format modifier negotiation.
-- **Remaining Priorities:** WebProcess consumption of `m_hostFileDescriptor` to bind directly to UIProcess viewport quad without duplicate window instantiation.
+- **Completed Priorities:** WebProcess consumption of `m_hostFileDescriptor` via `ZawraGraphicsBridge::initializeFromHostFD`, binding directly to UIProcess viewport quad without duplicate offscreen context.
 - **Detailed Doc:** [INTEGRATION_GAP_REPORT.md](INTEGRATION_GAP_REPORT.md).
 
 ### 3.2 Subsystem 2: Storage (`BrowserDB` & WebKit Storage Bridges) — 90.0%
@@ -163,8 +163,8 @@ All automated test suites across the repository pass without failures or compile
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │ P0 Immediate Blockers                                                  │
-│   ├─ Consume m_hostFileDescriptor in WebPage.cpp                       │
-│   ├─ Replace libc::malloc in init.rs:261 with Hajr Allocator           │
+│   ├─ [COMPLETED] Consume m_hostFileDescriptor in WebPage.cpp           │
+│   ├─ [COMPLETED] Replace libc::malloc in init.rs:261 with Hajr Alloc   │
 │   └─ Wire RendererEmbed Navigation to WebKit IPC                       │
 ├────────────────────────────────────────────────────────────────────────┤
 │ P1 Subsystem Decoupling                                                │

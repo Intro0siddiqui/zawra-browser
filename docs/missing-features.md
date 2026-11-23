@@ -52,12 +52,12 @@
 ## REMAINING ISSUES & GAPS (21 Remaining / 10 Partial)
 
 ### 1. C++ Integration Layer (`patches/webkit/`)
-1. **Cross-Process Surface Sharing (`m_hostFileDescriptor` Consumption)** (Remaining)
-   - *Issue:* [WebPage.cpp:726](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebKit/WebProcess/WebPage/WebPage.cpp#L726) assigns `m_hostFileDescriptor`, but no code reads it; `ZawraGraphicsBridge.h` lacks `initializeFromHostFD`.
-2. **WebProcess Duplicate Window / Device Instantiation** (Remaining)
-   - *Issue:* WebProcess initialization creates an isolated Vulkan surface rather than attaching to the UIProcess-exported DMA-BUF surface.
-3. **Phase 3 C++ Bridge Declarations** (Partial / In-Progress)
-   - *Issue:* [ZawraGraphicsBridge.h](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h#L15-L28) only exposes 11 methods. The Phase 2 RHI functions implemented in `lib.zig` need bridge headers.
+1. **Cross-Process Surface Sharing (`m_hostFileDescriptor` Consumption)** (Completed)
+   - *Status:* Implemented via `ZawraGraphicsBridge::initializeFromHostFD` and wired in `WebPage.cpp`.
+2. **WebProcess Duplicate Window / Device Instantiation** (Completed)
+   - *Status:* WebProcess binds directly to UIProcess DMA-BUF surface FD without duplicate offscreen context.
+3. **Phase 3 C++ Bridge Declarations** (Completed)
+   - *Status:* [ZawraGraphicsBridge.h](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h) declares Phase 2 RHI functions and `initializeFromHostFD`.
 4. **Fullscreen API in `PageClientImpl.cpp`** (Remaining)
    - *Issue:* Only `m_fullscreenClientForTesting` stub exists ([PageClientImpl.cpp:508](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebKit/UIProcess/API/wpe/PageClientImpl.cpp#L508)).
 5. **`JavaScriptCore_INSTALLED_HEADERS` in `PlatformWPE.cmake:702`** (Remaining)
@@ -78,10 +78,10 @@
     - *Issue:* Prints placeholder warning and returns 0 in [launcher.rs:291](file:///home/intro/spectre-enviroment/browser/zawra-browser/src/wpe_glue/launcher.rs#L291).
 15. **Diagnostic HTTP Server for Headless Testing** (Remaining)
     - *Issue:* Embedded test server interface not yet implemented.
-16. **Rust Glue Allocator Hardware Guard Pages** (Remaining)
-    - *Issue:* [init.rs:261](file:///home/intro/spectre-enviroment/browser/zawra-browser/src/wpe_glue/init.rs#L261) calls `libc::malloc(size)` directly, bypassing MPK/MTE page protection.
-17. **Zero-Copy JSC External ArrayBuffer Bridge** (Partial / In-Progress)
-    - *Issue:* `pin_blob`, `release_pin`, and `Z_JS_CreateCacheBuffer` exist in [zero_copy_bridge.rs](file:///home/intro/spectre-enviroment/browser/zawra-browser/src/wpe_glue/zero_copy_bridge.rs), but `JS_NewExternalArrayBuffer` in [zero_copy.rs:6-14](file:///home/intro/spectre-enviroment/browser/zawra-browser/src/zero_copy.rs#L6-L14) remains a mock returning `null`.
+16. **Rust Glue Allocator Hardware Guard Pages** (Completed)
+    - *Status:* [init.rs:261](file:///home/intro/spectre-enviroment/browser/zawra-browser/src/wpe_glue/init.rs#L261) calls `Zawra_Hajr_MemAlloc` (Hajr mmap-guarded allocator with hardware page protection).
+17. **Zero-Copy JSC External ArrayBuffer Bridge** (Completed)
+    - *Status:* Completed `JS_NewExternalArrayBuffer` in [zero_copy.rs](file:///home/intro/spectre-enviroment/browser/zawra-browser/src/zero_copy.rs) via `JSObjectMakeArrayBufferWithBytesNoCopy` for zero-copy mapping.
 
 ### 3. Rust UI Layer (`src/ui/`)
 18. **RendererEmbed Navigation IPC Wiring** (Remaining)
@@ -92,8 +92,8 @@
     - *Issue:* Keyboard shortcuts functional; graphical bookmark management modal pending.
 
 ### 4. Networking & IPC Subsystems (`z-net` & `hajr`)
-21. **Native Zig `IpcRing` Message Framing** (Remaining)
-    - *Issue:* `ConnectionUnix.cpp` lines 435–595 still execute manual C++ serialization with `memcpy`.
+21. **Native Zig `IpcRing` Message Framing** (Completed)
+    - *Status:* Adopted `IpcPacketFrameHeader` in `ConnectionUnix.cpp`, replacing manual C++ field-by-field serialization with typed, lock-free ring framing.
 22. **Multi-Path QUIC (MP-QUIC)** (Partial / In-Progress)
     - *Issue:* Connection migration and Alt-Svc registry implemented; multi-interface cellular/Wi-Fi scheduling remains in progress.
 23. **WebSockets over HTTP/3 (RFC 9220)** (Remaining / Future)

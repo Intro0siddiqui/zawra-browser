@@ -42,6 +42,9 @@
 #include "DragEventForwardingData.h"
 #include "DrawingArea.h"
 #include "DrawingAreaMessages.h"
+#if USE(WPE_RENDERER) || PLATFORM(WPE)
+#include "../../../../WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h"
+#endif
 #include "EditorState.h"
 #include "EventDispatcher.h"
 #include "FindController.h"
@@ -956,6 +959,14 @@ WebPage::WebPage(PageIdentifier pageID, WebPageCreationParameters&& parameters)
     m_mainFrameOpenerURL = parameters.mainFrameOpenerURL;
 
     updateAfterDrawingAreaCreation(parameters);
+
+#if USE(WPE_RENDERER)
+    if (m_hostFileDescriptor.value() >= 0) {
+        uint32_t width = m_viewSize.width() > 0 ? static_cast<uint32_t>(m_viewSize.width()) : 1280;
+        uint32_t height = m_viewSize.height() > 0 ? static_cast<uint32_t>(m_viewSize.height()) : 720;
+        WebCore::ZawraGraphicsBridge::singleton().initializeFromHostFD(m_hostFileDescriptor.value(), width, height);
+    }
+#endif
 
     if (parameters.displayID)
         windowScreenDidChange(*parameters.displayID, parameters.nominalFramesPerSecond);

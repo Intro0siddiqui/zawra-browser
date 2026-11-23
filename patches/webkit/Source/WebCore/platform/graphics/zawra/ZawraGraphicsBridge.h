@@ -24,6 +24,21 @@ struct ZawraGraphicsDMABufInfo {
 
 extern "C" {
 bool ZG_ExportSurfaceDMABuf(void* surface, void* info);
+bool ZG_BindWpeDMABuf(void* surface, int fd, uint32_t width, uint32_t height);
+int ZG_ExportSurfaceFD(void* handle);
+void* ZG_CreateFramebuffer(void* handle, void* texture);
+void ZG_DestroyFramebuffer(void* handle, void* fb);
+void* ZG_CreateRenderbuffer(void* handle, uint32_t width, uint32_t height, uint32_t format);
+void ZG_DestroyRenderbuffer(void* handle, void* rb);
+bool ZG_UploadTextureRegion(void* handle, void* texture, uint32_t x, uint32_t y, uint32_t width, uint32_t height, const void* data, size_t rowPitch);
+bool ZG_SetTextureParams(void* handle, void* texture, uint32_t minFilter, uint32_t magFilter, uint32_t wrapS, uint32_t wrapT);
+uint32_t ZG_GetDeviceProperty(void* handle, uint32_t propId);
+void* ZG_CreateShaderModule(void* handle, const uint32_t* code, size_t codeSize);
+void ZG_DestroyShaderModule(void* handle, void* module);
+void ZG_CmdClearAttachments(void* cmd, bool color, bool depth, bool stencil, float r, float g, float b, float a);
+void ZG_CmdCopyTexture(void* cmd, void* src, void* dst, uint32_t width, uint32_t height);
+void* ZG_ImportTextureFD(void* handle, int fd, const void* desc);
+void* ZG_ImportTextureDMABuf(void* handle, int fd, const void* info, const void* desc);
 }
 
 namespace WebCore {
@@ -39,11 +54,13 @@ public:
     ~ZawraGraphicsBridge();
 
     bool initialize(void* windowHandle, int width, int height);
+    bool initializeFromHostFD(int fd, uint32_t width, uint32_t height);
     int exportCompositorFD();
-    bool hasCompositor() const { return m_surfaceHandle != nullptr; }
+    bool hasCompositor() const { return m_surfaceHandle != nullptr || m_hostFD >= 0; }
     bool exportDMABuf(ZawraGraphicsDMABufInfo* info);
     int compositorWidth() const { return m_compositorWidth; }
     int compositorHeight() const { return m_compositorHeight; }
+    int hostFD() const { return m_hostFD; }
     void presentFrame();
     void renderLayer(void* state);
 
@@ -52,6 +69,7 @@ private:
     void* m_compositorState { nullptr };
     int m_compositorWidth { 0 };
     int m_compositorHeight { 0 };
+    int m_hostFD { -1 };
 };
 
 } // namespace WebCore

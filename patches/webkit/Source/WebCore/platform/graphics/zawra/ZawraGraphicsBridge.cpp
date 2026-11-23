@@ -47,9 +47,47 @@ ZawraGraphicsBridge& ZawraGraphicsBridge::singleton()
     return bridge.get();
 }
 
+bool ZawraGraphicsBridge::initializeFromHostFD(int fd, uint32_t width, uint32_t height)
+{
+    ZLOG("initializeFromHostFD: fd=%d, size=%ux%u", fd, width, height);
+    if (fd < 0) {
+        ZLOG("FATAL: initializeFromHostFD called with invalid fd=%d", fd);
+        return false;
+    }
+    m_hostFD = fd;
+    m_compositorWidth = static_cast<int>(width);
+    m_compositorHeight = static_cast<int>(height);
+
+    bool initOk = ZG_Initialize();
+    ZLOG("ZG_Initialize returned %s", initOk ? "true" : "false");
+    if (!initOk) {
+        ZLOG("FATAL: ZG_Initialize failed in initializeFromHostFD!");
+        return false;
+    }
+
+    if (m_surfaceHandle) {
+        ZG_BindWpeDMABuf(m_surfaceHandle, fd, width, height);
+    }
+    return true;
+}
+
 bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
 {
-    ZLOG("initialize: window=%p, size=%dx%d, existingHandle=%p", windowHandle, width, height, m_surfaceHandle);
+    ZLOG("initialize: window=%p, size=%dx%d, existingHandle=%p, hostFD=%d", windowHandle, width, height, m_surfaceHandle, m_hostFD);
+    if (m_hostFD >= 0) {
+        m_compositorWidth = width;
+        m_compositorHeight = height;
+        if (!m_surfaceHandle) {
+            bool initOk = ZG_Initialize();
+            if (!initOk) return false;
+            void* handle = ZG_CreateSurface(windowHandle, width, height);
+            if (handle) {
+                m_surfaceHandle = handle;
+                ZG_BindWpeDMABuf(m_surfaceHandle, m_hostFD, width, height);
+            }
+        }
+        return true;
+    }
     if (!m_surfaceHandle) {
         bool initOk = ZG_Initialize();
         ZLOG("ZG_Initialize returned %s", initOk ? "true" : "false");
@@ -93,7 +131,11 @@ bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
 
 int ZawraGraphicsBridge::exportCompositorFD()
 {
-    ZLOG("exportCompositorFD called: m_surfaceHandle=%p", m_surfaceHandle);
+    ZLOG("exportCompositorFD called: m_surfaceHandle=%p, m_hostFD=%d", m_surfaceHandle, m_hostFD);
+    if (m_hostFD >= 0) {
+        ZLOG("exportCompositorFD: returning shared hostFD=%d", m_hostFD);
+        return m_hostFD;
+    }
     if (!m_surfaceHandle) {
         ZLOG("FATAL ERROR: exportCompositorFD called but m_surfaceHandle is null!");
         fprintf(stderr, "FATAL ERROR: exportCompositorFD called but m_surfaceHandle is null!\n");

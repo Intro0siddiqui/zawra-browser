@@ -97,6 +97,29 @@ fn main() {
         }
     }
 
+    // ── Link hajr sandbox static library ────────────────────────────────────
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
+    let hajr_lib = PathBuf::from(&manifest_dir).join("dependencies/hajr/zig-out/lib");
+    if hajr_lib.exists() {
+        println!("cargo:rustc-link-search=native={}", hajr_lib.display());
+        println!("cargo:rustc-link-lib=dylib=hajr_ffi");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", hajr_lib.display());
+    }
+
+    // ── Link z-graphics & UI static libraries ────────────────────────────────
+    let z_graphics_lib = PathBuf::from(&manifest_dir).join("dependencies/z-graphics/zig-out/lib");
+    if z_graphics_lib.exists() {
+        println!("cargo:rustc-link-search=native={}", z_graphics_lib.display());
+        println!("cargo:rustc-link-lib=static=zawra-ui");
+        println!("cargo:rustc-link-lib=static=z-graphics");
+        if target_os == "linux" {
+            println!("cargo:rustc-link-lib=dylib=vulkan");
+            println!("cargo:rustc-link-lib=dylib=wayland-client");
+            println!("cargo:rustc-link-lib=dylib=X11");
+            println!("cargo:rustc-link-lib=dylib=m");
+        }
+    }
+
     // ── System libs ──────────────────────────────────────────────────────────
     // dl is required for dlopen() on desktop Linux/glibc, but is part of libc/libSystem on modern Android and macOS, and not used on Windows
     if target_os != "android" && target_os != "macos" && target_os != "windows" {

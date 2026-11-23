@@ -89,6 +89,16 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN // Unix port
 
 namespace IPC {
 
+// Typed Zig / Hajr IPC Ring packet frame header (FRAMING_IN_ZIG.md)
+#pragma pack(push, 1)
+struct IpcPacketFrameHeader {
+    MessageInfo messageInfo;
+    uint32_t attachmentCount { 0 };
+    uint32_t bodySize { 0 };
+    uint32_t checksum { 0 };
+};
+#pragma pack(pop)
+
 #if USE(GLIB)
 struct HajrSource {
     GSource source;
@@ -436,40 +446,39 @@ void Connection::readyReadHandler()
 {
     if (m_isHajrEnabled && m_inboundRing) {
         while (true) {
-            MessageInfo msgInfo;
+            IpcPacketFrameHeader frameHeader;
             size_t bytesRead = 0;
-            int32_t res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&msgInfo), sizeof(msgInfo), &bytesRead);
+            int32_t res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&frameHeader), sizeof(frameHeader), &bytesRead);
             if (res != 1 || bytesRead == 0)
                 break;
 
-            if (bytesRead != sizeof(msgInfo)) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - PARTIAL MESSAGE INFO READ: got %zu, expected %zu\n", bytesRead, sizeof(msgInfo));
+            if (bytesRead != sizeof(frameHeader)) {
+                fprintf(stderr, "[ZAWRA] readyReadHandler - PARTIAL FRAME HEADER READ: got %zu, expected %zu\n", bytesRead, sizeof(frameHeader));
                 break;
             }
 
-            uint32_t attachmentCount = 0;
-            size_t countBytesRead = 0;
-            res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&attachmentCount), sizeof(attachmentCount), &countBytesRead);
-            if (res != 1 || countBytesRead != sizeof(attachmentCount)) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT COUNT READ FAILED\n");
-                break;
-            }
+            auto& msgInfo = frameHeader.messageInfo;
+            uint32_t attachmentCount = frameHeader.attachmentCount;
+            uint32_t bodySize = frameHeader.bodySize;
+            uint32_t receivedChecksum = frameHeader.checksum;
 
             Vector<int32_t> handles(attachmentCount);
             size_t validFdCount = 0;
             bool attachmentFail = false;
-            for (uint32_t i = 0; i < attachmentCount; ++i) {
-                int32_t handle = -1;
-                size_t handleBytesRead = 0;
-                res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&handle), sizeof(handle), &handleBytesRead);
-                if (res != 1 || handleBytesRead != sizeof(handle)) {
-                    fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT HANDLE READ FAILED at index %u\n", i);
+
+            if (attachmentCount > 0) {
+                size_t handlesBytesRead = 0;
+                size_t handlesSize = attachmentCount * sizeof(int32_t);
+                res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(handles.data()), handlesSize, &handlesBytesRead);
+                if (res != 1 || handlesBytesRead != handlesSize) {
+                    fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT HANDLES READ FAILED: got %zu, expected %zu\n", handlesBytesRead, handlesSize);
                     attachmentFail = true;
-                    break;
+                } else {
+                    for (uint32_t i = 0; i < attachmentCount; ++i) {
+                        if (handles[i] >= 0)
+                            validFdCount++;
+                    }
                 }
-                handles[i] = handle;
-                if (handle >= 0)
-                    validFdCount++;
             }
 
             Vector<int> receivedFds;
@@ -520,18 +529,15 @@ void Connection::readyReadHandler()
             }
 
             if (attachmentFail) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED, skipping body+checksum\n");
+                fprintf(stderr, "[ZAWRA] readyReadHandler - ATTACHMENT RETRIEVAL FAILED, skipping body\n");
                 for (int fd : receivedFds)
                     close(fd);
-                if (msgInfo.bodySize() > 0) {
-                    uint8_t* skipBuf = static_cast<uint8_t*>(fastMalloc(msgInfo.bodySize()));
+                if (bodySize > 0) {
+                    uint8_t* skipBuf = static_cast<uint8_t*>(fastMalloc(bodySize));
                     size_t skipRead = 0;
-                    hajr_ring_read(m_inboundRing, skipBuf, msgInfo.bodySize(), &skipRead);
+                    hajr_ring_read(m_inboundRing, skipBuf, bodySize, &skipRead);
                     fastFree(skipBuf);
                 }
-                uint32_t skipChecksum = 0;
-                size_t skipChecksumRead = 0;
-                hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&skipChecksum), sizeof(skipChecksum), &skipChecksumRead);
                 break;
             }
 
@@ -552,29 +558,22 @@ void Connection::readyReadHandler()
                     close(oolFd);
             }
 
-            uint8_t* payloadBuffer = static_cast<uint8_t*>(fastMalloc(msgInfo.bodySize()));
+            uint8_t* payloadBuffer = static_cast<uint8_t*>(fastMalloc(bodySize));
             size_t bodyBytesRead = 0;
-            res = hajr_ring_read(m_inboundRing, payloadBuffer, msgInfo.bodySize(), &bodyBytesRead);
-            if (res != 1 || bodyBytesRead != msgInfo.bodySize()) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - BODY READ FAILED\n");
-                fastFree(payloadBuffer);
-                break;
-            }
-
-            uint32_t receivedChecksum = 0;
-            size_t checksumRead = 0;
-            res = hajr_ring_read(m_inboundRing, reinterpret_cast<uint8_t*>(&receivedChecksum), sizeof(receivedChecksum), &checksumRead);
-            if (res != 1 || checksumRead != sizeof(receivedChecksum)) {
-                fprintf(stderr, "[ZAWRA] readyReadHandler - CHECKSUM READ FAILED\n");
-                fastFree(payloadBuffer);
-                break;
+            if (bodySize > 0) {
+                res = hajr_ring_read(m_inboundRing, payloadBuffer, bodySize, &bodyBytesRead);
+                if (res != 1 || bodyBytesRead != bodySize) {
+                    fprintf(stderr, "[ZAWRA] readyReadHandler - BODY READ FAILED\n");
+                    fastFree(payloadBuffer);
+                    break;
+                }
             }
 
             uint32_t computedChecksum = hajr_ipc_message_checksum(
                 reinterpret_cast<const uint8_t*>(&msgInfo),
                 sizeof(msgInfo),
                 payloadBuffer,
-                msgInfo.bodySize()
+                bodySize
             );
 
             if (computedChecksum != receivedChecksum) {
@@ -818,36 +817,42 @@ bool Connection::sendOutputMessage(UnixMessage&& outputMessage)
         auto& messageInfo = outputMessage.messageInfo();
         auto& attachments = outputMessage.attachments();
         uint32_t attachmentCount = attachments.size();
-
-        size_t totalPayloadSize = sizeof(messageInfo) + sizeof(attachmentCount) + (attachmentCount * sizeof(int32_t)) + outputMessage.bodySize() + sizeof(uint32_t);
-        Vector<uint8_t> payload;
-        payload.grow(totalPayloadSize);
-        uint8_t* ptr = payload.mutableSpan().data();
-
-        memcpy(ptr, &messageInfo, sizeof(messageInfo));
-        ptr += sizeof(messageInfo);
-
-        memcpy(ptr, &attachmentCount, sizeof(attachmentCount));
-        ptr += sizeof(attachmentCount);
-
-        size_t validFdCount = 0;
-        for (auto& attachment : attachments) {
-            int32_t handle = attachment.value();
-            if (handle >= 0)
-                validFdCount++;
-            memcpy(ptr, &handle, sizeof(handle));
-            ptr += sizeof(handle);
-        }
-
-        memcpy(ptr, outputMessage.body().data(), outputMessage.bodySize());
+        uint32_t bodySize = outputMessage.bodySize();
 
         uint32_t checksum = hajr_ipc_message_checksum(
             reinterpret_cast<const uint8_t*>(&messageInfo),
             sizeof(messageInfo),
             outputMessage.body().data(),
-            outputMessage.bodySize()
+            bodySize
         );
-        memcpy(ptr + outputMessage.bodySize(), &checksum, sizeof(checksum));
+
+        IpcPacketFrameHeader frameHeader {
+            messageInfo,
+            attachmentCount,
+            bodySize,
+            checksum,
+        };
+
+        size_t totalPayloadSize = sizeof(IpcPacketFrameHeader) + (attachmentCount * sizeof(int32_t)) + bodySize;
+        Vector<uint8_t> payload;
+        payload.grow(totalPayloadSize);
+
+        // Typed framing: write header directly
+        memcpy(payload.mutableSpan().data(), &frameHeader, sizeof(IpcPacketFrameHeader));
+
+        // Typed framing: write attachment handles directly into typed array
+        int32_t* handles = reinterpret_cast<int32_t*>(payload.mutableSpan().data() + sizeof(IpcPacketFrameHeader));
+        size_t validFdCount = 0;
+        for (size_t i = 0; i < attachmentCount; ++i) {
+            int32_t handle = attachments[i].value();
+            if (handle >= 0)
+                validFdCount++;
+            handles[i] = handle;
+        }
+
+        // Write contiguous body payload
+        if (bodySize > 0)
+            memcpy(payload.mutableSpan().data() + sizeof(IpcPacketFrameHeader) + (attachmentCount * sizeof(int32_t)), outputMessage.body().data(), bodySize);
 
         if (hajr_ring_write(m_outboundRing, payload.span().data(), payload.size()) == 1) {
             if (validFdCount > 0 && m_fdTransferFd != -1) {

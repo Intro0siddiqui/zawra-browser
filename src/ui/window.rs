@@ -92,8 +92,9 @@ impl BrowserWindow {
     }
 }
 
-// ── Native window helpers (GTK / Wayland dynamically loaded) ──────────────────
+// ── Native window helpers ───────────────────────────────────────────────────
 
+#[cfg(not(any(target_os = "android", target_os = "windows")))]
 struct GtkLib {
     gtk_init: unsafe extern "C" fn(),
     gtk_window_new: unsafe extern "C" fn() -> *mut c_void,
@@ -102,6 +103,7 @@ struct GtkLib {
     gtk_window_present: unsafe extern "C" fn(*mut c_void),
 }
 
+#[cfg(not(any(target_os = "android", target_os = "windows")))]
 fn load_gtk() -> Option<&'static GtkLib> {
     static GTK_LIB: OnceLock<Option<GtkLib>> = OnceLock::new();
     GTK_LIB.get_or_init(|| {
@@ -160,13 +162,124 @@ fn load_gtk() -> Option<&'static GtkLib> {
     }).as_ref()
 }
 
+#[cfg(target_os = "windows")]
+fn create_win32_window(config: &WindowConfig) -> *mut std::ffi::c_void {
+    extern "system" {
+        fn DefWindowProcW(
+            hWnd: *mut std::ffi::c_void,
+            Msg: u32,
+            wParam: usize,
+            lParam: isize,
+        ) -> isize;
+        fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
+        fn RegisterClassW(lpWndClass: *const WndClassW) -> u16;
+        fn CreateWindowExW(
+            dwExStyle: u32,
+            lpClassName: *const u16,
+            lpWindowName: *const u16,
+            dwStyle: u32,
+            X: i32,
+            Y: i32,
+            nWidth: i32,
+            nHeight: i32,
+            hWndParent: *mut std::ffi::c_void,
+            hMenu: *mut std::ffi::c_void,
+            hInstance: *mut std::ffi::c_void,
+            lpParam: *mut std::ffi::c_void,
+        ) -> *mut std::ffi::c_void;
+    }
+
+    #[repr(C)]
+    struct WndClassW {
+        style: u32,
+        lpfnWndProc: unsafe extern "system" fn(*mut std::ffi::c_void, u32, usize, isize) -> isize,
+        cbClsExtra: i32,
+        cbWndExtra: i32,
+        hInstance: *mut std::ffi::c_void,
+        hIcon: *mut std::ffi::c_void,
+        hCursor: *mut std::ffi::c_void,
+        hbrBackground: *mut std::ffi::c_void,
+        lpszMenuName: *const u16,
+        lpszClassName: *const u16,
+    }
+
+    let class_name: Vec<u16> = "ZawraBrowserWindow\0".encode_utf16().collect();
+    let title: Vec<u16> = config.title.encode_utf16().chain(std::iter::once(0)).collect();
+
+    unsafe {
+        let h_instance = GetModuleHandleW(std::ptr::null());
+        let wnd_class = WndClassW {
+            style: 0x0002 | 0x0001,
+            lpfnWndProc: DefWindowProcW,
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: h_instance,
+            hIcon: std::ptr::null_mut(),
+            hCursor: std::ptr::null_mut(),
+            hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(),
+            lpszClassName: class_name.as_ptr(),
+        };
+        RegisterClassW(&wnd_class);
+
+        const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
+        const CW_USEDEFAULT: i32 = 0x80000000u32 as i32;
+
+        CreateWindowExW(
+            0,
+            class_name.as_ptr(),
+            title.as_ptr(),
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            config.width as i32,
+            config.height as i32,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            h_instance,
+            std::ptr::null_mut(),
+        )
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn show_win32_window(handle: *mut std::ffi::c_void) {
+    extern "system" {
+        fn ShowWindow(hWnd: *mut std::ffi::c_void, nCmdShow: i32) -> i32;
+        fn UpdateWindow(hWnd: *mut std::ffi::c_void) -> i32;
+    }
+    const SW_SHOW: i32 = 5;
+    unsafe {
+        ShowWindow(handle, SW_SHOW);
+        UpdateWindow(handle);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_win32_title(handle: *mut std::ffi::c_void, title: &str) {
+    extern "system" {
+        fn SetWindowTextW(hWnd: *mut std::ffi::c_void, lpString: *const u16) -> i32;
+    }
+    let title_utf16: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        SetWindowTextW(handle, title_utf16.as_ptr());
+    }
+}
+
 fn create_native_window(config: &WindowConfig) -> *mut std::ffi::c_void {
     #[cfg(target_os = "android")]
     {
         let _ = config;
         return std::ptr::null_mut();
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "windows")]
+    {
+        if std::env::var("ZAWRA_HEADLESS").is_ok() {
+            return std::ptr::null_mut();
+        }
+        create_win32_window(config)
+    }
+    #[cfg(not(any(target_os = "android", target_os = "windows")))]
     {
         if std::env::var("ZAWRA_HEADLESS").is_ok() {
             return std::ptr::null_mut();
@@ -199,6 +312,9 @@ fn create_native_window(config: &WindowConfig) -> *mut std::ffi::c_void {
 }
 
 fn show_native_window(handle: *mut std::ffi::c_void) {
+    #[cfg(target_os = "windows")]
+    show_win32_window(handle);
+    #[cfg(not(any(target_os = "android", target_os = "windows")))]
     if let Some(gtk) = load_gtk() {
         unsafe {
             (gtk.gtk_window_present)(handle);
@@ -207,6 +323,9 @@ fn show_native_window(handle: *mut std::ffi::c_void) {
 }
 
 fn set_native_title(handle: *mut std::ffi::c_void, title: &str) {
+    #[cfg(target_os = "windows")]
+    set_win32_title(handle, title);
+    #[cfg(not(any(target_os = "android", target_os = "windows")))]
     if let Some(gtk) = load_gtk() {
         if let Ok(title_c) = CString::new(title) {
             unsafe {

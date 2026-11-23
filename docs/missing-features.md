@@ -55,23 +55,17 @@
 1. **Cross-Process Surface Sharing (`m_hostFileDescriptor` Consumption)** (Remaining)
    - *Issue:* [WebPage.cpp:726](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebKit/WebProcess/WebPage/WebPage.cpp#L726) assigns `m_hostFileDescriptor`, but no code reads it; `ZawraGraphicsBridge.h` lacks `initializeFromHostFD`.
 2. **WebProcess Duplicate Window / Device Instantiation** (Remaining)
-   - *Issue:* `TextureMapperGL.cpp` lazy initialization creates an isolated Vulkan surface and X11 connection rather than attaching to the UIProcess-exported surface.
+   - *Issue:* WebProcess initialization creates an isolated Vulkan surface rather than attaching to the UIProcess-exported DMA-BUF surface.
 3. **Phase 3 C++ Bridge Declarations** (Partial / In-Progress)
-   - *Issue:* [ZawraGraphicsBridge.h](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h#L15-L28) only exposes 11 methods. The 30+ Phase 2 RHI functions implemented in `lib.zig` need bridge headers.
-4. **Phase 4 WebKit Patches (`BitmapTextureGL.cpp`, `TextureMapperShaderProgram.cpp`)** (Remaining)
-   - *Issue:* `BitmapTextureGL.cpp` (~70 GL calls) and `TextureMapperShaderProgram.cpp` (~15 GL calls) have not been patched to use z-graphics.
-5. **Phase 5 Build Cleanup (`OptionsWPE.cmake`)** (Remaining)
-   - *Issue:* [OptionsWPE.cmake:433](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/cmake/OptionsWPE.cmake#L433) still sets `SET_AND_EXPOSE_TO_BUILD(USE_LIBEPOXY TRUE)`.
-6. **`TextureMapperGL.cpp` Filter Switch Default `ASSERT_NOT_REACHED`** (Remaining)
-   - *Issue:* Filter switch default branch remains unhandled.
-7. **Fullscreen API in `PageClientImpl.cpp`** (Remaining)
+   - *Issue:* [ZawraGraphicsBridge.h](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebCore/platform/graphics/zawra/ZawraGraphicsBridge.h#L15-L28) only exposes 11 methods. The Phase 2 RHI functions implemented in `lib.zig` need bridge headers.
+4. **Fullscreen API in `PageClientImpl.cpp`** (Remaining)
    - *Issue:* Only `m_fullscreenClientForTesting` stub exists ([PageClientImpl.cpp:508](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebKit/UIProcess/API/wpe/PageClientImpl.cpp#L508)).
-8. **`JavaScriptCore_INSTALLED_HEADERS` in `PlatformWPE.cmake:702`** (Remaining)
+5. **`JavaScriptCore_INSTALLED_HEADERS` in `PlatformWPE.cmake:702`** (Remaining)
    - *Issue:* Expands to empty string.
-9. **`webkitwpe-fake-api-headers` Target** (Remaining)
+6. **`webkitwpe-fake-api-headers` Target** (Remaining)
    - *Issue:* Fake API headers target in `PlatformWPE.cmake:308`.
-10. **`NetworkStorageSessionSoup.cpp` Release Asserts** (Remaining)
-    - *Issue:* Three `RELEASE_ASSERT_NOT_REACHED()` paths remain ([lines 198, 226, 380](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebCore/platform/network/soup/NetworkStorageSessionSoup.cpp#L198)).
+7. **`NetworkStorageSessionSoup.cpp` Release Asserts** (Remaining)
+   - *Issue:* Three `RELEASE_ASSERT_NOT_REACHED()` paths remain ([lines 198, 226, 380](file:///home/intro/spectre-enviroment/browser/zawra-browser/patches/webkit/Source/WebCore/platform/network/soup/NetworkStorageSessionSoup.cpp#L198)).
 
 ### 2. Rust Glue Layer (`src/wpe_glue/`)
 11. **Protocol Factory Placeholders** (Remaining)

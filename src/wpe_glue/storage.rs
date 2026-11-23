@@ -65,7 +65,22 @@ pub struct ZawraStorageStats {
 
 fn hajr_trace_get_process_kind() -> u8 {
     unsafe {
+        #[cfg(target_os = "windows")]
+        let sym = {
+            extern "system" {
+                fn GetModuleHandleA(lpModuleName: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+                fn GetProcAddress(hModule: *mut std::ffi::c_void, lpProcName: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+            }
+            let h = GetModuleHandleA(std::ptr::null());
+            if !h.is_null() {
+                GetProcAddress(h, b"hajr_trace_get_process_kind\0".as_ptr() as *const std::ffi::c_char)
+            } else {
+                std::ptr::null_mut()
+            }
+        };
+        #[cfg(not(target_os = "windows"))]
         let sym = libc::dlsym(libc::RTLD_DEFAULT, b"hajr_trace_get_process_kind\0".as_ptr() as *const _);
+
         if !sym.is_null() {
             let func: extern "C" fn() -> u8 = std::mem::transmute(sym);
             func()

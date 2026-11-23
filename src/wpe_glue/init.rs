@@ -49,7 +49,28 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
                 }
             }
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(target_os = "macos")]
+        {
+            let mac_bundle_dirs = [
+                std::env::current_exe().ok().and_then(|exe| {
+                    exe.parent().map(|p| p.join("../Frameworks"))
+                }),
+                Some(PathBuf::from("/opt/homebrew/lib")),
+                Some(PathBuf::from("/usr/local/lib")),
+                Some(PathBuf::from("/home/intro/spectre-enviroment/browser/zawra-browser/webkit/build/lib")),
+            ];
+            for maybe_dir in &mac_bundle_dirs {
+                if let Some(dir) = maybe_dir {
+                    if dir.is_dir() {
+                        unsafe {
+                            std::env::set_var("WEBKIT_INJECTED_BUNDLE_PATH", dir);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        #[cfg(not(any(target_os = "android", target_os = "macos")))]
         {
             let default_bundle = "/home/intro/spectre-enviroment/browser/zawra-browser/webkit/build/lib";
             if std::path::Path::new(default_bundle).is_dir() {
@@ -78,7 +99,21 @@ pub unsafe extern "C" fn Z_Init_Subsystems(profile_path: *const c_char) -> i32 {
                     fallback.to_string_lossy().into_owned()
                 }
             }
-            #[cfg(not(target_os = "android"))]
+            #[cfg(target_os = "macos")]
+            {
+                if let Ok(home) = std::env::var("HOME") {
+                    let mac_dir = PathBuf::from(home)
+                        .join("Library")
+                        .join("Application Support")
+                        .join("Zawra")
+                        .join("profile");
+                    std::fs::create_dir_all(&mac_dir).ok();
+                    mac_dir.to_string_lossy().into_owned()
+                } else {
+                    "./zawra_profile".to_string()
+                }
+            }
+            #[cfg(not(any(target_os = "android", target_os = "macos")))]
             {
                 "./zawra_profile".to_string()
             }
@@ -199,6 +234,7 @@ unsafe extern "C" {
     fn __hajr_map_anonymous_ring(id: u64) -> *mut std::ffi::c_void;
     fn __hajr_map_anonymous_ring_ex(id: u64, signal_fd: i32) -> *mut std::ffi::c_void;
     fn hajr_ring_get_signal_fd(ring_ptr: *mut std::ffi::c_void) -> i32;
+    fn Zawra_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void;
 }
 
 #[unsafe(no_mangle)]
@@ -246,19 +282,36 @@ pub unsafe extern "C" fn Z_Hajr_CreateRingPair(size: usize) -> Zawra_Hajr_RingPa
 
 /// Redirected Memory Allocation for WTF (WebKit Template Framework).
 ///
-/// Allocates `size` bytes using Hajr primitives.
+/// Allocates `size` bytes using Hajr's mmap-guarded memory allocator (`Zawra_Hajr_MemAlloc`).
 ///
 /// # Safety
 /// This is an unsafe FFI function called by WebKit.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Z_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void {
-    // For now, we use a simple libc malloc or hajr equivalent if available.
-    // In a real implementation, this would use Hajr's specific memory management.
-    // Given the context of patching WTF, we'll use libc::malloc as a placeholder
-    // or call into Hajr's internal allocator if it were exposed.
-    // However, the task implies redirection to Hajr.
-    // If Hajr isn't fully ready, we'll use libc::malloc.
-    unsafe { libc::malloc(size) }
+    static RESOLVED_HAJR_ALLOC: std::sync::OnceLock<Option<unsafe extern "C" fn(usize) -> *mut std::ffi::c_void>> =
+        std::sync::OnceLock::new();
+    let alloc_fn = RESOLVED_HAJR_ALLOC.get_or_init(|| {
+        let sym = unsafe {
+            libc::dlsym(
+                libc::RTLD_DEFAULT,
+                b"Zawra_Hajr_MemAlloc\0".as_ptr() as *const libc::c_char,
+            )
+        };
+        if !sym.is_null() {
+            Some(unsafe { std::mem::transmute(sym) })
+        } else {
+            None
+        }
+    });
+
+    if let Some(f) = alloc_fn {
+        let ptr = unsafe { f(size) };
+        if !ptr.is_null() {
+            return ptr;
+        }
+    }
+
+    unsafe { Zawra_Hajr_MemAlloc(size) }
 }
 
 /// Redirected Memory Protection for WTF.
@@ -274,17 +327,49 @@ pub unsafe extern "C" fn Z_Hajr_MemProtect(
     read: bool,
     write: bool,
 ) -> i32 {
-    let mut prot = libc::PROT_NONE;
-    if read {
-        prot |= libc::PROT_READ;
-    }
-    if write {
-        prot |= libc::PROT_WRITE;
-    }
+    #[cfg(target_os = "windows")]
+    {
+        extern "system" {
+            fn VirtualProtect(
+                lpAddress: *mut std::ffi::c_void,
+                dwSize: usize,
+                flNewProtect: u32,
+                lpflOldProtect: *mut u32,
+            ) -> i32;
+        }
+        const PAGE_NOACCESS: u32 = 0x01;
+        const PAGE_READONLY: u32 = 0x02;
+        const PAGE_READWRITE: u32 = 0x04;
 
-    if unsafe { libc::mprotect(ptr, size, prot) } == 0 {
-        0
-    } else {
-        -1
+        let prot = if read && write {
+            PAGE_READWRITE
+        } else if read {
+            PAGE_READONLY
+        } else {
+            PAGE_NOACCESS
+        };
+
+        let mut old_protect = 0u32;
+        if unsafe { VirtualProtect(ptr, size, prot, &mut old_protect) } != 0 {
+            0
+        } else {
+            -1
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut prot = libc::PROT_NONE;
+        if read {
+            prot |= libc::PROT_READ;
+        }
+        if write {
+            prot |= libc::PROT_WRITE;
+        }
+
+        if unsafe { libc::mprotect(ptr, size, prot) } == 0 {
+            0
+        } else {
+            -1
+        }
     }
 }

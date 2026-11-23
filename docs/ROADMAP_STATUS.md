@@ -43,7 +43,7 @@ Zawra Browser has verified **65 completed items (67.7%)**, **10 partial/in-progr
 
 | Subsystem | Audited | Completed | Partial | Remaining | % Completed | Primary Reference Docs |
 |---|:---:|:---:|:---:|:---:|:---:|---|
-| **1. Graphics (`z-graphics` & RHI)** | 23 | 13 | 5 | 5 | **56.5%** | [INTEGRATION_GAP_REPORT.md](INTEGRATION_GAP_REPORT.md), [z-graphics TODO](../dependencies/z-graphics/TODO.md), [Upgrade Plan](../dependencies/z-graphics/z-graphics-upgrade-plan.md) |
+| **1. Graphics (`z-graphics` & RHI)** | 23 | 16 | 4 | 3 | **69.6%** | [INTEGRATION_GAP_REPORT.md](INTEGRATION_GAP_REPORT.md), [z-graphics TODO](../dependencies/z-graphics/TODO.md), [z-graphics Plan](../dependencies/z-graphics/plan.md) |
 | **2. Storage (`BrowserDB` & Bridges)** | 20 | 18 | 1 | 1 | **90.0%** | [BROWSERDB_ROADMAP.md](BROWSERDB_ROADMAP.md) |
 | **3. Networking (`z-net` & Shield)** | 17 | 12 | 3 | 2 | **70.6%** | [z-net PLAN](../dependencies/z-net/PLAN.md) |
 | **4. Sandbox & IPC (`hajr` & WPE IPC)** | 8 | 5 | 1 | 2 | **62.5%** | [IPC_ROUTING_INVESTIGATION.md](IPC_ROUTING_INVESTIGATION.md), [FRAMING_IN_ZIG.md](FRAMING_IN_ZIG.md) |
@@ -55,15 +55,16 @@ Zawra Browser has verified **65 completed items (67.7%)**, **10 partial/in-progr
 
 ## 3. Subsystem Implementation Status
 
-### 3.1 Subsystem 1: Graphics (`z-graphics` & WebKit RHI Integration) — 56.5%
-- **Status:** 13 Completed, 5 Partial, 5 Remaining.
+### 3.1 Subsystem 1: Graphics (`z-graphics` & WebKit RHI Integration) — 69.6%
+- **Status:** 16 Completed, 4 Partial, 3 Remaining.
 - **Completed Capabilities:**
+  - **WebKit 2.54.3 Native Skia/Vulkan Modernization:** Verified on WPE WebKit 2.54.3. Upstream completely removed Cairo and legacy `TextureMapperGL` in favor of Google Skia (`USE_SKIA=ON`) and native Vulkan (`USE_VULKAN=ON` via `volk::volk`). The legacy pre-2.54 "5-phase EGL replacement" plan has been retired.
   - Linux Vulkan RHI P0–P3: DMA-BUF import, CPU readback, multi-layer compositing, push constants, YUV conversions (YUV420, NV12, P010), command buffer/descriptor reuse, swapchain resize, 4x MSAA, compute shader dispatch (`vkCreateComputePipelines`), Multiple Render Targets (MRT), stencil buffers, timer queries.
   - Phase 1 DMA-BUF handle type alignment (`VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT`).
   - All 8 Phase 2 RHI Exports in `src/lib.zig` and `src/vulkan.zig` (`ZG_CreateFramebuffer`, `ZG_CreateRenderbuffer`, `ZG_UploadTextureRegion`, `ZG_SetTextureParams`, `ZG_GetDeviceProperty`, `ZG_CreateShaderModule`, `ZG_CmdClearAttachments`, `ZG_CmdCopyTexture`).
   - Direct Wayland XDG shell rendering and swapchain present (`linux_wayland.zig`).
 - **Partial Items:** macOS Metal backend (dynamic Obj-C runtime dispatch, IOSurface), Windows D3D12 backend (`exportSurfaceSharedHandle`), DRM format modifier negotiation.
-- **Remaining Priorities:** Phase 3 C++ bridge declarations in `ZawraGraphicsBridge.h`, WebProcess consumption of `m_hostFileDescriptor`, `BitmapTextureGL.cpp` WebKit patch, and `USE_LIBEPOXY` elimination from `OptionsWPE.cmake`.
+- **Remaining Priorities:** WebProcess consumption of `m_hostFileDescriptor` to bind directly to UIProcess viewport quad without duplicate window instantiation.
 - **Detailed Doc:** [INTEGRATION_GAP_REPORT.md](INTEGRATION_GAP_REPORT.md).
 
 ### 3.2 Subsystem 2: Storage (`BrowserDB` & WebKit Storage Bridges) — 90.0%
@@ -122,7 +123,7 @@ Zawra Browser has verified **65 completed items (67.7%)**, **10 partial/in-progr
   - Subsystem teardown: `Zawra_Shutdown_Subsystems()` flushes BrowserDB and terminates poll threads (`init.rs:154-170`).
   - Dynamic WPE library candidate search across system paths (`launcher.rs:121-215`).
   - Hardware-accelerated cryptographic primitives via `ring` (AES-GCM, SHA-256/512).
-- **Remaining Items:** `TextureMapperGL.cpp` filter switch default assertion, Fullscreen API in `PageClientImpl.cpp`, `JavaScriptCore_INSTALLED_HEADERS` CMake empty expansion, `webkitwpe-fake-api-headers` target, `NetworkStorageSessionSoup.cpp` 3 release asserts, legacy crypto fallback, `wpe_main` 0 fallback, diagnostic HTTP test server.
+- **Remaining Items:** Fullscreen API in `PageClientImpl.cpp`, `JavaScriptCore_INSTALLED_HEADERS` CMake empty expansion, `webkitwpe-fake-api-headers` target, `NetworkStorageSessionSoup.cpp` 3 release asserts, legacy crypto fallback, `wpe_main` 0 fallback, diagnostic HTTP test server.
 - **Detailed Doc:** [missing-features.md](missing-features.md).
 
 ---
@@ -167,13 +168,13 @@ All automated test suites across the repository pass without failures or compile
 │   └─ Wire RendererEmbed Navigation to WebKit IPC                       │
 ├────────────────────────────────────────────────────────────────────────┤
 │ P1 Subsystem Decoupling                                                │
-│   ├─ Expose 30+ Phase 2 RHI Methods in ZawraGraphicsBridge.h           │
-│   ├─ Patch BitmapTextureGL.cpp to use z-graphics RHI                   │
-│   └─ Remove LibEpoxy & USE_EGL from OptionsWPE.cmake                   │
+│   ├─ Expose Phase 2 RHI Methods in ZawraGraphicsBridge.h               │
+│   ├─ Complete macOS Metal & Windows D3D12 RHI Backends                 │
+│   └─ Standardize WPEPlatform DMA-BUF Buffer Exchange                   │
 ├────────────────────────────────────────────────────────────────────────┤
 │ P2 Next-Gen Protocols                                                  │
-│   ├─ Deploy Native TextureMapperVulkan in WebKit                       │
 │   ├─ Adopt Typed Zig IpcRing Framing in ConnectionUnix                 │
+│   ├─ Zero-Copy JSC ArrayBuffer Shared Memory Mapping                   │
 │   └─ Enable RFC 9220 WebSockets over HTTP/3                            │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -195,7 +196,7 @@ zawra-browser/docs/
 zawra-browser/dependencies/
 ├── z-graphics/
 │   ├── TODO.md                    <-- Graphics RHI checklist & status
-│   └── z-graphics-upgrade-plan.md <-- EGL/GL replacement phases (Phases 1-5)
+│   └── plan.md                    <-- RHI platform implementation status (Vulkan/Metal/D3D12)
 └── z-net/
     └── PLAN.md                    <-- Networking refactor phases (Phases 1-6 complete)
 ```

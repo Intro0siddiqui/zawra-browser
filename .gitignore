@@ -32,3 +32,4 @@ test_*.zig
 CMakeCache.txt
 CMakeFiles/
 zcode-bin/
+/zawra-shell

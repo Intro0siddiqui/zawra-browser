@@ -80,8 +80,8 @@ WebProcess:
 
 ### 3.1 Problem Statement
 1. **Unread Host FD**: `WebPage.cpp:726` receives `m_hostFileDescriptor` from the UIProcess, but WebProcess never consumes it.
-2. **Duplicate Vulkan Devices & Windows**: `TextureMapperGL::beginPainting()` performs a lazy initialization of `ZawraGraphicsBridge`, which spins up an independent Vulkan instance and device in WebProcess.
-3. **EGL Runtime Dependency**: WebKit's accelerated compositing path on WPE still routes rendering through OpenGL ES 2.0 via EGL and LibEpoxy.
+2. **Duplicate Vulkan Devices & Windows**: WebProcess initialization performs a lazy setup of `ZawraGraphicsBridge`, spinning up an independent Vulkan instance rather than binding to the parent's exported DMA-BUF handle.
+3. **WebKit 2.54.3 Modernization**: WPE WebKit 2.54.3 has completely replaced the legacy `TextureMapperGL` and Cairo 2D backends with native **Google Skia (`USE_SKIA=ON`)** and **native Vulkan (`USE_VULKAN=ON` via `volk::volk`)** under the `WPEPlatform` API (`ENABLE_WPE_PLATFORM=ON`). The pre-2.54 OpenGL classes (`BitmapTextureGL.cpp`, `TextureMapperShaderProgram.cpp`) have been completely removed.
 
 ### 3.2 Solution Steps (P0 / P1 Engineering Focus)
 1. **Extend `ZawraGraphicsBridge.h` (Phase 3)**:
@@ -91,10 +91,8 @@ WebProcess:
    Add declarations for all 8 Phase 2 RHI functions and texture/buffer/shader exports already implemented in `lib.zig`.
 2. **Wire WebPage Host FD**:
    In `WebPage.cpp`, pass `m_hostFileDescriptor` to `ZawraGraphicsBridge::singleton().initializeFromHostFD(...)`.
-3. **Patch `BitmapTextureGL.cpp` & `TextureMapperShaderProgram.cpp` (Phase 4)**:
-   Replace the ~70 GL calls in `BitmapTextureGL` with `ZG_CreateFramebuffer`, `ZG_UploadTextureRegion`, `ZG_SetTextureParams`, and `ZG_CreateRenderbuffer`.
-4. **Clean up `OptionsWPE.cmake` (Phase 5)**:
-   Remove `SET_AND_EXPOSE_TO_BUILD(USE_LIBEPOXY TRUE)` and EGL build dependencies.
+3. **Bind Directly to z-graphics Viewport Quad**:
+   Have WebKit's Skia/Vulkan pipeline export its rendered frame via DMA-BUF, which `z-graphics` imports directly into `wpe_texture` without intermediate offscreen blits or separate swapchains.
 
 ---
 
@@ -201,8 +199,8 @@ export fn ZG_CmdCopyTexture(
 | WebProcess duplicates Vulkan device on lazy init | High | **OPEN (P0)** | Caused by unconsumed `m_hostFileDescriptor`. |
 | `m_hostFileDescriptor` ignored in `WebPage.cpp` | High | **OPEN (P0)** | Needs `initializeFromHostFD` in `ZawraGraphicsBridge`. |
 | C++ Bridge header missing Phase 2 exports | Medium | **IN PROGRESS (P1)** | All 8 functions exist in `lib.zig`; bridge declarations pending. |
-| `BitmapTextureGL.cpp` raw OpenGL calls | High | **OPEN (P1)** | Blocked on Phase 3 bridge exposure. |
-| `OptionsWPE.cmake` LibEpoxy dependency | Medium | **OPEN (P1)** | Will be removed once `BitmapTextureGL` is decoupled. |
+| `BitmapTextureGL.cpp` raw OpenGL calls | High | **RETIRED** | Superseded by WebKit 2.54.3 native Skia/Vulkan migration. |
+| `OptionsWPE.cmake` LibEpoxy dependency | Medium | **RETIRED** | Upstream WPEPlatform uses direct DMA-BUF/GBM. |
 | DMA-BUF handle type mismatch | High | **FIXED** | Aligned to `VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT`. |
 | Missing Renderbuffer / Framebuffer RHI | High | **FIXED** | `ZG_CreateFramebuffer` & `ZG_CreateRenderbuffer` implemented. |
 | Sub-rectangle texture upload missing | High | **FIXED** | `ZG_UploadTextureRegion` implemented with row pitch. |

@@ -35,6 +35,24 @@ type WpeMainFn = unsafe extern "C" fn(argc: c_int, argv: *mut *mut c_char, appDa
 // Dynamic linker wrapper
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+#[cfg(target_os = "windows")]
+unsafe fn resolve_global_sym(name: &[u8]) -> *mut c_void {
+    extern "system" {
+        fn GetModuleHandleA(lpModuleName: *const c_char) -> *mut c_void;
+        fn GetProcAddress(hModule: *mut c_void, lpProcName: *const c_char) -> *mut c_void;
+    }
+    let h = GetModuleHandleA(std::ptr::null());
+    if h.is_null() {
+        return std::ptr::null_mut();
+    }
+    GetProcAddress(h, name.as_ptr() as *const c_char)
+}
+
+#[cfg(not(target_os = "windows"))]
+unsafe fn resolve_global_sym(name: &[u8]) -> *mut c_void {
+    unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr() as *const _) }
+}
+
 struct DynLib {
     handle: *mut c_void,
 }
@@ -43,30 +61,67 @@ impl DynLib {
     /// Open a shared library by path. Returns `None` if the file doesn't exist
     /// or `dlopen` fails.
     fn open(path: &str) -> Option<Self> {
-        let path_c = CString::new(path).ok()?;
-        let handle = unsafe {
-            libc::dlopen(path_c.as_ptr(), libc::RTLD_LAZY | libc::RTLD_GLOBAL)
-        };
-        if handle.is_null() {
-            let err = unsafe { std::ffi::CStr::from_ptr(libc::dlerror()) };
-            eprintln!("[zawra-launcher] dlopen({}) failed: {:?}", path, err);
-            None
-        } else {
-            Some(DynLib { handle })
+        #[cfg(target_os = "windows")]
+        {
+            extern "system" {
+                fn LoadLibraryA(lpLibFileName: *const c_char) -> *mut c_void;
+            }
+            let path_c = CString::new(path).ok()?;
+            let handle = unsafe { LoadLibraryA(path_c.as_ptr()) };
+            if handle.is_null() {
+                eprintln!("[zawra-launcher] LoadLibraryA({}) failed", path);
+                None
+            } else {
+                Some(DynLib { handle })
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let path_c = CString::new(path).ok()?;
+            let handle = unsafe {
+                libc::dlopen(path_c.as_ptr(), libc::RTLD_LAZY | libc::RTLD_GLOBAL)
+            };
+            if handle.is_null() {
+                let err = unsafe { std::ffi::CStr::from_ptr(libc::dlerror()) };
+                eprintln!("[zawra-launcher] dlopen({}) failed: {:?}", path, err);
+                None
+            } else {
+                Some(DynLib { handle })
+            }
         }
     }
 
     /// Resolve a symbol by name. Returns `None` if not found.
     unsafe fn sym<T: Copy>(&self, name: &str) -> Option<T> {
-        let name_c = CString::new(name).ok()?;
-        let ptr = unsafe { libc::dlsym(self.handle, name_c.as_ptr()) };
-        if ptr.is_null() { None } else { Some(unsafe { *(ptr as *const T) }) }
+        #[cfg(target_os = "windows")]
+        {
+            extern "system" {
+                fn GetProcAddress(hModule: *mut c_void, lpProcName: *const c_char) -> *mut c_void;
+            }
+            let name_c = CString::new(name).ok()?;
+            let ptr = unsafe { GetProcAddress(self.handle, name_c.as_ptr()) };
+            if ptr.is_null() { None } else { Some(unsafe { *(ptr as *const T) }) }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let name_c = CString::new(name).ok()?;
+            let ptr = unsafe { libc::dlsym(self.handle, name_c.as_ptr()) };
+            if ptr.is_null() { None } else { Some(unsafe { *(ptr as *const T) }) }
+        }
     }
 }
 
 impl Drop for DynLib {
     fn drop(&mut self) {
         if !self.handle.is_null() {
+            #[cfg(target_os = "windows")]
+            {
+                extern "system" {
+                    fn FreeLibrary(hLibModule: *mut c_void) -> i32;
+                }
+                unsafe { FreeLibrary(self.handle) };
+            }
+            #[cfg(not(target_os = "windows"))]
             unsafe { libc::dlclose(self.handle) };
         }
     }
@@ -102,7 +157,23 @@ fn resolve_profile_dir() -> PathBuf {
         return fallback;
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(mut home) = dirs::home_dir() {
+            home.push("Library");
+            home.push("Application Support");
+            home.push("Zawra");
+            home.push("profile");
+            if std::fs::create_dir_all(&home).is_ok() {
+                return home;
+            }
+        }
+        let fallback = PathBuf::from("./zawra_profile");
+        std::fs::create_dir_all(&fallback).ok();
+        fallback
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "macos")))]
     {
         if let Some(mut home) = dirs::home_dir() {
             home.push(".zawra");
@@ -222,6 +293,17 @@ fn find_wpe_lib() -> Option<PathBuf> {
     // 5. Fallback to standard system paths (Desktop Linux & macOS)
     #[cfg(target_os = "macos")]
     {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(frameworks) = exe.parent().and_then(|p| p.join("../Frameworks").canonicalize().ok()) {
+                for name in WPE_LIB_NAMES {
+                    let candidate = frameworks.join(name);
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+
         let macos_candidates = [
             "/opt/homebrew/lib/libWPEBackend-fdo.dylib",
             "/opt/homebrew/lib/libWPEWebKit-2.0.dylib",
@@ -451,13 +533,13 @@ pub unsafe extern "C" fn Zawra_LoadURL(url_ptr: *const u8, url_len: usize) {
         unsafe {
             // Dynamic resolution of wpe_view_load_url or webkit_web_view_load_uri
             type WpeViewLoadUrlFn = unsafe extern "C" fn(*mut c_void, *const c_char);
-            let sym = libc::dlsym(libc::RTLD_DEFAULT, b"wpe_view_load_url\0".as_ptr() as *const _);
+            let sym = resolve_global_sym(b"wpe_view_load_url\0");
             if !sym.is_null() {
                 let func: WpeViewLoadUrlFn = std::mem::transmute(sym);
                 func(view, c_url.as_ptr());
                 return;
             }
-            let sym2 = libc::dlsym(libc::RTLD_DEFAULT, b"webkit_web_view_load_uri\0".as_ptr() as *const _);
+            let sym2 = resolve_global_sym(b"webkit_web_view_load_uri\0");
             if !sym2.is_null() {
                 let func2: WpeViewLoadUrlFn = std::mem::transmute(sym2);
                 func2(view, c_url.as_ptr());
@@ -479,7 +561,7 @@ pub unsafe extern "C" fn wpe_view_event_pointer(
     let view = ACTIVE_WPE_VIEW.load(std::sync::atomic::Ordering::SeqCst);
     unsafe {
         type WpePointerEventFn = unsafe extern "C" fn(*mut c_void, u32, f64, f64, u32, u32);
-        let sym = libc::dlsym(libc::RTLD_DEFAULT, b"wpe_view_event_pointer\0".as_ptr() as *const _);
+        let sym = resolve_global_sym(b"wpe_view_event_pointer\0");
         if !sym.is_null() {
             let func: WpePointerEventFn = std::mem::transmute(sym);
             func(view, event_type, local_x, local_y, button, state);
@@ -498,7 +580,7 @@ pub unsafe extern "C" fn wpe_view_event_keyboard(
     let view = ACTIVE_WPE_VIEW.load(std::sync::atomic::Ordering::SeqCst);
     unsafe {
         type WpeKeyboardEventFn = unsafe extern "C" fn(*mut c_void, u32, u32, u32);
-        let sym = libc::dlsym(libc::RTLD_DEFAULT, b"wpe_view_event_keyboard\0".as_ptr() as *const _);
+        let sym = resolve_global_sym(b"wpe_view_event_keyboard\0");
         if !sym.is_null() {
             let func: WpeKeyboardEventFn = std::mem::transmute(sym);
             func(view, key, state, modifiers);

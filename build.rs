@@ -50,9 +50,16 @@ fn main() {
     // ── Locate libWPE (or WebKitWPE) ──────────────────────────────────────────
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let is_macos = target_os == "macos";
+    let is_windows = target_os == "windows";
 
     let wpe_info = search_dirs.iter().find_map(|dir| {
-        let ext = if is_macos { "dylib" } else { "so" };
+        let ext = if is_macos {
+            "dylib"
+        } else if is_windows {
+            "dll"
+        } else {
+            "so"
+        };
         let candidate = dir.join(format!("libWPEBackend-fdo.{}", ext));
         if candidate.exists() {
             return Some((dir.clone(), "WPEBackend-fdo"));
@@ -91,8 +98,8 @@ fn main() {
     }
 
     // ── System libs ──────────────────────────────────────────────────────────
-    // dl is required for dlopen() on desktop Linux/glibc, but is part of libc/libSystem on modern Android and macOS
-    if target_os != "android" && target_os != "macos" {
+    // dl is required for dlopen() on desktop Linux/glibc, but is part of libc/libSystem on modern Android and macOS, and not used on Windows
+    if target_os != "android" && target_os != "macos" && target_os != "windows" {
         println!("cargo:rustc-link-lib=dylib=dl");
     }
 }

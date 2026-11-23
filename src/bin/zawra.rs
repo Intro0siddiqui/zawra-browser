@@ -28,12 +28,15 @@ fn main() {
     }
     eprintln!("[zawra] All subsystems ready ✓");
 
-    // Launch WPE in background thread (spawns WebProcess, NetworkProcess)
+    // Launch WPE on dedicated "webkit-glib" thread (spawns WebProcess, NetworkProcess)
     let profile_clone = profile.clone();
-    std::thread::spawn(move || {
-        let code = launcher::launch_wpe(&profile_clone);
-        eprintln!("[zawra] WPE exited with code {}", code);
-    });
+    std::thread::Builder::new()
+        .name("webkit-glib".to_string())
+        .spawn(move || {
+            let code = launcher::launch_wpe(&profile_clone);
+            eprintln!("[zawra] WPE exited with code {}", code);
+        })
+        .expect("Failed to spawn webkit-glib thread");
 
     // Run the native Vulkan UI Shell on the main thread (Wayland requirement)
     let exit_code = unsafe { Zawra_UI_Run(0, std::ptr::null()) };

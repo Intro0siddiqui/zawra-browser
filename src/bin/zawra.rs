@@ -10,6 +10,14 @@ unsafe extern "C" {
 fn main() {
     use zawra_browser::wpe_glue::launcher;
 
+    // Enforce single-plane DMA-BUF format negotiation across WebKit and child processes
+    // (disables Intel multi-plane CCS clear-color auxiliary buffers)
+    if std::env::var("INTEL_DEBUG").is_err() {
+        unsafe {
+            std::env::set_var("INTEL_DEBUG", "noccs");
+        }
+    }
+
     eprintln!("╔══════════════════════════════════════╗");
     eprintln!("║       Zawra Browser — Starting       ║");
     eprintln!("╚══════════════════════════════════════╝");

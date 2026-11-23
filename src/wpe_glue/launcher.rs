@@ -765,6 +765,13 @@ pub fn bootstrap_zawra(profile_path: &str) -> bool {
 
 /// Launch WPE on the dedicated "webkit-glib" thread running a GMainLoop.
 pub fn launch_wpe(_profile_path: &str) -> i32 {
+    // Enforce single-plane DMA-BUF format negotiation across WebKit, EGL and child processes
+    if std::env::var("INTEL_DEBUG").is_err() {
+        unsafe {
+            std::env::set_var("INTEL_DEBUG", "noccs");
+        }
+    }
+
     let wpe_path = match resolve_wpe_environment() {
         Some(p) => p,
         None => {

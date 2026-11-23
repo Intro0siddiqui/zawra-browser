@@ -93,6 +93,11 @@ impl DynLib {
     }
 
     unsafe fn sym<T: Copy>(&self, name: &str) -> Option<T> {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<*mut c_void>(),
+            "DynLib::sym called with non-pointer size type"
+        );
         let name_c = CString::new(name).ok()?;
         #[cfg(target_os = "windows")]
         {
@@ -100,12 +105,12 @@ impl DynLib {
                 fn GetProcAddress(hModule: *mut c_void, lpProcName: *const c_char) -> *mut c_void;
             }
             let ptr = unsafe { GetProcAddress(self.handle, name_c.as_ptr()) };
-            if ptr.is_null() { None } else { Some(unsafe { *(ptr as *const T) }) }
+            if ptr.is_null() { None } else { Some(unsafe { std::mem::transmute_copy(&ptr) }) }
         }
         #[cfg(not(target_os = "windows"))]
         {
             let ptr = unsafe { libc::dlsym(self.handle, name_c.as_ptr()) };
-            if ptr.is_null() { None } else { Some(unsafe { *(ptr as *const T) }) }
+            if ptr.is_null() { None } else { Some(unsafe { std::mem::transmute_copy(&ptr) }) }
         }
     }
 }
@@ -236,6 +241,48 @@ fn resolve_wpe_environment() -> Option<PathBuf> {
 // Zero-Copy DMA-BUF Frame Mailbox
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ZawraGraphicsDMABufInfo {
+    pub fd: i32,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub offset: u32,
+    pub drm_format: u32,
+    pub drm_modifier: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ZawraPendingWpeFrame {
+    pub dmabuf: ZawraGraphicsDMABufInfo,
+    pub view: *mut c_void,
+    pub buffer: *mut c_void,
+}
+
+unsafe impl Send for ZawraPendingWpeFrame {}
+unsafe impl Sync for ZawraPendingWpeFrame {}
+
+static PENDING_WPE_FRAME: Mutex<Option<ZawraPendingWpeFrame>> = Mutex::new(None);
+
+/// Called by the main thread (shell.zig) each frame to retrieve any newly arrived DMA-BUF frame.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_PollPendingWpeFrame(out_frame: *mut ZawraPendingWpeFrame) -> bool {
+    if out_frame.is_null() {
+        return false;
+    }
+    if let Ok(mut lock) = PENDING_WPE_FRAME.lock() {
+        if let Some(frame) = lock.take() {
+            unsafe {
+                *out_frame = frame;
+            }
+            return true;
+        }
+    }
+    false
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct PendingDMABuf {
     pub fd: i32,
@@ -248,7 +295,7 @@ pub struct PendingDMABuf {
 
 static PENDING_FRAME: Mutex<Option<PendingDMABuf>> = Mutex::new(None);
 
-/// Called by the main thread (shell.zig) each frame to retrieve any newly arrived DMA-BUF frame.
+/// Legacy fallback: called by shell each frame to retrieve DMA-BUF frame.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Zawra_TakePendingDMABuf(
     out_fd: *mut c_int,
@@ -296,12 +343,37 @@ pub extern "C" fn Zawra_GetActiveWpeView() -> *mut c_void {
     ACTIVE_WPE_VIEW.load(Ordering::SeqCst)
 }
 
+type GObjectNewFn = unsafe extern "C" fn(
+    object_type: usize,
+    first_property_name: *const c_char,
+    ...
+) -> *mut c_void;
+
+#[derive(Clone, Copy)]
+struct WpeSymbols {
+    wpe_buffer_dma_buf_get_type: unsafe extern "C" fn() -> usize,
+    g_type_check_instance_is_a: unsafe extern "C" fn(*mut c_void, usize) -> i32,
+    wpe_buffer_dma_buf_get_fd: unsafe extern "C" fn(*mut c_void, u32) -> i32,
+    wpe_buffer_dma_buf_get_stride: unsafe extern "C" fn(*mut c_void, u32) -> u32,
+    wpe_buffer_dma_buf_get_format: unsafe extern "C" fn(*mut c_void) -> u32,
+    wpe_buffer_dma_buf_get_modifier: unsafe extern "C" fn(*mut c_void) -> u64,
+    wpe_buffer_get_width: unsafe extern "C" fn(*mut c_void) -> i32,
+    wpe_buffer_get_height: unsafe extern "C" fn(*mut c_void) -> i32,
+    g_idle_add: unsafe extern "C" fn(unsafe extern "C" fn(*mut c_void) -> i32, *mut c_void) -> u32,
+    webkit_web_view_load_uri: unsafe extern "C" fn(*mut c_void, *const c_char),
+    wpe_toplevel_resize: unsafe extern "C" fn(*mut c_void, c_int, c_int),
+    wpe_view_resized: Option<unsafe extern "C" fn(*mut c_void, c_int, c_int)>,
+    wpe_view_buffer_rendered: Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
+}
+
+static WPE_SYMS: Mutex<Option<WpeSymbols>> = Mutex::new(None);
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // WPE Frame Reception Callback (GLib thread)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 unsafe extern "C" fn on_buffer_rendered(
-    _view: *mut c_void,
+    view: *mut c_void,
     buffer: *mut c_void,
     _user_data: *mut c_void,
 ) {
@@ -309,72 +381,80 @@ unsafe extern "C" fn on_buffer_rendered(
         return;
     }
 
-    if let Ok(guard) = WPE_LIB.lock() {
-        if let Some(ref lib) = *guard {
-            unsafe {
-                let get_type: unsafe extern "C" fn() -> usize = match lib.sym("wpe_buffer_dma_buf_get_type") {
-                    Some(f) => f,
-                    None => return,
-                };
-                let is_a: unsafe extern "C" fn(*mut c_void, usize) -> i32 = match lib.sym("g_type_check_instance_is_a") {
-                    Some(f) => f,
-                    None => return,
-                };
+    let syms = match WPE_SYMS.lock() {
+        Ok(guard) => match *guard {
+            Some(s) => s,
+            None => return,
+        },
+        Err(_) => return,
+    };
 
-                let dmabuf_type = get_type();
-                if is_a(buffer, dmabuf_type) == 0 {
-                    return;
+    unsafe {
+        let dmabuf_type = (syms.wpe_buffer_dma_buf_get_type)();
+        if (syms.g_type_check_instance_is_a)(buffer, dmabuf_type) == 0 {
+            return;
+        }
+
+        let raw_fd = (syms.wpe_buffer_dma_buf_get_fd)(buffer, 0);
+        if raw_fd < 0 {
+            return;
+        }
+
+        let dup_fd = libc::dup(raw_fd);
+        if dup_fd < 0 {
+            return;
+        }
+
+        let stride = (syms.wpe_buffer_dma_buf_get_stride)(buffer, 0);
+        let fourcc = (syms.wpe_buffer_dma_buf_get_format)(buffer);
+        let modifier = (syms.wpe_buffer_dma_buf_get_modifier)(buffer);
+        let width = (syms.wpe_buffer_get_width)(buffer) as u32;
+        let height = (syms.wpe_buffer_get_height)(buffer) as u32;
+
+        eprintln!(
+            "[ZAWRA-GLIB] >>> DMA-BUF Frame Arrived: raw_fd={} dup_fd={} {}x{} stride={} format=0x{:x} <<<",
+            raw_fd, dup_fd, width, height, stride, fourcc
+        );
+
+        if width > 0 && height > 0 {
+            let dmabuf = ZawraGraphicsDMABufInfo {
+                fd: dup_fd,
+                width,
+                height,
+                stride,
+                offset: 0,
+                drm_format: fourcc,
+                drm_modifier: modifier,
+            };
+            if let Ok(mut lock) = PENDING_WPE_FRAME.lock() {
+                if let Some(old) = lock.take() {
+                    libc::close(old.dmabuf.fd);
+                    Zawra_NotifyWpeBufferRendered(old.view, old.buffer);
                 }
-
-                let get_fd: unsafe extern "C" fn(*mut c_void, u32) -> i32 = match lib.sym("wpe_buffer_dma_buf_get_fd") {
-                    Some(f) => f,
-                    None => return,
-                };
-                let get_stride: unsafe extern "C" fn(*mut c_void, u32) -> u32 = match lib.sym("wpe_buffer_dma_buf_get_stride") {
-                    Some(f) => f,
-                    None => return,
-                };
-                let get_format: unsafe extern "C" fn(*mut c_void) -> u32 = match lib.sym("wpe_buffer_dma_buf_get_format") {
-                    Some(f) => f,
-                    None => return,
-                };
-                let get_modifier: unsafe extern "C" fn(*mut c_void) -> u64 = match lib.sym("wpe_buffer_dma_buf_get_modifier") {
-                    Some(f) => f,
-                    None => return,
-                };
-                let get_width: unsafe extern "C" fn(*mut c_void) -> i32 = match lib.sym("wpe_buffer_get_width") {
-                    Some(f) => f,
-                    None => return,
-                };
-                let get_height: unsafe extern "C" fn(*mut c_void) -> i32 = match lib.sym("wpe_buffer_get_height") {
-                    Some(f) => f,
-                    None => return,
-                };
-
-                let raw_fd = get_fd(buffer, 0);
-                let dup_fd = libc::dup(raw_fd);
-                let stride = get_stride(buffer, 0);
-                let fourcc = get_format(buffer);
-                let modifier = get_modifier(buffer);
-                let width = get_width(buffer) as u32;
-                let height = get_height(buffer) as u32;
-
-                if dup_fd >= 0 && width > 0 && height > 0 {
-                    if let Ok(mut lock) = PENDING_FRAME.lock() {
-                        if let Some(old) = lock.take() {
-                            libc::close(old.fd);
-                        }
-                        *lock = Some(PendingDMABuf {
-                            fd: dup_fd,
-                            width,
-                            height,
-                            stride,
-                            fourcc,
-                            modifier,
-                        });
-                    }
+                *lock = Some(ZawraPendingWpeFrame {
+                    dmabuf,
+                    view,
+                    buffer,
+                });
+            }
+            if let Ok(mut lock) = PENDING_FRAME.lock() {
+                if let Some(old) = lock.take() {
+                    libc::close(old.fd);
+                }
+                let legacy_fd = libc::dup(dup_fd);
+                if legacy_fd >= 0 {
+                    *lock = Some(PendingDMABuf {
+                        fd: legacy_fd,
+                        width,
+                        height,
+                        stride,
+                        fourcc,
+                        modifier,
+                    });
                 }
             }
+        } else {
+            libc::close(dup_fd);
         }
     }
 }
@@ -384,16 +464,14 @@ unsafe extern "C" fn on_buffer_rendered(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 unsafe extern "C" fn idle_load_url(data: *mut c_void) -> i32 {
-    unsafe {
-        let c_url = Box::from_raw(data as *mut CString);
-        let web_view = ACTIVE_WEB_VIEW.load(Ordering::SeqCst);
-        if !web_view.is_null() {
-            if let Ok(guard) = WPE_LIB.lock() {
-                if let Some(ref lib) = *guard {
-                    if let Some(load_uri) = lib.sym::<unsafe extern "C" fn(*mut c_void, *const c_char)>("webkit_web_view_load_uri") {
-                        eprintln!("[ZAWRA-GLIB] Loading URI: {:?}", c_url);
-                        load_uri(web_view, c_url.as_ptr());
-                    }
+    let c_url = unsafe { Box::from_raw(data as *mut CString) };
+    let web_view = ACTIVE_WEB_VIEW.load(Ordering::SeqCst);
+    if !web_view.is_null() {
+        if let Ok(guard) = WPE_SYMS.lock() {
+            if let Some(syms) = *guard {
+                eprintln!("[ZAWRA-GLIB] Loading URI: {:?}", c_url);
+                unsafe {
+                    (syms.webkit_web_view_load_uri)(web_view, c_url.as_ptr());
                 }
             }
         }
@@ -411,15 +489,14 @@ pub unsafe extern "C" fn Zawra_LoadURL(url_ptr: *const u8, url_len: usize) {
     let url = String::from_utf8_lossy(slice);
 
     if let Ok(c_url) = CString::new(url.as_ref()) {
-        if let Ok(guard) = WPE_LIB.lock() {
-            if let Some(ref lib) = *guard {
-                unsafe {
-                    if let Some(idle_add) = lib.sym::<unsafe extern "C" fn(unsafe extern "C" fn(*mut c_void) -> i32, *mut c_void) -> u32>("g_idle_add") {
-                        let boxed = Box::into_raw(Box::new(c_url));
-                        idle_add(idle_load_url, boxed as *mut c_void);
-                        return;
-                    }
-                }
+        let syms = match WPE_SYMS.lock() {
+            Ok(g) => *g,
+            Err(_) => None,
+        };
+        if let Some(syms) = syms {
+            let boxed = Box::into_raw(Box::new(c_url));
+            unsafe {
+                (syms.g_idle_add)(idle_load_url, boxed as *mut c_void);
             }
         }
     }
@@ -431,20 +508,20 @@ struct ResizeMsg {
 }
 
 unsafe extern "C" fn idle_resize(data: *mut c_void) -> i32 {
-    unsafe {
-        let msg = Box::from_raw(data as *mut ResizeMsg);
-        let toplevel = ACTIVE_TOPLEVEL.load(Ordering::SeqCst);
-        let wpe_view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
+    let msg = unsafe { Box::from_raw(data as *mut ResizeMsg) };
+    let toplevel = ACTIVE_TOPLEVEL.load(Ordering::SeqCst);
+    let wpe_view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
 
-        if let Ok(guard) = WPE_LIB.lock() {
-            if let Some(ref lib) = *guard {
-                if !toplevel.is_null() {
-                    if let Some(toplevel_resize) = lib.sym::<unsafe extern "C" fn(*mut c_void, i32, i32)>("wpe_toplevel_resize") {
-                        toplevel_resize(toplevel, msg.width, msg.height);
-                    }
+    if let Ok(guard) = WPE_SYMS.lock() {
+        if let Some(syms) = *guard {
+            if !toplevel.is_null() {
+                unsafe {
+                    (syms.wpe_toplevel_resize)(toplevel, msg.width, msg.height);
                 }
-                if !wpe_view.is_null() {
-                    if let Some(view_resize) = lib.sym::<unsafe extern "C" fn(*mut c_void, i32, i32)>("wpe_view_resized") {
+            }
+            if !wpe_view.is_null() {
+                if let Some(view_resize) = syms.wpe_view_resized {
+                    unsafe {
                         view_resize(wpe_view, msg.width, msg.height);
                     }
                 }
@@ -454,20 +531,68 @@ unsafe extern "C" fn idle_resize(data: *mut c_void) -> i32 {
     0 // G_SOURCE_REMOVE
 }
 
-/// Viewport resize hook: adjusts the WPE headless toplevel and view dimensions.
+/// Resize hook: updates WPE viewport dimensions cleanly on the GLib thread.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_ResizeViewport(width: u32, height: u32) {
-    if let Ok(guard) = WPE_LIB.lock() {
-        if let Some(ref lib) = *guard {
-            unsafe {
-                if let Some(idle_add) = lib.sym::<unsafe extern "C" fn(unsafe extern "C" fn(*mut c_void) -> i32, *mut c_void) -> u32>("g_idle_add") {
-                    let boxed = Box::into_raw(Box::new(ResizeMsg {
-                        width: width as i32,
-                        height: height as i32,
-                    }));
-                    idle_add(idle_resize, boxed as *mut c_void);
+pub extern "C" fn Zawra_ResizeViewport(width: u32, height: u32) {
+    let syms = match WPE_SYMS.lock() {
+        Ok(g) => *g,
+        Err(_) => None,
+    };
+    if let Some(syms) = syms {
+        let msg = Box::new(ResizeMsg {
+            width: width as i32,
+            height: height as i32,
+        });
+        let boxed = Box::into_raw(msg);
+        unsafe {
+            (syms.g_idle_add)(idle_resize, boxed as *mut c_void);
+        }
+    }
+}
+
+/// View resized alias for River compositor layout updates.
+#[unsafe(no_mangle)]
+pub extern "C" fn Zawra_ViewResized(width: u32, height: u32) {
+    Zawra_ResizeViewport(width, height);
+}
+
+struct RenderedMsg {
+    view: *mut c_void,
+    buffer: *mut c_void,
+}
+
+unsafe extern "C" fn idle_buffer_rendered(data: *mut c_void) -> i32 {
+    let msg = unsafe { Box::from_raw(data as *mut RenderedMsg) };
+    if !msg.view.is_null() && !msg.buffer.is_null() {
+        if let Ok(guard) = WPE_SYMS.lock() {
+            if let Some(syms) = *guard {
+                if let Some(rendered_fn) = syms.wpe_view_buffer_rendered {
+                    unsafe {
+                        rendered_fn(msg.view, msg.buffer);
+                    }
                 }
             }
+        }
+    }
+    0 // G_SOURCE_REMOVE
+}
+
+/// Notify Rust that a WPEBuffer has finished rendering on the GPU,
+/// dispatching wpe_view_buffer_rendered to the GLib main loop.
+#[unsafe(no_mangle)]
+pub extern "C" fn Zawra_NotifyWpeBufferRendered(view: *mut c_void, buffer: *mut c_void) {
+    if view.is_null() || buffer.is_null() {
+        return;
+    }
+    let syms = match WPE_SYMS.lock() {
+        Ok(g) => *g,
+        Err(_) => None,
+    };
+    if let Some(syms) = syms {
+        let msg = Box::new(RenderedMsg { view, buffer });
+        let boxed = Box::into_raw(msg);
+        unsafe {
+            (syms.g_idle_add)(idle_buffer_rendered, boxed as *mut c_void);
         }
     }
 }
@@ -567,7 +692,7 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
         let wpe_display_headless_new = lib.sym::<unsafe extern "C" fn() -> *mut c_void>("wpe_display_headless_new");
         let wpe_display_connect = lib.sym::<unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> c_int>("wpe_display_connect");
         let webkit_web_view_get_type = lib.sym::<unsafe extern "C" fn() -> usize>("webkit_web_view_get_type");
-        let g_object_new = lib.sym::<unsafe extern "C" fn(usize, *const c_char, *mut c_void, *mut c_void) -> *mut c_void>("g_object_new");
+        let g_object_new = lib.sym::<GObjectNewFn>("g_object_new");
         let webkit_web_view_get_wpe_view = lib.sym::<unsafe extern "C" fn(*mut c_void) -> *mut c_void>("webkit_web_view_get_wpe_view");
         let wpe_view_get_toplevel = lib.sym::<unsafe extern "C" fn(*mut c_void) -> *mut c_void>("wpe_view_get_toplevel");
         let wpe_toplevel_resize = lib.sym::<unsafe extern "C" fn(*mut c_void, c_int, c_int)>("wpe_toplevel_resize");
@@ -582,6 +707,24 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
             return NS_ERROR_FAILURE;
         }
 
+        // Cache symbols for on_buffer_rendered and idle callbacks (prevents per-frame dlsym calls)
+        let sym_cache = WpeSymbols {
+            wpe_buffer_dma_buf_get_type: lib.sym("wpe_buffer_dma_buf_get_type").expect("wpe_buffer_dma_buf_get_type missing"),
+            g_type_check_instance_is_a: lib.sym("g_type_check_instance_is_a").expect("g_type_check_instance_is_a missing"),
+            wpe_buffer_dma_buf_get_fd: lib.sym("wpe_buffer_dma_buf_get_fd").expect("wpe_buffer_dma_buf_get_fd missing"),
+            wpe_buffer_dma_buf_get_stride: lib.sym("wpe_buffer_dma_buf_get_stride").expect("wpe_buffer_dma_buf_get_stride missing"),
+            wpe_buffer_dma_buf_get_format: lib.sym("wpe_buffer_dma_buf_get_format").expect("wpe_buffer_dma_buf_get_format missing"),
+            wpe_buffer_dma_buf_get_modifier: lib.sym("wpe_buffer_dma_buf_get_modifier").expect("wpe_buffer_dma_buf_get_modifier missing"),
+            wpe_buffer_get_width: lib.sym("wpe_buffer_get_width").expect("wpe_buffer_get_width missing"),
+            wpe_buffer_get_height: lib.sym("wpe_buffer_get_height").expect("wpe_buffer_get_height missing"),
+            g_idle_add: lib.sym("g_idle_add").expect("g_idle_add missing"),
+            webkit_web_view_load_uri: webkit_web_view_load_uri.expect("webkit_web_view_load_uri missing"),
+            wpe_toplevel_resize: wpe_toplevel_resize.expect("wpe_toplevel_resize missing"),
+            wpe_view_resized: lib.sym("wpe_view_resized"),
+            wpe_view_buffer_rendered: lib.sym("wpe_view_buffer_rendered"),
+        };
+        *WPE_SYMS.lock().unwrap() = Some(sym_cache);
+
         // 1. Initialize Headless WPE Display
         let display = (wpe_display_headless_new.unwrap())();
         let mut err: *mut c_void = null_mut();
@@ -591,13 +734,13 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
             return NS_ERROR_FAILURE;
         }
 
-        // 2. Instantiate WebKitWebView with headless display
+        // 2. Instantiate WebKitWebView with headless display using Rust C-variadic call (%al = 0)
         let view_type = (webkit_web_view_get_type.unwrap())();
         let web_view = (g_object_new.unwrap())(
             view_type,
-            b"display\0".as_ptr() as *const c_char,
+            c"display".as_ptr(),
             display,
-            null_mut(),
+            null_mut::<c_void>(),
         );
 
         if web_view.is_null() {
@@ -618,6 +761,7 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
 
         // 4. Connect "buffer-rendered" signal to receive zero-copy DMA-BUF textures
         if !wpe_view.is_null() && g_signal_connect_data.is_some() {
+            eprintln!("[zawra-launcher] Connecting 'buffer-rendered' signal on WPEView {:?}", wpe_view);
             (g_signal_connect_data.unwrap())(
                 wpe_view,
                 b"buffer-rendered\0".as_ptr() as *const c_char,
@@ -637,7 +781,7 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
 
         // 5. Initial navigation to default page (triggers WPEWebProcess / WPENetworkProcess bootstrap)
         if let Some(load_uri) = webkit_web_view_load_uri {
-            let start_uri = b"https://github.com\0".as_ptr() as *const c_char;
+            let start_uri = b"data:text/html,<html><body style='background:%230b101b;color:%2300ffcc;font-family:sans-serif;padding:40px;'><h1>Zawra Browser</h1><p style='color:%23ffffff;'>Vulkan 60FPS + WebKit 2.54 Zero-Copy DMA-BUF Active</p></body></html>\0".as_ptr() as *const c_char;
             load_uri(web_view, start_uri);
         }
 

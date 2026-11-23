@@ -2,9 +2,9 @@ name: Zawra Browser CI
 
 on:
   push:
-    branches: [ "wpe-integration", "main", "wpe-experimental-efficiency", "fix/integration-final" ]
+    branches: [ "development", "wpe-integration", "main", "wpe-experimental-efficiency", "fix/integration-final" ]
   pull_request:
-    branches: [ "wpe-integration", "main", "fix/integration-final" ]
+    branches: [ "development", "wpe-integration", "main", "fix/integration-final" ]
 
 env:
   CARGO_TERM_COLOR: always

@@ -291,6 +291,22 @@ pub unsafe extern "C" fn Z_Hajr_MemAlloc(size: usize) -> *mut std::ffi::c_void {
     static RESOLVED_HAJR_ALLOC: std::sync::OnceLock<Option<unsafe extern "C" fn(usize) -> *mut std::ffi::c_void>> =
         std::sync::OnceLock::new();
     let alloc_fn = RESOLVED_HAJR_ALLOC.get_or_init(|| {
+        #[cfg(target_os = "windows")]
+        let sym = {
+            extern "system" {
+                fn GetModuleHandleA(lpModuleName: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+                fn GetProcAddress(hModule: *mut std::ffi::c_void, lpProcName: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+            }
+            unsafe {
+                let h = GetModuleHandleA(std::ptr::null());
+                if !h.is_null() {
+                    GetProcAddress(h, b"Zawra_Hajr_MemAlloc\0".as_ptr() as *const std::ffi::c_char)
+                } else {
+                    std::ptr::null_mut()
+                }
+            }
+        };
+        #[cfg(not(target_os = "windows"))]
         let sym = unsafe {
             libc::dlsym(
                 libc::RTLD_DEFAULT,

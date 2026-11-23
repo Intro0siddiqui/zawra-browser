@@ -3,17 +3,54 @@ pub enum JSObject {}
 pub type JSExternalArrayBufferContentsDeleter =
     unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void);
 
-pub unsafe fn JS_NewExternalArrayBuffer(
-    _cx: *mut JSContext,
-    _size: usize,
-    _contents: *mut libc::c_void,
-    _deleter: Option<JSExternalArrayBufferContentsDeleter>,
-    _user_data: *mut libc::c_void,
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn JS_NewExternalArrayBuffer(
+    cx: *mut JSContext,
+    size: usize,
+    contents: *mut libc::c_void,
+    deleter: Option<JSExternalArrayBufferContentsDeleter>,
+    user_data: *mut libc::c_void,
 ) -> *mut JSObject {
-    std::ptr::null_mut()
+    if cx.is_null() || contents.is_null() || size == 0 {
+        return std::ptr::null_mut();
+    }
+
+    type JSObjectMakeArrayBufferWithBytesNoCopyFn = unsafe extern "C" fn(
+        ctx: *mut JSContext,
+        bytes: *mut libc::c_void,
+        byte_length: usize,
+        bytes_deallocator: Option<JSExternalArrayBufferContentsDeleter>,
+        deallocator_context: *mut libc::c_void,
+        exception: *mut *mut libc::c_void,
+    ) -> *mut JSObject;
+
+    static RESOLVED_FN: std::sync::OnceLock<Option<JSObjectMakeArrayBufferWithBytesNoCopyFn>> =
+        std::sync::OnceLock::new();
+
+    let make_fn = RESOLVED_FN.get_or_init(|| {
+        let sym = unsafe {
+            libc::dlsym(
+                libc::RTLD_DEFAULT,
+                b"JSObjectMakeArrayBufferWithBytesNoCopy\0".as_ptr() as *const libc::c_char,
+            )
+        };
+        if !sym.is_null() {
+            Some(unsafe { std::mem::transmute(sym) })
+        } else {
+            None
+        }
+    });
+
+    if let Some(f) = make_fn {
+        let mut exception: *mut libc::c_void = std::ptr::null_mut();
+        unsafe { f(cx, contents, size, deleter, user_data, &mut exception) }
+    } else {
+        std::ptr::null_mut()
+    }
 }
 
-/// A Rust function defined elsewhere that manages the lifecycle of BrowserDB pins.
+// A Rust function defined elsewhere that manages the lifecycle of BrowserDB pins.
 unsafe extern "Rust" {
     fn release_browserdb_pin(blob_id: u64);
 }

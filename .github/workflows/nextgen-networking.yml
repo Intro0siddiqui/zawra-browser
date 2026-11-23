@@ -1,0 +1,132 @@
+name: Next-Gen Networking CI
+
+on:
+  push:
+    branches: [ "development", "main", "master" ]
+  pull_request:
+    branches: [ "development", "main", "master" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── z-net Engine Protocol & Unit Tests ──────────────────────────────────────
+  znet-engine-protocols:
+    name: z-net Engine Protocols (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            dependencies/z-net/engine/target/
+            target/
+          key: ${{ runner.os }}-cargo-znet-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-znet-
+
+      - name: Run Next-Gen Protocol Tests in z-net Engine
+        run: |
+          cd dependencies/z-net/engine
+          cargo test --all-targets -- --nocapture
+
+      - name: Verify Engine Release Build
+        run: |
+          cd dependencies/z-net/engine
+          cargo build --release
+
+  # ── z-net Zig Bridge & Certificate Verification ─────────────────────────────
+  znet-zig-bridge:
+    name: z-net Zig Bridge (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [znet-engine-protocols]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Zig 0.16.0
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Cache Zig & Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-zig-${{ hashFiles('dependencies/z-net/build.zig') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-
+
+      - name: Run Zig Network Tests
+        run: |
+          cd dependencies/z-net
+          zig build test --summary all
+
+      - name: Build Zig with Rust Engine Linked
+        run: |
+          cd dependencies/z-net
+          zig build -Dznet-link-rust=true --summary all
+
+  # ── Zawra Browser End-to-End Integration Tests ──────────────────────────────
+  browser-integration:
+    name: Zawra Browser Integration (Ubuntu)
+    runs-on: ubuntu-latest
+    needs: [znet-engine-protocols]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-browser-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-browser-
+
+      - name: Build Browser (Headless Mode)
+        run: cargo build --all
+
+      - name: Run Integration Tests
+        run: cargo test --test integration -- --nocapture --skip window_tests

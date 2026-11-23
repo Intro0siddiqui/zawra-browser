@@ -13,7 +13,7 @@ use std::ffi::{c_char, c_int, c_void, CString};
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicPtr, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 // ── nsresult ─────────────────────────────────────────────────────────────────
 const NS_OK:            i32 = 0;
@@ -372,7 +372,7 @@ struct WpeSymbols {
     wpe_event_keyboard_new: Option<unsafe extern "C" fn(u32, *mut c_void, u32, u32, u32, u32, u32) -> *mut c_void>,
 }
 
-static WPE_SYMS: Mutex<Option<WpeSymbols>> = Mutex::new(None);
+static WPE_SYMS: OnceLock<WpeSymbols> = OnceLock::new();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // WPE Frame Reception Callback (GLib thread)
@@ -387,12 +387,9 @@ unsafe extern "C" fn on_buffer_rendered(
         return;
     }
 
-    let syms = match WPE_SYMS.lock() {
-        Ok(guard) => match *guard {
-            Some(s) => s,
-            None => return,
-        },
-        Err(_) => return,
+    let syms = match WPE_SYMS.get() {
+        Some(s) => *s,
+        None => return,
     };
 
     unsafe {
@@ -435,7 +432,6 @@ unsafe extern "C" fn on_buffer_rendered(
             if let Ok(mut lock) = PENDING_WPE_FRAME.lock() {
                 if let Some(old) = lock.take() {
                     libc::close(old.dmabuf.fd);
-                    Zawra_NotifyWpeBufferRendered(old.view, old.buffer);
                 }
                 *lock = Some(ZawraPendingWpeFrame {
                     dmabuf,
@@ -473,12 +469,10 @@ unsafe extern "C" fn idle_load_url(data: *mut c_void) -> i32 {
     let c_url = unsafe { Box::from_raw(data as *mut CString) };
     let web_view = ACTIVE_WEB_VIEW.load(Ordering::SeqCst);
     if !web_view.is_null() {
-        if let Ok(guard) = WPE_SYMS.lock() {
-            if let Some(syms) = *guard {
-                eprintln!("[ZAWRA-GLIB] Loading URI: {:?}", c_url);
-                unsafe {
-                    (syms.webkit_web_view_load_uri)(web_view, c_url.as_ptr());
-                }
+        if let Some(syms) = WPE_SYMS.get() {
+            eprintln!("[ZAWRA-GLIB] Loading URI: {:?}", c_url);
+            unsafe {
+                (syms.webkit_web_view_load_uri)(web_view, c_url.as_ptr());
             }
         }
     }
@@ -495,11 +489,7 @@ pub unsafe extern "C" fn Zawra_LoadURL(url_ptr: *const u8, url_len: usize) {
     let url = String::from_utf8_lossy(slice);
 
     if let Ok(c_url) = CString::new(url.as_ref()) {
-        let syms = match WPE_SYMS.lock() {
-            Ok(g) => *g,
-            Err(_) => None,
-        };
-        if let Some(syms) = syms {
+        if let Some(syms) = WPE_SYMS.get() {
             let boxed = Box::into_raw(Box::new(c_url));
             unsafe {
                 (syms.g_idle_add)(idle_load_url, boxed as *mut c_void);
@@ -518,18 +508,16 @@ unsafe extern "C" fn idle_resize(data: *mut c_void) -> i32 {
     let toplevel = ACTIVE_TOPLEVEL.load(Ordering::SeqCst);
     let wpe_view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
 
-    if let Ok(guard) = WPE_SYMS.lock() {
-        if let Some(syms) = *guard {
-            if !toplevel.is_null() {
-                unsafe {
-                    (syms.wpe_toplevel_resize)(toplevel, msg.width, msg.height);
-                }
+    if let Some(syms) = WPE_SYMS.get() {
+        if !toplevel.is_null() {
+            unsafe {
+                (syms.wpe_toplevel_resize)(toplevel, msg.width, msg.height);
             }
-            if !wpe_view.is_null() {
-                if let Some(view_resize) = syms.wpe_view_resized {
-                    unsafe {
-                        view_resize(wpe_view, msg.width, msg.height);
-                    }
+        }
+        if !wpe_view.is_null() {
+            if let Some(view_resize) = syms.wpe_view_resized {
+                unsafe {
+                    view_resize(wpe_view, msg.width, msg.height);
                 }
             }
         }
@@ -540,11 +528,7 @@ unsafe extern "C" fn idle_resize(data: *mut c_void) -> i32 {
 /// Resize hook: updates WPE viewport dimensions cleanly on the GLib thread.
 #[unsafe(no_mangle)]
 pub extern "C" fn Zawra_ResizeViewport(width: u32, height: u32) {
-    let syms = match WPE_SYMS.lock() {
-        Ok(g) => *g,
-        Err(_) => None,
-    };
-    if let Some(syms) = syms {
+    if let Some(syms) = WPE_SYMS.get() {
         let msg = Box::new(ResizeMsg {
             width: width as i32,
             height: height as i32,
@@ -562,45 +546,13 @@ pub extern "C" fn Zawra_ViewResized(width: u32, height: u32) {
     Zawra_ResizeViewport(width, height);
 }
 
-struct RenderedMsg {
-    view: *mut c_void,
-    buffer: *mut c_void,
-}
-
-unsafe extern "C" fn idle_buffer_rendered(data: *mut c_void) -> i32 {
-    let msg = unsafe { Box::from_raw(data as *mut RenderedMsg) };
-    if !msg.view.is_null() && !msg.buffer.is_null() {
-        if let Ok(guard) = WPE_SYMS.lock() {
-            if let Some(syms) = *guard {
-                if let Some(rendered_fn) = syms.wpe_view_buffer_rendered {
-                    unsafe {
-                        rendered_fn(msg.view, msg.buffer);
-                    }
-                }
-            }
-        }
-    }
-    0 // G_SOURCE_REMOVE
-}
-
-/// Notify Rust that a WPEBuffer has finished rendering on the GPU,
-/// dispatching wpe_view_buffer_rendered to the GLib main loop.
+/// Notify Rust that a WPEBuffer has finished rendering on the GPU.
+/// In WPEPlatform headless mode, buffer lifecycle and 60 FPS pacing is managed
+/// internally by WPEViewHeadless. wpe_view_buffer_rendered emits "buffer-rendered",
+/// so calling it back from the consumer would trigger recursive signal re-emission.
 #[unsafe(no_mangle)]
-pub extern "C" fn Zawra_NotifyWpeBufferRendered(view: *mut c_void, buffer: *mut c_void) {
-    if view.is_null() || buffer.is_null() {
-        return;
-    }
-    let syms = match WPE_SYMS.lock() {
-        Ok(g) => *g,
-        Err(_) => None,
-    };
-    if let Some(syms) = syms {
-        let msg = Box::new(RenderedMsg { view, buffer });
-        let boxed = Box::into_raw(msg);
-        unsafe {
-            (syms.g_idle_add)(idle_buffer_rendered, boxed as *mut c_void);
-        }
-    }
+pub extern "C" fn Zawra_NotifyWpeBufferRendered(_view: *mut c_void, _buffer: *mut c_void) {
+    // Harmless no-op in headless mode: avoids recursive signal emission & deadlock.
 }
 
 struct PointerEventMsg {
@@ -616,35 +568,33 @@ unsafe extern "C" fn idle_pointer_event(data: *mut c_void) -> i32 {
     let msg = unsafe { Box::from_raw(data as *mut PointerEventMsg) };
     let view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
     if !view.is_null() {
-        if let Ok(guard) = WPE_SYMS.lock() {
-            if let Some(syms) = *guard {
-                if let (Some(wpe_view_event), Some(wpe_event_unref)) = (syms.wpe_view_event, syms.wpe_event_unref) {
-                    let ev: *mut c_void = match msg.event_type {
-                        0 => {
-                            // Motion (WPE_EVENT_POINTER_MOVE = 3)
-                            syms.wpe_event_pointer_move_new.map(|f| unsafe {
-                                f(3, view, 0, 0, 0, msg.local_x, msg.local_y, 0.0, 0.0)
-                            }).unwrap_or(null_mut())
-                        }
-                        1 => {
-                            // Button down (WPE_EVENT_POINTER_DOWN = 1)
-                            syms.wpe_event_pointer_button_new.map(|f| unsafe {
-                                f(1, view, 0, 0, 0, if msg.button == 0 { 1 } else { msg.button }, msg.local_x, msg.local_y, 1)
-                            }).unwrap_or(null_mut())
-                        }
-                        2 => {
-                            // Button up (WPE_EVENT_POINTER_UP = 2)
-                            syms.wpe_event_pointer_button_new.map(|f| unsafe {
-                                f(2, view, 0, 0, 0, if msg.button == 0 { 1 } else { msg.button }, msg.local_x, msg.local_y, 1)
-                            }).unwrap_or(null_mut())
-                        }
-                        _ => null_mut(),
-                    };
-                    if !ev.is_null() {
-                        unsafe {
-                            wpe_view_event(view, ev);
-                            wpe_event_unref(ev);
-                        }
+        if let Some(syms) = WPE_SYMS.get() {
+            if let (Some(wpe_view_event), Some(wpe_event_unref)) = (syms.wpe_view_event, syms.wpe_event_unref) {
+                let ev: *mut c_void = match msg.event_type {
+                    0 => {
+                        // Motion (WPE_EVENT_POINTER_MOVE = 3)
+                        syms.wpe_event_pointer_move_new.map(|f| unsafe {
+                            f(3, view, 0, 0, 0, msg.local_x, msg.local_y, 0.0, 0.0)
+                        }).unwrap_or(null_mut())
+                    }
+                    1 => {
+                        // Button down (WPE_EVENT_POINTER_DOWN = 1)
+                        syms.wpe_event_pointer_button_new.map(|f| unsafe {
+                            f(1, view, 0, 0, 0, if msg.button == 0 { 1 } else { msg.button }, msg.local_x, msg.local_y, 1)
+                        }).unwrap_or(null_mut())
+                    }
+                    2 => {
+                        // Button up (WPE_EVENT_POINTER_UP = 2)
+                        syms.wpe_event_pointer_button_new.map(|f| unsafe {
+                            f(2, view, 0, 0, 0, if msg.button == 0 { 1 } else { msg.button }, msg.local_x, msg.local_y, 1)
+                        }).unwrap_or(null_mut())
+                    }
+                    _ => null_mut(),
+                };
+                if !ev.is_null() {
+                    unsafe {
+                        wpe_view_event(view, ev);
+                        wpe_event_unref(ev);
                     }
                 }
             }
@@ -662,11 +612,7 @@ pub unsafe extern "C" fn wpe_view_event_pointer(
     button: u32,
     state: u32,
 ) {
-    let syms = match WPE_SYMS.lock() {
-        Ok(g) => *g,
-        Err(_) => None,
-    };
-    if let Some(syms) = syms {
+    if let Some(syms) = WPE_SYMS.get() {
         let msg = Box::into_raw(Box::new(PointerEventMsg {
             event_type,
             local_x,
@@ -690,20 +636,18 @@ unsafe extern "C" fn idle_keyboard_event(data: *mut c_void) -> i32 {
     let msg = unsafe { Box::from_raw(data as *mut KeyboardEventMsg) };
     let view = ACTIVE_WPE_VIEW.load(Ordering::SeqCst);
     if !view.is_null() {
-        if let Ok(guard) = WPE_SYMS.lock() {
-            if let Some(syms) = *guard {
-                if let (Some(wpe_view_event), Some(wpe_event_unref), Some(key_new)) =
-                    (syms.wpe_view_event, syms.wpe_event_unref, syms.wpe_event_keyboard_new)
-                {
-                    let ev_type = if msg.state == 1 { 7 /* KEY_DOWN */ } else { 8 /* KEY_UP */ };
-                    let ev = unsafe {
-                        key_new(ev_type, view, 2 /* KEYBOARD */, 0, msg.modifiers, msg.key, msg.key)
-                    };
-                    if !ev.is_null() {
-                        unsafe {
-                            wpe_view_event(view, ev);
-                            wpe_event_unref(ev);
-                        }
+        if let Some(syms) = WPE_SYMS.get() {
+            if let (Some(wpe_view_event), Some(wpe_event_unref), Some(key_new)) =
+                (syms.wpe_view_event, syms.wpe_event_unref, syms.wpe_event_keyboard_new)
+            {
+                let ev_type = if msg.state == 1 { 7 /* KEY_DOWN */ } else { 8 /* KEY_UP */ };
+                let ev = unsafe {
+                    key_new(ev_type, view, 2 /* KEYBOARD */, 0, msg.modifiers, msg.key, msg.key)
+                };
+                if !ev.is_null() {
+                    unsafe {
+                        wpe_view_event(view, ev);
+                        wpe_event_unref(ev);
                     }
                 }
             }
@@ -719,11 +663,7 @@ pub unsafe extern "C" fn wpe_view_event_keyboard(
     state: u32,
     modifiers: u32,
 ) {
-    let syms = match WPE_SYMS.lock() {
-        Ok(g) => *g,
-        Err(_) => None,
-    };
-    if let Some(syms) = syms {
+    if let Some(syms) = WPE_SYMS.get() {
         let msg = Box::into_raw(Box::new(KeyboardEventMsg {
             key,
             state,
@@ -833,7 +773,7 @@ pub fn launch_wpe(_profile_path: &str) -> i32 {
             wpe_event_pointer_button_new: lib.sym("wpe_event_pointer_button_new"),
             wpe_event_keyboard_new: lib.sym("wpe_event_keyboard_new"),
         };
-        *WPE_SYMS.lock().unwrap() = Some(sym_cache);
+        let _ = WPE_SYMS.set(sym_cache);
 
         // 1. Initialize Headless WPE Display
         let display = (wpe_display_headless_new.unwrap())();

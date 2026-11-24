@@ -2,21 +2,15 @@
 
 unsafe extern "C" {
     fn Zawra_UI_Run(argc: std::ffi::c_int, argv: *const *const std::ffi::c_char) -> std::ffi::c_int;
-    fn Zawra_SetLoadURLCallback(cb: Option<unsafe extern "C" fn(*const u8, usize)>);
-    fn Zawra_SetPointerEventHandler(cb: Option<unsafe extern "C" fn(u32, f64, f64, u32, u32)>);
-    fn Zawra_SetKeyboardEventHandler(cb: Option<unsafe extern "C" fn(u32, u32, u32)>);
+    fn hajr_trace_set_process_kind(kind: u8);
 }
 
 fn main() {
-    use zawra_browser::wpe_glue::launcher;
-
-    // Enforce single-plane DMA-BUF format negotiation across WebKit and child processes
-    // (disables Intel multi-plane CCS clear-color auxiliary buffers)
-    if std::env::var("INTEL_DEBUG").is_err() {
-        unsafe {
-            std::env::set_var("INTEL_DEBUG", "noccs");
-        }
+    unsafe {
+        hajr_trace_set_process_kind(1); // 1 = UIProcess
     }
+
+    use zawra_browser::wpe_glue::launcher;
 
     eprintln!("╔══════════════════════════════════════╗");
     eprintln!("║       Zawra Browser — Starting       ║");
@@ -39,25 +33,17 @@ fn main() {
     }
     eprintln!("[zawra] All subsystems ready ✓");
 
-    // Launch WPE on dedicated "webkit-glib" thread (spawns WebProcess, NetworkProcess)
-    let profile_clone = profile.clone();
-    std::thread::Builder::new()
-        .name("webkit-glib".to_string())
-        .spawn(move || {
-            let code = launcher::launch_wpe(&profile_clone);
-            eprintln!("[zawra] WPE exited with code {}", code);
-        })
-        .expect("Failed to spawn webkit-glib thread");
-
-    // Register UI Shell FFI callbacks so omnibar navigation & input flow into WebKit
-    unsafe {
-        Zawra_SetLoadURLCallback(Some(launcher::Zawra_LoadURL));
-        Zawra_SetPointerEventHandler(Some(launcher::wpe_view_event_pointer));
-        Zawra_SetKeyboardEventHandler(Some(launcher::wpe_view_event_keyboard));
+    // Configure WPE paths (WEBKIT_EXEC_PATH, WEBKIT_INJECTED_BUNDLE_PATH, ZAWRA_WPE_LIB_PATH)
+    if let Some(wpe_lib) = launcher::resolve_wpe_environment() {
+        eprintln!("[zawra] Discovered WPE library: {}", wpe_lib.display());
     }
 
     // Run the native Vulkan UI Shell on the main thread (Wayland requirement)
-    let exit_code = unsafe { Zawra_UI_Run(0, std::ptr::null()) };
+    let args: Vec<std::ffi::CString> = std::env::args()
+        .map(|arg| std::ffi::CString::new(arg).unwrap_or_default())
+        .collect();
+    let c_args: Vec<*const std::ffi::c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
+    let exit_code = unsafe { Zawra_UI_Run(c_args.len() as std::ffi::c_int, c_args.as_ptr()) };
     eprintln!("[zawra] UI Shell exited with code {}", exit_code);
 
     zawra_browser::wpe_glue::init::Z_Shutdown_Subsystems();

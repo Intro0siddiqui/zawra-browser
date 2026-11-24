@@ -829,44 +829,33 @@ pub unsafe extern "C" fn Z_History_Put(
     }
 }
 
-fn escape_json_str(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ZawraHistoryEntry {
+    pub title: [u8; 128],
+    pub title_len: u32,
+    pub url: [u8; 256],
+    pub url_len: u32,
+    pub visit_time: u64,
 }
 
-/// Query BrowserDB's history table and return recent visits (`title`, `url`, `visit_time`) as JSON.
-///
-/// Returns the number of bytes written to `out_json_buf` (excluding NUL terminator).
+const _: () = assert!(std::mem::size_of::<ZawraHistoryEntry>() == 400);
+
+/// Query BrowserDB's history table and return recent visits as a flat C struct array.
 ///
 /// # Safety
-/// `out_json_buf` must be a valid pointer with at least `out_max_len` bytes.
+/// `entries_out` must point to valid memory for at least `max_count` `ZawraHistoryEntry` items.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Zawra_GetRecentHistory(
-    limit: u32,
-    out_json_buf: *mut u8,
-    out_max_len: usize,
-) -> usize {
-    if out_json_buf.is_null() || out_max_len == 0 {
+pub unsafe extern "C" fn Zawra_GetRecentHistoryEntries(
+    entries_out: *mut ZawraHistoryEntry,
+    max_count: u32,
+) -> u32 {
+    if entries_out.is_null() || max_count == 0 {
         return 0;
     }
 
     let entries = if let Some(db) = GLOBAL_DB.get() {
-        match db.history().hot_search("", limit as usize) {
+        match db.history().hot_search("", max_count as usize) {
             Ok(e) => e,
             Err(_) => Vec::new(),
         }
@@ -874,27 +863,40 @@ pub unsafe extern "C" fn Zawra_GetRecentHistory(
         Vec::new()
     };
 
-    let mut json = String::from("[");
-    for (i, entry) in entries.iter().enumerate() {
-        if i > 0 {
-            json.push(',');
-        }
-        json.push_str(&format!(
-            "{{\"title\":{},\"url\":{},\"visit_time\":{}}}",
-            escape_json_str(&entry.title),
-            escape_json_str(&entry.url),
-            entry.timestamp
-        ));
-    }
-    json.push(']');
+    let count = entries.len().min(max_count as usize);
+    for (i, entry) in entries.iter().take(count).enumerate() {
+        let mut h_entry = ZawraHistoryEntry {
+            title: [0u8; 128],
+            title_len: 0,
+            url: [0u8; 256],
+            url_len: 0,
+            visit_time: entry.timestamp as u64,
+        };
 
-    let bytes = json.as_bytes();
-    let write_len = bytes.len().min(out_max_len - 1);
-    unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_json_buf, write_len);
-        *out_json_buf.add(write_len) = 0;
+        // Truncate title safely on UTF-8 char boundary up to 128 bytes
+        let title_bytes = entry.title.as_bytes();
+        let mut title_end = title_bytes.len().min(128);
+        while title_end > 0 && !entry.title.is_char_boundary(title_end) {
+            title_end -= 1;
+        }
+        h_entry.title[..title_end].copy_from_slice(&title_bytes[..title_end]);
+        h_entry.title_len = title_end as u32;
+
+        // Truncate url safely on UTF-8 char boundary up to 256 bytes
+        let url_bytes = entry.url.as_bytes();
+        let mut url_end = url_bytes.len().min(256);
+        while url_end > 0 && !entry.url.is_char_boundary(url_end) {
+            url_end -= 1;
+        }
+        h_entry.url[..url_end].copy_from_slice(&url_bytes[..url_end]);
+        h_entry.url_len = url_end as u32;
+
+        unsafe {
+            *entries_out.add(i) = h_entry;
+        }
     }
-    write_len
+
+    count as u32
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

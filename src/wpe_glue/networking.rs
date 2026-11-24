@@ -509,7 +509,7 @@ pub fn build_http_request(
         request.push_str("Connection: close\r\n");
     }
     if !has_user_agent {
-        request.push_str("User-Agent: zawra-browser/0.1\r\n");
+        request.push_str("User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15 Zawra/0.1\r\n");
     }
     if !has_accept {
         request.push_str("Accept: */*\r\n");

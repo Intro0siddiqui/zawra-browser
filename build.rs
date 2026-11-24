@@ -107,14 +107,22 @@ fn main() {
     }
 
     // ── Link z-graphics & UI static libraries ────────────────────────────────
+    let zawra_ui_lib = PathBuf::from(&manifest_dir).join("ui/zig-out/lib");
+    println!("cargo:rerun-if-changed={}", zawra_ui_lib.join("libzawra-ui.a").display());
+    if zawra_ui_lib.exists() {
+        println!("cargo:rustc-link-search=native={}", zawra_ui_lib.display());
+        println!("cargo:rustc-link-lib=static=zawra-ui");
+    }
+
     let z_graphics_lib = PathBuf::from(&manifest_dir).join("dependencies/z-graphics/zig-out/lib");
+    println!("cargo:rerun-if-changed={}", z_graphics_lib.join("libz-graphics.a").display());
     if z_graphics_lib.exists() {
         println!("cargo:rustc-link-search=native={}", z_graphics_lib.display());
-        println!("cargo:rustc-link-lib=static=zawra-ui");
         println!("cargo:rustc-link-lib=static=z-graphics");
         if target_os == "linux" {
             println!("cargo:rustc-link-lib=dylib=vulkan");
             println!("cargo:rustc-link-lib=dylib=wayland-client");
+            println!("cargo:rustc-link-lib=dylib=glib-2.0");
             println!("cargo:rustc-link-lib=dylib=X11");
             println!("cargo:rustc-link-lib=dylib=m");
         }

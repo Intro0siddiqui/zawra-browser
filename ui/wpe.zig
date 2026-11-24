@@ -7,11 +7,26 @@
 //! - Directly pumps GLib event iteration on Thread 1
 
 const std = @import("std");
+const builtin = @import("builtin");
 const wayland = @cImport({
     @cInclude("wayland-client.h");
 });
 
 extern "c" fn g_main_context_iteration(context: ?*anyopaque, may_block: c_int) callconv(.c) c_int;
+
+fn mock_g_main_context_iteration(_: ?*anyopaque, _: c_int) callconv(.c) c_int {
+    return 0;
+}
+
+const g_main_context_iteration_fn = if (builtin.is_test) mock_g_main_context_iteration else g_main_context_iteration;
+
+extern "c" fn Zawra_History_Record(url: [*:0]const u8, title: [*:0]const u8) callconv(.c) i32;
+
+fn mock_Zawra_History_Record(_: [*:0]const u8, _: [*:0]const u8) callconv(.c) i32 {
+    return 0;
+}
+
+const history_record_fn = if (builtin.is_test) mock_Zawra_History_Record else Zawra_History_Record;
 
 const GObjectNewFn = *const fn (usize, [*:0]const u8, ...) callconv(.c) ?*anyopaque;
 
@@ -51,11 +66,18 @@ const WpeSymbols = struct {
     webkit_settings_set_enable_developer_extras: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
     webkit_web_view_get_uri: ?*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8 = null,
     webkit_web_view_get_title: ?*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8 = null,
+    webkit_web_view_reload: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_web_view_reload_bypass_cache: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_web_view_go_back: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_web_view_go_forward: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_web_view_can_go_back: ?*const fn (?*anyopaque) callconv(.c) c_int = null,
+    webkit_web_view_can_go_forward: ?*const fn (?*anyopaque) callconv(.c) c_int = null,
 };
 
 var wpe_lib: ?std.DynLib = null;
 var syms: WpeSymbols = .{};
 
+pub var global_web_view: ?*anyopaque = null;
 var web_view: ?*anyopaque = null;
 var wpe_view: ?*anyopaque = null;
 var toplevel: ?*anyopaque = null;
@@ -159,8 +181,14 @@ const ExitPacket = extern struct {
 
 extern "c" fn hajr_get_supervisor_status_fd(process_type: u32) callconv(.c) c_int;
 
+fn mock_hajr_get_supervisor_status_fd(_: u32) callconv(.c) c_int {
+    return -1;
+}
+
+const getSupervisorStatusFd = if (builtin.is_test) mock_hajr_get_supervisor_status_fd else hajr_get_supervisor_status_fd;
+
 pub fn checkSupervisorStatus() void {
-    const fd = hajr_get_supervisor_status_fd(0); // 0 = web process
+    const fd = getSupervisorStatusFd(0); // 0 = web process
     if (fd < 0) return;
 
     var pfd = [_]std.os.linux.pollfd{.{
@@ -272,6 +300,54 @@ fn onLoadChanged(
     if (load_event == 2 or load_event == 3) {
         syncPageMetadata();
     }
+    if (load_event == 3) {
+        if (web_view) |view| {
+            if (syms.webkit_web_view_get_uri) |get_uri_fn| {
+                if (get_uri_fn(view)) |u| {
+                    const u_slice = std.mem.span(u);
+                    if (u_slice.len > 0 and !std.mem.startsWith(u8, u_slice, "zawra://") and !std.mem.startsWith(u8, u_slice, "about:")) {
+                        var title_ptr: [*:0]const u8 = "";
+                        if (syms.webkit_web_view_get_title) |get_title_fn| {
+                            if (get_title_fn(view)) |t| {
+                                title_ptr = t;
+                            }
+                        }
+                        _ = history_record_fn(u, title_ptr);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn onNotifyUri(
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    syncPageMetadata();
+}
+
+fn onNotifyTitle(
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    syncPageMetadata();
+    if (web_view) |view| {
+        if (syms.webkit_web_view_get_uri) |get_uri_fn| {
+            if (get_uri_fn(view)) |u| {
+                const u_slice = std.mem.span(u);
+                if (u_slice.len > 0 and !std.mem.startsWith(u8, u_slice, "zawra://") and !std.mem.startsWith(u8, u_slice, "about:")) {
+                    if (syms.webkit_web_view_get_title) |get_title_fn| {
+                        if (get_title_fn(view)) |t| {
+                            _ = history_record_fn(u, t);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn init(
@@ -312,6 +388,14 @@ pub fn init(
         .wpe_event_pointer_button_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, u32, f64, f64, u32) callconv(.c) ?*anyopaque, "wpe_event_pointer_button_new"),
         .wpe_event_keyboard_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, u32, u32) callconv(.c) ?*anyopaque, "wpe_event_keyboard_new"),
         .g_signal_connect_data = lib.lookup(*const fn (?*anyopaque, [*:0]const u8, ?*const anyopaque, ?*anyopaque, ?*anyopaque, c_int) callconv(.c) c_ulong, "g_signal_connect_data"),
+        .webkit_web_view_get_uri = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_uri"),
+        .webkit_web_view_get_title = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_title"),
+        .webkit_web_view_reload = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_web_view_reload"),
+        .webkit_web_view_reload_bypass_cache = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_web_view_reload_bypass_cache"),
+        .webkit_web_view_go_back = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_web_view_go_back"),
+        .webkit_web_view_go_forward = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_web_view_go_forward"),
+        .webkit_web_view_can_go_back = lib.lookup(*const fn (?*anyopaque) callconv(.c) c_int, "webkit_web_view_can_go_back"),
+        .webkit_web_view_can_go_forward = lib.lookup(*const fn (?*anyopaque) callconv(.c) c_int, "webkit_web_view_can_go_forward"),
     };
 
     std.debug.print("[ZAWRA-WPE] Attached Wayland handles: disp={?*anyopaque}, surf={?*anyopaque}, subcomp={?*anyopaque}\n", .{ wl_display, wl_surface, wl_subcompositor });
@@ -339,11 +423,14 @@ pub fn init(
     const view_type = view_type_fn();
     const created_view = g_object_new_fn(view_type, "display", display, @as(?*anyopaque, null)) orelse return error.WebViewCreateFailed;
     web_view = created_view;
+    global_web_view = created_view;
 
     if (syms.g_signal_connect_data) |connect_sig| {
         _ = connect_sig(created_view, "web-process-terminated", @ptrCast(&onWebProcessTerminated), null, null, 0);
         _ = connect_sig(created_view, "load-failed", @ptrCast(&onLoadFailed), null, null, 0);
         _ = connect_sig(created_view, "load-changed", @ptrCast(&onLoadChanged), null, null, 0);
+        _ = connect_sig(created_view, "notify::uri", @ptrCast(&onNotifyUri), null, null, 0);
+        _ = connect_sig(created_view, "notify::title", @ptrCast(&onNotifyTitle), null, null, 0);
         std.debug.print("[ZAWRA-WPE] Connected process lifecycle & load observability signals\n", .{});
     }
 
@@ -378,7 +465,7 @@ pub fn init(
 
 pub fn pumpEvents() void {
     var budget: usize = 0;
-    while (g_main_context_iteration(null, 0) != 0) {
+    while (g_main_context_iteration_fn(null, 0) != 0) {
         budget += 1;
         if (budget >= 256) break;
     }
@@ -386,7 +473,7 @@ pub fn pumpEvents() void {
 }
 
 pub fn pumpEventsSingle() c_int {
-    return g_main_context_iteration(null, 0);
+    return g_main_context_iteration_fn(null, 0);
 }
 
 pub fn detachSubsurfaceBuffer() void {
@@ -398,6 +485,9 @@ pub fn detachSubsurfaceBuffer() void {
 }
 
 pub fn loadUrl(url: []const u8) void {
+    if (std.mem.startsWith(u8, url, "zawra://") or std.mem.startsWith(u8, url, "about:")) {
+        return;
+    }
     const view = web_view orelse return;
     const load_fn = syms.webkit_web_view_load_uri orelse return;
 
@@ -411,6 +501,63 @@ pub fn loadUrl(url: []const u8) void {
 
     std.debug.print("[ZAWRA-WPE] Loading URL: {s}\n", .{buf[0..url.len]});
     load_fn(view, &buf);
+}
+
+pub var test_reload_count: u32 = 0;
+pub var test_reload_bypass_count: u32 = 0;
+pub var test_back_count: u32 = 0;
+pub var test_forward_count: u32 = 0;
+
+pub fn reload() void {
+    test_reload_count += 1;
+    const view = global_web_view orelse web_view orelse return;
+    if (syms.webkit_web_view_reload) |f| {
+        std.debug.print("[ZAWRA-WPE] Reloading page\n", .{});
+        f(view);
+    }
+}
+
+pub fn reloadBypassCache() void {
+    test_reload_bypass_count += 1;
+    const view = global_web_view orelse web_view orelse return;
+    if (syms.webkit_web_view_reload_bypass_cache) |f| {
+        std.debug.print("[ZAWRA-WPE] Reloading page (bypass cache)\n", .{});
+        f(view);
+    }
+}
+
+pub fn goBack() void {
+    test_back_count += 1;
+    const view = global_web_view orelse web_view orelse return;
+    if (syms.webkit_web_view_go_back) |f| {
+        std.debug.print("[ZAWRA-WPE] Going back\n", .{});
+        f(view);
+    }
+}
+
+pub fn goForward() void {
+    test_forward_count += 1;
+    const view = global_web_view orelse web_view orelse return;
+    if (syms.webkit_web_view_go_forward) |f| {
+        std.debug.print("[ZAWRA-WPE] Going forward\n", .{});
+        f(view);
+    }
+}
+
+pub fn canGoBack() bool {
+    const view = global_web_view orelse web_view orelse return false;
+    if (syms.webkit_web_view_can_go_back) |f| {
+        return f(view) != 0;
+    }
+    return false;
+}
+
+pub fn canGoForward() bool {
+    const view = global_web_view orelse web_view orelse return false;
+    if (syms.webkit_web_view_can_go_forward) |f| {
+        return f(view) != 0;
+    }
+    return false;
 }
 
 pub fn resize(width: u32, height: u32) void {
@@ -472,6 +619,182 @@ pub fn sendPointer(event_type: u32, local_x: f64, local_y: f64, button: u32, sta
     }
 }
 
+pub fn evdevToKeysym(key: u32, shift: bool) u32 {
+    // 1. Special & Navigation Keys
+    switch (key) {
+        // Return / Enter
+        28 => return 0xff0d, // KEY_ENTER -> XK_Return
+        96 => return 0xff8d, // KEY_KPENTER -> XK_KP_Enter
+        // Backspace
+        14 => return 0xff08, // KEY_BACKSPACE -> XK_BackSpace
+        // Tab
+        15 => return if (shift) 0xfe20 else 0xff09, // KEY_TAB -> XK_ISO_Left_Tab / XK_Tab
+        // Linefeed
+        101 => return 0xff0a, // KEY_LINEFEED -> XK_Linefeed
+        // Escape
+        1 => return 0xff1b, // KEY_ESC -> XK_Escape
+        // Space
+        57 => return 0x0020, // KEY_SPACE -> XK_space
+        // Delete & Insert
+        111 => return 0xffff, // KEY_DELETE -> XK_Delete
+        110 => return 0xff63, // KEY_INSERT -> XK_Insert
+        // Directional arrows
+        105 => return 0xff51, // KEY_LEFT -> XK_Left
+        103 => return 0xff52, // KEY_UP -> XK_Up
+        106 => return 0xff53, // KEY_RIGHT -> XK_Right
+        108 => return 0xff54, // KEY_DOWN -> XK_Down
+        // Navigation block
+        102 => return 0xff50, // KEY_HOME -> XK_Home
+        107 => return 0xff57, // KEY_END -> XK_End
+        104 => return 0xff55, // KEY_PAGEUP -> XK_Page_Up
+        109 => return 0xff56, // KEY_PAGEDOWN -> XK_Page_Down
+        // Modifiers
+        42 => return 0xffe1, // KEY_LEFTSHIFT -> XK_Shift_L
+        54 => return 0xffe2, // KEY_RIGHTSHIFT -> XK_Shift_R
+        29 => return 0xffe3, // KEY_LEFTCTRL -> XK_Control_L
+        97 => return 0xffe4, // KEY_RIGHTCTRL -> XK_Control_R
+        56 => return 0xffe9, // KEY_LEFTALT -> XK_Alt_L
+        100 => return 0xffea, // KEY_RIGHTALT -> XK_Alt_R
+        125 => return 0xffeb, // KEY_LEFTMETA -> XK_Super_L
+        126 => return 0xffec, // KEY_RIGHTMETA -> XK_Super_R
+        58 => return 0xffe5, // KEY_CAPSLOCK -> XK_Caps_Lock
+        // Keypad numbers & operations
+        82 => return 0xffb0, // KEY_KP0 -> XK_KP_0
+        79 => return 0xffb1, // KEY_KP1 -> XK_KP_1
+        80 => return 0xffb2, // KEY_KP2 -> XK_KP_2
+        81 => return 0xffb3, // KEY_KP3 -> XK_KP_3
+        75 => return 0xffb4, // KEY_KP4 -> XK_KP_4
+        76 => return 0xffb5, // KEY_KP5 -> XK_KP_5
+        77 => return 0xffb6, // KEY_KP6 -> XK_KP_6
+        71 => return 0xffb7, // KEY_KP7 -> XK_KP_7
+        72 => return 0xffb8, // KEY_KP8 -> XK_KP_8
+        73 => return 0xffb9, // KEY_KP9 -> XK_KP_9
+        83 => return 0xffae, // KEY_KPDOT -> XK_KP_Decimal
+        98 => return 0xffaf, // KEY_KPSLASH -> XK_KP_Divide
+        55 => return 0xffaa, // KEY_KPASTERISK -> XK_KP_Multiply
+        74 => return 0xffad, // KEY_KPMINUS -> XK_KP_Subtract
+        78 => return 0xffab, // KEY_KPPLUS -> XK_KP_Add
+        117 => return 0xffbd, // KEY_KPEQUAL -> XK_KP_Equal
+        // Function keys
+        59 => return 0xffbe, // KEY_F1
+        60 => return 0xffbf, // KEY_F2
+        61 => return 0xffc0, // KEY_F3
+        62 => return 0xffc1, // KEY_F4
+        63 => return 0xffc2, // KEY_F5
+        64 => return 0xffc3, // KEY_F6
+        65 => return 0xffc4, // KEY_F7
+        66 => return 0xffc5, // KEY_F8
+        67 => return 0xffc6, // KEY_F9
+        68 => return 0xffc7, // KEY_F10
+        87 => return 0xffc8, // KEY_F11
+        88 => return 0xffc9, // KEY_F12
+        else => {},
+    }
+
+    // 2. Letters A-Z / a-z
+    const letter: u32 = switch (key) {
+        16 => 'q',
+        17 => 'w',
+        18 => 'e',
+        19 => 'r',
+        20 => 't',
+        21 => 'y',
+        22 => 'u',
+        23 => 'i',
+        24 => 'o',
+        25 => 'p',
+        30 => 'a',
+        31 => 's',
+        32 => 'd',
+        33 => 'f',
+        34 => 'g',
+        35 => 'h',
+        36 => 'j',
+        37 => 'k',
+        38 => 'l',
+        44 => 'z',
+        45 => 'x',
+        46 => 'c',
+        47 => 'v',
+        48 => 'b',
+        49 => 'n',
+        50 => 'm',
+        else => 0,
+    };
+    if (letter != 0) {
+        if (shift) {
+            return letter - 32; // 'A'..'Z'
+        } else {
+            return letter;      // 'a'..'z'
+        }
+    }
+
+    // 3. Number row (1..0) and punctuation
+    if (!shift) {
+        switch (key) {
+            2 => return '1',
+            3 => return '2',
+            4 => return '3',
+            5 => return '4',
+            6 => return '5',
+            7 => return '6',
+            8 => return '7',
+            9 => return '8',
+            10 => return '9',
+            11 => return '0',
+            12 => return '-',
+            13 => return '=',
+            26 => return '[',
+            27 => return ']',
+            43 => return '\\',
+            39 => return ';',
+            40 => return '\'',
+            41 => return '`',
+            51 => return ',',
+            52 => return '.',
+            53 => return '/',
+            86 => return '<', // KEY_102ND (ISO)
+            else => {},
+        }
+    } else {
+        switch (key) {
+            2 => return '!',
+            3 => return '@',
+            4 => return '#',
+            5 => return '$',
+            6 => return '%',
+            7 => return '^',
+            8 => return '&',
+            9 => return '*',
+            10 => return '(',
+            11 => return ')',
+            12 => return '_',
+            13 => return '+',
+            26 => return '{',
+            27 => return '}',
+            43 => return '|',
+            39 => return ':',
+            40 => return '"',
+            41 => return '~',
+            51 => return '<',
+            52 => return '>',
+            53 => return '?',
+            86 => return '>', // KEY_102ND (ISO shifted)
+            else => {},
+        }
+    }
+
+    // 4. Fallback: if already an ASCII or keysym value
+    if (key >= 32 and key <= 126) {
+        return key;
+    }
+    if (key >= 0xff00) {
+        return key;
+    }
+
+    return 0;
+}
+
 pub fn sendKeyboard(key: u32, state: u32, modifiers: u32) void {
     const view = wpe_view orelse return;
     const event_fn = syms.wpe_view_event orelse return;
@@ -479,9 +802,74 @@ pub fn sendKeyboard(key: u32, state: u32, modifiers: u32) void {
     const key_new = syms.wpe_event_keyboard_new orelse return;
 
     const ev_type: u32 = if (state == 1) 7 else 8;
-    const ev = key_new(ev_type, view, 2, 0, modifiers, key, key);
+    const shift = (modifiers & (1 << 0)) != 0;
+    const alt = (modifiers & (1 << 1)) != 0;
+    const ctrl = (modifiers & (1 << 2)) != 0;
+
+    var wpe_modifiers: u32 = 0;
+    if (ctrl) wpe_modifiers |= (1 << 0); // WPE_MODIFIER_KEYBOARD_CONTROL
+    if (shift) wpe_modifiers |= (1 << 1); // WPE_MODIFIER_KEYBOARD_SHIFT
+    if (alt) wpe_modifiers |= (1 << 2);   // WPE_MODIFIER_KEYBOARD_ALT
+
+    const hardware_keycode: u32 = key + 8;
+    const keysym: u32 = evdevToKeysym(key, shift);
+
+    const ev = key_new(ev_type, view, 2, 0, wpe_modifiers, hardware_keycode, keysym);
     if (ev) |e| {
         event_fn(view, e);
         unref_fn(e);
     }
+}
+
+test "evdevToKeysym printable and navigation mapping" {
+    // Letters
+    try std.testing.expectEqual(@as(u32, 'a'), evdevToKeysym(30, false));
+    try std.testing.expectEqual(@as(u32, 'A'), evdevToKeysym(30, true));
+    try std.testing.expectEqual(@as(u32, 'z'), evdevToKeysym(44, false));
+    try std.testing.expectEqual(@as(u32, 'Z'), evdevToKeysym(44, true));
+
+    // Digits and shifted symbols
+    try std.testing.expectEqual(@as(u32, '1'), evdevToKeysym(2, false));
+    try std.testing.expectEqual(@as(u32, '!'), evdevToKeysym(2, true));
+    try std.testing.expectEqual(@as(u32, '0'), evdevToKeysym(11, false));
+    try std.testing.expectEqual(@as(u32, ')'), evdevToKeysym(11, true));
+
+    // Punctuation
+    try std.testing.expectEqual(@as(u32, '-'), evdevToKeysym(12, false));
+    try std.testing.expectEqual(@as(u32, '_'), evdevToKeysym(12, true));
+    try std.testing.expectEqual(@as(u32, '['), evdevToKeysym(26, false));
+    try std.testing.expectEqual(@as(u32, '{'), evdevToKeysym(26, true));
+    try std.testing.expectEqual(@as(u32, ' '), evdevToKeysym(57, false));
+
+    // Return & Backspace & Tab
+    try std.testing.expectEqual(@as(u32, 0xff0d), evdevToKeysym(28, false)); // XK_Return
+    try std.testing.expectEqual(@as(u32, 0xff08), evdevToKeysym(14, false)); // XK_BackSpace
+    try std.testing.expectEqual(@as(u32, 0xff09), evdevToKeysym(15, false)); // XK_Tab
+    try std.testing.expectEqual(@as(u32, 0xfe20), evdevToKeysym(15, true));  // XK_ISO_Left_Tab
+
+    // Navigation
+    try std.testing.expectEqual(@as(u32, 0xff51), evdevToKeysym(105, false)); // XK_Left
+    try std.testing.expectEqual(@as(u32, 0xff52), evdevToKeysym(103, false)); // XK_Up
+    try std.testing.expectEqual(@as(u32, 0xff53), evdevToKeysym(106, false)); // XK_Right
+    try std.testing.expectEqual(@as(u32, 0xff54), evdevToKeysym(108, false)); // XK_Down
+    try std.testing.expectEqual(@as(u32, 0xff50), evdevToKeysym(102, false)); // XK_Home
+    try std.testing.expectEqual(@as(u32, 0xff57), evdevToKeysym(107, false)); // XK_End
+    try std.testing.expectEqual(@as(u32, 0xff55), evdevToKeysym(104, false)); // XK_Page_Up
+    try std.testing.expectEqual(@as(u32, 0xff56), evdevToKeysym(109, false)); // XK_Page_Down
+    try std.testing.expectEqual(@as(u32, 0xffff), evdevToKeysym(111, false)); // XK_Delete
+    try std.testing.expectEqual(@as(u32, 0xff63), evdevToKeysym(110, false)); // XK_Insert
+    try std.testing.expectEqual(@as(u32, 0xff1b), evdevToKeysym(1, false));   // XK_Escape
+
+    // Keypad
+    try std.testing.expectEqual(@as(u32, 0xff8d), evdevToKeysym(96, false)); // XK_KP_Enter
+    try std.testing.expectEqual(@as(u32, 0xffb0), evdevToKeysym(82, false)); // XK_KP_0
+    try std.testing.expectEqual(@as(u32, 0xffb9), evdevToKeysym(73, false)); // XK_KP_9
+    try std.testing.expectEqual(@as(u32, 0xffab), evdevToKeysym(78, false)); // XK_KP_Add
+
+    // Modifiers & Function Keys
+    try std.testing.expectEqual(@as(u32, 0xffe1), evdevToKeysym(42, false)); // XK_Shift_L
+    try std.testing.expectEqual(@as(u32, 0xffe3), evdevToKeysym(29, false)); // XK_Control_L
+    try std.testing.expectEqual(@as(u32, 0xffe9), evdevToKeysym(56, false)); // XK_Alt_L
+    try std.testing.expectEqual(@as(u32, 0xffbe), evdevToKeysym(59, false)); // XK_F1
+    try std.testing.expectEqual(@as(u32, 0xffc9), evdevToKeysym(88, false)); // XK_F12
 }

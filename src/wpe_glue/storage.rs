@@ -829,6 +829,89 @@ pub unsafe extern "C" fn Z_History_Put(
     }
 }
 
+/// Record a navigation history entry directly with URL and title.
+///
+/// # Safety
+/// `url` and `title` must be valid NUL-terminated strings (or title can be null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_History_Record(
+    url: *const c_char,
+    title: *const c_char,
+) -> i32 {
+    if url.is_null() {
+        return NS_OK;
+    }
+    let url_str = match unsafe { CStr::from_ptr(url).to_str() } {
+        Ok(s) => s.trim(),
+        Err(_) => return NS_OK,
+    };
+    if url_str.is_empty()
+        || url_str.starts_with("zawra://")
+        || url_str.starts_with("about:")
+    {
+        return NS_OK;
+    }
+
+    let title_str = if title.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(title) }.to_string_lossy().trim().to_string()
+    };
+    let effective_title = if title_str.is_empty() {
+        url_str.to_string()
+    } else {
+        title_str
+    };
+
+    let mut hash: u128 = 0x6c62272e07bb014262b821756295c58d;
+    for &byte in url_str.as_bytes() {
+        hash ^= byte as u128;
+        hash = hash.wrapping_mul(0x1000000000000000000013b);
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let entry = HistoryEntry {
+        timestamp: timestamp as u128,
+        url: url_str.to_string(),
+        url_hash: hash,
+        title: effective_title.clone(),
+        visit_count: 1,
+    };
+
+    if let Some(db) = GLOBAL_DB.get() {
+        match db.history().insert(&entry) {
+            Ok(_) => {
+                eprintln!("[ZAWRA-HISTORY] Recorded visit: {} - {}", url_str, effective_title);
+                NS_OK
+            }
+            Err(e) => {
+                eprintln!("[ZAWRA-HISTORY] Failed to record visit {}: {}", url_str, e);
+                NS_ERROR_FAILURE
+            }
+        }
+    } else {
+        eprintln!("[ZAWRA-HISTORY] Global DB not initialized, ignoring visit: {}", url_str);
+        NS_OK
+    }
+}
+
+/// Clear browsing history in BrowserDB.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_History_Clear() -> i32 {
+    if let Some(db) = GLOBAL_DB.get() {
+        if let Ok(entries) = db.history().hot_search("", 1000) {
+            for entry in entries {
+                let _ = db.history().wipe_domain(&entry.url);
+            }
+        }
+    }
+    NS_OK
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ZawraHistoryEntry {
@@ -2272,4 +2355,51 @@ fn decode_base64(data: &[u8]) -> Option<Vec<u8>> {
         if chunk[3] != b'=' { out.push((w & 0xff) as u8); }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn test_zawra_history_record_and_query() {
+        let temp_dir = std::env::temp_dir().join(format!("zawra_hist_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let path_c = CString::new(temp_dir.to_str().unwrap()).unwrap();
+        unsafe {
+            let init_res = Z_Storage_Init(path_c.as_ptr());
+            assert_eq!(init_res, NS_OK);
+
+            // Record ignore for internal / empty
+            let internal_url = CString::new("zawra://history").unwrap();
+            let internal_title = CString::new("History").unwrap();
+            assert_eq!(Zawra_History_Record(internal_url.as_ptr(), internal_title.as_ptr()), NS_OK);
+
+            let about_url = CString::new("about:blank").unwrap();
+            assert_eq!(Zawra_History_Record(about_url.as_ptr(), std::ptr::null()), NS_OK);
+
+            // Record real visits
+            let url1 = CString::new("https://rust-lang.org").unwrap();
+            let title1 = CString::new("Rust Programming Language").unwrap();
+            assert_eq!(Zawra_History_Record(url1.as_ptr(), title1.as_ptr()), NS_OK);
+
+            let url2 = CString::new("https://ziglang.org").unwrap();
+            let title2 = CString::new("Zig Programming Language").unwrap();
+            assert_eq!(Zawra_History_Record(url2.as_ptr(), title2.as_ptr()), NS_OK);
+
+            // Query recent history entries
+            let mut entries: [ZawraHistoryEntry; 16] = [ZawraHistoryEntry {
+                title: [0u8; 128],
+                title_len: 0,
+                url: [0u8; 256],
+                url_len: 0,
+                visit_time: 0,
+            }; 16];
+
+            let count = Zawra_GetRecentHistoryEntries(entries.as_mut_ptr(), 16);
+            assert!(count >= 2);
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

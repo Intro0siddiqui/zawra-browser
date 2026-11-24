@@ -77,4 +77,13 @@ pub fn build(b: *std.Build) void {
     });
     ui_lib.bundle_compiler_rt = true;
     b.installArtifact(ui_lib);
+
+    // Unit tests
+    const unit_tests = b.addTest(.{
+        .root_module = ui_mod,
+    });
+    unit_tests.root_module.linkSystemLibrary("vulkan", .{});
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const test_step = b.step("test", "Run UI unit tests");
+    test_step.dependOn(&run_unit_tests.step);
 }

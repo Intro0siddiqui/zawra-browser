@@ -74,14 +74,16 @@ fn onPointerEvent(event_type: u32, x: f32, y: f32, button: u32, state: u32) call
             shell.handleMouseMove(x, y);
         } else if (event_type == 1) {
             shell.handleMouseDown(x, y);
+        } else if (event_type == 2) {
+            shell.handleMouseUp(x, y);
         }
 
         // Viewport relative event forwarding to WPE
         const vp = shell.layout.viewport_rect;
         if (vp.contains(x, y)) {
             const active_tab = shell.getActiveTabConst();
-            const is_start = if (active_tab) |tab| state_mod.isStartPage(tab.getUrl()) else true;
-            if (!is_start) {
+            const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
+            if (!is_internal and !shell.history_open) {
                 const local_x: f64 = @floatCast(x - vp.x);
                 const local_y: f64 = @floatCast(y - vp.y);
                 wpe.sendPointer(event_type, local_x, local_y, button, state);
@@ -90,20 +92,44 @@ fn onPointerEvent(event_type: u32, x: f32, y: f32, button: u32, state: u32) call
     }
 }
 
-fn onKeyboardEvent(key: u32, state: u32, ctrl: bool) callconv(.c) void {
+fn onKeyboardEvent(key: u32, state: u32, modifiers: u32) callconv(.c) void {
     if (global_shell_state) |shell| {
         const is_down = (state == 1);
+        const shift = (modifiers & 1) != 0;
+        const alt = (modifiers & 2) != 0;
+        const ctrl = (modifiers & 4) != 0;
+        shell.shift_pressed = shift;
+        shell.alt_pressed = alt;
         shell.handleKey(key, is_down, ctrl);
 
-        // Forward keystrokes to WPE only when neither omnibar nor search_hud is focused
-        if (shell.focus == .none) {
+        // Forward keystrokes to WPE only when neither omnibar nor search_hud is focused and history drawer is closed
+        if (shell.focus == .none and !shell.history_open) {
             const active_tab = shell.getActiveTabConst();
-            const is_start = if (active_tab) |tab| state_mod.isStartPage(tab.getUrl()) else true;
-            if (!is_start) {
-                const mods: u32 = if (ctrl) 4 else 0;
-                wpe.sendKeyboard(key, state, mods);
+            const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
+            if (!is_internal) {
+                wpe.sendKeyboard(key, state, modifiers);
             }
         }
+    }
+}
+
+fn onPageMetadataChanged(maybe_uri: ?[]const u8, maybe_title: ?[]const u8) void {
+    if (global_shell_state) |shell| {
+        shell.syncNavState();
+        if (shell.getActiveTab()) |tab| {
+            if (maybe_uri) |uri| {
+                if (uri.len > 0) {
+                    tab.setUrl(uri);
+                    shell.omnibar.setText(uri);
+                }
+            }
+            if (maybe_title) |title| {
+                if (title.len > 0) {
+                    tab.setTitle(title);
+                }
+            }
+        }
+        shell.ui_dirty = true;
     }
 }
 
@@ -118,6 +144,7 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     }
 
     const window = if (!headless) zgraphics.ZG_CreateWindow(width, height) else null;
+    defer if (window) |win| zgraphics.ZG_DestroyWindow(win);
     const surface = zgraphics.ZG_CreateSurface(window, width, height) orelse {
         std.debug.print("[ZAWRA-SHELL] ERROR: Failed to create graphics surface\n", .{});
         return error.SurfaceCreationFailed;
@@ -135,14 +162,16 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     renderer_mod.setGlobalUIRenderer(&ui_renderer);
     zgraphics.ZG_SetPointerCallback(&onPointerEvent);
     zgraphics.ZG_SetKeyboardCallback(&onKeyboardEvent);
+    wpe.setMetadataCallback(&onPageMetadataChanged);
     defer {
+        wpe.setMetadataCallback(null);
         zgraphics.ZG_SetPointerCallback(null);
         zgraphics.ZG_SetKeyboardCallback(null);
         renderer_mod.setGlobalUIRenderer(null);
         global_shell_state = null;
     }
 
-    const initial_is_start = if (target_url) |url| state_mod.isStartPage(url) else true;
+    const initial_is_internal = if (target_url) |url| state_mod.isInternalPage(url) else true;
     const sub_x: i32 = 260;
     const sub_y: i32 = 0;
 
@@ -157,7 +186,7 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
         wpe.init(wl_disp, wl_surf, wl_subcomp, sub_x, sub_y, vp_w, vp_h) catch |err| {
             std.debug.print("[ZAWRA-SHELL] WPE init failed: {}\n", .{err});
         };
-        wpe.setSubsurfaceVisible(!initial_is_start);
+        wpe.setSubsurfaceVisible(!initial_is_internal);
     }
 
     if (target_url) |url| {
@@ -169,7 +198,7 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     var frame_count: usize = 0;
     const is_limited = (max_frames != null);
     const limit = max_frames orelse 0;
-    var current_is_start: bool = initial_is_start;
+    var current_hide_subsurface: bool = initial_is_internal;
 
     while (!is_limited or frame_count < limit) : (frame_count += 1) {
         // 1. Pump GLib & WebKit event loop directly on Thread 1
@@ -197,21 +226,23 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
             }
         }
 
-        // 3. Keep WebKit subsurface visibility synchronized with Start Page visibility
+        // 3. Keep WebKit subsurface visibility synchronized with internal pages & drawer visibility
         const active_tab = shell_state.getActiveTabConst();
-        const is_start = if (active_tab) |tab| state_mod.isStartPage(tab.getUrl()) else true;
-        if (is_start != current_is_start) {
-            current_is_start = is_start;
-            wpe.setSubsurfaceVisible(!is_start);
-        } else if (is_start) {
+        const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
+        const hide_subsurface = is_internal or shell_state.history_open;
+        if (hide_subsurface != current_hide_subsurface) {
+            current_hide_subsurface = hide_subsurface;
+            wpe.setSubsurfaceVisible(!hide_subsurface);
+            shell_state.ui_dirty = true;
+        } else if (hide_subsurface) {
             wpe.detachSubsurfaceBuffer();
         }
 
-        // 4. Animate or update layout if needed
-        shell_state.recomputeLayout();
-
-        // 5. Render Zawra UI Shell frame (Pass 2 UI Elements: sidebar, start page, tabs)
-        ui_renderer.render(&shell_state);
+        // 4. Render Zawra UI Shell frame only when UI is dirty
+        if (shell_state.ui_dirty) {
+            shell_state.ui_dirty = false;
+            ui_renderer.render(&shell_state);
+        }
 
         if (is_limited and frame_count + 1 >= limit) break;
 
@@ -233,7 +264,7 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     std.debug.print("[ZAWRA-SHELL] Frame loop finished after {} frames.\n", .{frame_count});
 }
 
-pub export fn Zawra_UI_Run(argc: c_int, argv: ?[*][*:0]const u8) c_int {
+pub export fn Zawra_UI_Run(argc: c_int, argv: ?[*]const ?[*:0]const u8) c_int {
     var width: u32 = 1280;
     var height: u32 = 800;
     var headless: bool = false;
@@ -244,19 +275,21 @@ pub export fn Zawra_UI_Run(argc: c_int, argv: ?[*][*:0]const u8) c_int {
         var i: usize = 1;
         const count: usize = if (argc > 0) @intCast(argc) else 0;
         while (i < count) : (i += 1) {
-            const arg = std.mem.span(args[i]);
-            if (std.mem.eql(u8, arg, "--headless")) {
-                headless = true;
-            } else if (std.mem.eql(u8, arg, "--smoke")) {
-                max_frames = 10;
-            } else if (std.mem.startsWith(u8, arg, "--frames=")) {
-                max_frames = std.fmt.parseInt(usize, arg[9..], 10) catch null;
-            } else if (std.mem.startsWith(u8, arg, "--width=")) {
-                width = std.fmt.parseInt(u32, arg[8..], 10) catch 1280;
-            } else if (std.mem.startsWith(u8, arg, "--height=")) {
-                height = std.fmt.parseInt(u32, arg[9..], 10) catch 800;
-            } else if (!std.mem.startsWith(u8, arg, "--")) {
-                target_url = arg;
+            if (args[i]) |arg_ptr| {
+                const arg = std.mem.span(arg_ptr);
+                if (std.mem.eql(u8, arg, "--headless")) {
+                    headless = true;
+                } else if (std.mem.eql(u8, arg, "--smoke")) {
+                    max_frames = 10;
+                } else if (std.mem.startsWith(u8, arg, "--frames=")) {
+                    max_frames = std.fmt.parseInt(usize, arg[9..], 10) catch null;
+                } else if (std.mem.startsWith(u8, arg, "--width=")) {
+                    width = std.fmt.parseInt(u32, arg[8..], 10) catch 1280;
+                } else if (std.mem.startsWith(u8, arg, "--height=")) {
+                    height = std.fmt.parseInt(u32, arg[9..], 10) catch 800;
+                } else if (!std.mem.startsWith(u8, arg, "--")) {
+                    target_url = arg;
+                }
             }
         }
     }
@@ -282,6 +315,7 @@ pub fn runShellFromArgs(init: std.process.Init.Minimal) !void {
     var height: u32 = 800;
     var headless: bool = false;
     var max_frames: ?usize = null;
+    var target_url_buf: [2048]u8 = undefined;
     var target_url: ?[]const u8 = null;
 
     _ = args.next(); // skip exe name
@@ -297,7 +331,9 @@ pub fn runShellFromArgs(init: std.process.Init.Minimal) !void {
         } else if (std.mem.startsWith(u8, arg, "--height=")) {
             height = try std.fmt.parseInt(u32, arg[9..], 10);
         } else if (!std.mem.startsWith(u8, arg, "--")) {
-            target_url = arg;
+            const copy_len = @min(arg.len, target_url_buf.len);
+            @memcpy(target_url_buf[0..copy_len], arg[0..copy_len]);
+            target_url = target_url_buf[0..copy_len];
         }
     }
 

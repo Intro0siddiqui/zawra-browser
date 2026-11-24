@@ -17,11 +17,49 @@ comptime {
 
 extern "c" fn Zawra_GetRecentHistoryEntries(entries_out: [*]ZawraHistoryEntry, max_count: u32) callconv(.c) u32;
 
-fn mockGetRecentHistoryEntries(_: [*]ZawraHistoryEntry, _: u32) callconv(.c) u32 {
-    return 0;
+var mock_history_count: u32 = 0;
+var mock_history_entries: [16]ZawraHistoryEntry = undefined;
+
+fn mockGetRecentHistoryEntries(entries_out: [*]ZawraHistoryEntry, max_count: u32) callconv(.c) u32 {
+    const count = @min(mock_history_count, max_count);
+    if (count > 0) {
+        @memcpy(entries_out[0..count], mock_history_entries[0..count]);
+    }
+    return count;
 }
 
 const getRecentHistoryEntries = if (builtin.is_test) mockGetRecentHistoryEntries else Zawra_GetRecentHistoryEntries;
+
+extern "c" fn Zawra_History_Record(url: [*:0]const u8, title: [*:0]const u8) callconv(.c) i32;
+
+fn mockHistoryRecord(url: [*:0]const u8, title: [*:0]const u8) callconv(.c) i32 {
+    if (mock_history_count < 16) {
+        var entry: ZawraHistoryEntry = undefined;
+        const u_slice = std.mem.span(url);
+        const t_slice = std.mem.span(title);
+        const u_len = @min(u_slice.len, 256);
+        @memcpy(entry.url[0..u_len], u_slice[0..u_len]);
+        entry.url_len = @intCast(u_len);
+        const t_len = @min(t_slice.len, 128);
+        @memcpy(entry.title[0..t_len], t_slice[0..t_len]);
+        entry.title_len = @intCast(t_len);
+        entry.visit_time = 1700000000;
+        mock_history_entries[mock_history_count] = entry;
+        mock_history_count += 1;
+    }
+    return 0;
+}
+
+pub const recordHistory = if (builtin.is_test) mockHistoryRecord else Zawra_History_Record;
+
+extern "c" fn Zawra_History_Clear() callconv(.c) i32;
+
+fn mockHistoryClear() callconv(.c) i32 {
+    mock_history_count = 0;
+    return 0;
+}
+
+pub const clearHistoryStorage = if (builtin.is_test) mockHistoryClear else Zawra_History_Clear;
 
 pub const Rect = struct {
     x: f32,
@@ -58,15 +96,30 @@ pub const Color = struct {
 };
 
 pub fn isStartPage(url: []const u8) bool {
-    return std.mem.eql(u8, url, "zawra://start") or
-        std.mem.eql(u8, url, "about:blank") or
-        url.len == 0;
+    const trimmed = std.mem.trim(u8, url, " \t\r\n");
+    return std.mem.eql(u8, trimmed, "zawra://start") or
+        std.mem.eql(u8, trimmed, "about:blank") or
+        trimmed.len == 0;
+}
+
+pub fn isHistoryPage(url: []const u8) bool {
+    const trimmed = std.mem.trim(u8, url, " \t\r\n");
+    return std.mem.eql(u8, trimmed, "zawra://history");
+}
+
+pub fn isInternalPage(url: []const u8) bool {
+    const trimmed = std.mem.trim(u8, url, " \t\r\n");
+    if (trimmed.len == 0) return true;
+    if (std.mem.eql(u8, trimmed, "about:blank")) return true;
+    if (std.mem.startsWith(u8, trimmed, "zawra://")) return true;
+    return false;
 }
 
 pub const FocusTarget = enum {
     none,
     omnibar,
     search_hud,
+    history_search,
 };
 
 pub const SearchEngine = enum {
@@ -233,6 +286,17 @@ pub const ShellLayout = struct {
     history_item_rects: [16]Rect,
     history_item_count: usize,
 
+    // History Page (zawra://history viewport)
+    history_page_title_pos: [2]f32,
+    history_page_subtitle_pos: [2]f32,
+    history_page_search_rect: Rect,
+    history_page_search_icon_rect: Rect,
+    history_page_search_text_pos: [2]f32,
+    history_page_clear_btn_rect: Rect,
+    history_page_clear_text_pos: [2]f32,
+    history_page_item_rects: [16]Rect,
+    history_page_item_count: usize,
+
     // Notification pill
     notification_rect: Rect,
     notification_visible: bool,
@@ -241,6 +305,7 @@ pub const ShellLayout = struct {
 pub const ShellState = struct {
     window_width: u32 = 1280,
     window_height: u32 = 800,
+    ui_dirty: bool = true,
 
     tabs: std.ArrayList(TabItem) = .empty,
     next_tab_id: u32 = 1,
@@ -251,6 +316,9 @@ pub const ShellState = struct {
     omnibar: OmnibarInput = .{},
     search_hud_input: OmnibarInput = .{
         .placeholder = "Search the web or type URL...",
+    },
+    history_search_input: OmnibarInput = .{
+        .placeholder = "Search browsing history...",
     },
 
     explore_items: [4]ExploreItem,
@@ -263,6 +331,7 @@ pub const ShellState = struct {
     history_open: bool = false,
     history_btn_hovered: bool = false,
     history_close_hovered: bool = false,
+    history_clear_hovered: bool = false,
     history_items: std.ArrayList(HistoryEntryItem) = .empty,
     history_arena: std.heap.ArenaAllocator,
 
@@ -271,6 +340,13 @@ pub const ShellState = struct {
     notification_visible: bool = false,
 
     shift_pressed: bool = false,
+    alt_pressed: bool = false,
+
+    nav_back_hovered: bool = false,
+    nav_fwd_hovered: bool = false,
+    nav_reload_hovered: bool = false,
+    can_go_back: bool = false,
+    can_go_forward: bool = false,
 
     mouse_x: f32 = 0,
     mouse_y: f32 = 0,
@@ -283,6 +359,7 @@ pub const ShellState = struct {
         var state = ShellState{
             .window_width = width,
             .window_height = height,
+            .ui_dirty = true,
             .tabs = .empty,
             .allocator = allocator,
             .history_arena = std.heap.ArenaAllocator.init(allocator),
@@ -334,7 +411,12 @@ pub const ShellState = struct {
         self.tabs.deinit(self.allocator);
     }
 
+    pub fn newTab(self: *ShellState) !void {
+        return self.addNewTab();
+    }
+
     pub fn addNewTab(self: *ShellState) !void {
+        self.ui_dirty = true;
         var tab = TabItem{
             .id = self.next_tab_id,
             .active = false,
@@ -347,6 +429,7 @@ pub const ShellState = struct {
     }
 
     pub fn addTab(self: *ShellState, title: []const u8, url: []const u8) !void {
+        self.ui_dirty = true;
         var tab = TabItem{
             .id = self.next_tab_id,
             .active = false,
@@ -359,6 +442,7 @@ pub const ShellState = struct {
     }
 
     pub fn closeTab(self: *ShellState, index: usize) !void {
+        self.ui_dirty = true;
         if (index >= self.tabs.items.len) return;
         const was_active = self.tabs.items[index].active;
         _ = self.tabs.orderedRemove(index);
@@ -374,15 +458,25 @@ pub const ShellState = struct {
     }
 
     pub fn setActiveTab(self: *ShellState, index: usize) void {
+        self.ui_dirty = true;
         if (index >= self.tabs.items.len) return;
         if (self.tabs.items[index].active) return; // Already active: never reload or cancel in-flight navigation
         for (self.tabs.items, 0..) |*tab, i| {
             tab.active = (i == index);
             if (i == index) {
                 self.omnibar.setText(tab.getUrl());
-                if (isStartPage(tab.getUrl())) {
-                    self.focus = .search_hud;
+                const is_internal = isInternalPage(tab.getUrl());
+                if (is_internal) {
+                    if (isStartPage(tab.getUrl())) {
+                        self.focus = .search_hud;
+                    } else if (isHistoryPage(tab.getUrl())) {
+                        self.focus = .none;
+                        self.loadRecentHistory();
+                    } else {
+                        self.focus = .none;
+                    }
                     wpe.setSubsurfaceVisible(false);
+                    wpe.detachSubsurfaceBuffer();
                 } else {
                     self.focus = .none;
                     wpe.setSubsurfaceVisible(true);
@@ -412,6 +506,7 @@ pub const ShellState = struct {
     pub fn setWindowSize(self: *ShellState, width: u32, height: u32) void {
         self.window_width = width;
         self.window_height = height;
+        self.ui_dirty = true;
         self.recomputeLayout();
     }
 
@@ -420,6 +515,7 @@ pub const ShellState = struct {
         if (self.history_open) {
             self.loadRecentHistory();
         }
+        self.ui_dirty = true;
         self.recomputeLayout();
     }
 
@@ -430,9 +526,12 @@ pub const ShellState = struct {
 
         var entries: [16]ZawraHistoryEntry = undefined;
         const count = getRecentHistoryEntries(&entries, 16);
-        for (entries[0..count]) |entry| {
-            const title_slice = entry.title[0..entry.title_len];
-            const url_slice = entry.url[0..entry.url_len];
+        const safe_count = @min(count, entries.len);
+        for (entries[0..safe_count]) |entry| {
+            const title_len = @min(entry.title_len, entry.title.len);
+            const url_len = @min(entry.url_len, entry.url.len);
+            const title_slice = entry.title[0..title_len];
+            const url_slice = entry.url[0..url_len];
             const title = arena.dupe(u8, title_slice) catch "";
             const url = arena.dupe(u8, url_slice) catch "";
             self.history_items.append(self.allocator, HistoryEntryItem{
@@ -442,6 +541,14 @@ pub const ShellState = struct {
                 .hovered = false,
             }) catch {};
         }
+    }
+
+    pub fn clearHistory(self: *ShellState) void {
+        _ = clearHistoryStorage();
+        _ = self.history_arena.reset(.retain_capacity);
+        self.history_items.clearRetainingCapacity();
+        self.ui_dirty = true;
+        self.recomputeLayout();
     }
 
     pub fn normaliseSearchOrUrl(buf: *[512]u8, input: []const u8, engine: SearchEngine) []const u8 {
@@ -496,25 +603,60 @@ pub const ShellState = struct {
     }
 
     pub fn navigateToUrl(self: *ShellState, input_url: []const u8) void {
+        self.ui_dirty = true;
         var norm_buf: [512]u8 = undefined;
         const url = normaliseSearchOrUrl(&norm_buf, input_url, self.search_engine);
         if (url.len == 0) return;
 
+        const is_internal = isInternalPage(url);
+        const is_hist = isHistoryPage(url);
+
         if (self.getActiveTab()) |tab| {
             tab.setUrl(url);
-            tab.setTitle(if (isStartPage(url)) "New Tab" else url);
+            const title = if (isStartPage(url))
+                "New Tab"
+            else if (is_hist)
+                "Browsing History"
+            else if (is_internal)
+                url
+            else
+                url;
+            tab.setTitle(title);
             self.omnibar.setText(url);
         }
         self.focus = .none;
         self.omnibar.focused = false;
 
-        if (!isStartPage(url)) {
+        if (is_internal) {
+            wpe.setSubsurfaceVisible(false);
+            wpe.detachSubsurfaceBuffer();
+            if (is_hist) {
+                self.loadRecentHistory();
+            }
+        } else {
+            var c_url: [512:0]u8 = undefined;
+            const u_len = @min(url.len, 511);
+            @memcpy(c_url[0..u_len], url[0..u_len]);
+            c_url[u_len] = 0;
+
+            var c_title: [256:0]u8 = undefined;
+            const t_title = if (self.getActiveTab()) |tab| tab.getTitle() else url;
+            const t_len = @min(t_title.len, 255);
+            @memcpy(c_title[0..t_len], t_title[0..t_len]);
+            c_title[t_len] = 0;
+
+            _ = recordHistory(&c_url, &c_title);
+
             wpe.setSubsurfaceVisible(true);
             wpe.loadUrl(url);
-        } else {
-            wpe.setSubsurfaceVisible(false);
         }
+        self.syncNavState();
         self.recomputeLayout();
+    }
+
+    pub fn syncNavState(self: *ShellState) void {
+        self.can_go_back = wpe.canGoBack();
+        self.can_go_forward = wpe.canGoForward();
     }
 
     fn evdevToAscii(code: u32, shift: bool) ?u8 {
@@ -556,20 +698,63 @@ pub const ShellState = struct {
     pub fn handleKey(self: *ShellState, key: u32, is_down: bool, is_ctrl: bool) void {
         // Track shift key modifiers
         if (key == 42 or key == 54) {
-            self.shift_pressed = is_down;
+            if (self.shift_pressed != is_down) {
+                self.shift_pressed = is_down;
+                self.ui_dirty = true;
+            }
+            return;
+        }
+
+        // Track alt key modifiers (evdev 56 = KEY_LEFTALT, 100 = KEY_RIGHTALT)
+        if (key == 56 or key == 100) {
+            if (self.alt_pressed != is_down) {
+                self.alt_pressed = is_down;
+                self.ui_dirty = true;
+            }
             return;
         }
 
         if (!is_down) return;
 
+        // Reload shortcut: Ctrl+R (evdev 19, 'r', 'R') or F5 (evdev 63)
+        // Shift modifier triggers reloadBypassCache()
+        if ((is_ctrl and (key == 19 or key == 'r' or key == 'R')) or key == 63) {
+            self.ui_dirty = true;
+            if (self.shift_pressed) {
+                wpe.reloadBypassCache();
+            } else {
+                wpe.reload();
+            }
+            self.syncNavState();
+            return;
+        }
+
+        // Back shortcut: Alt+Left Arrow (evdev 105) or AC Back (evdev 158)
+        if ((self.alt_pressed and key == 105) or key == 158) {
+            self.ui_dirty = true;
+            wpe.goBack();
+            self.syncNavState();
+            return;
+        }
+
+        // Forward shortcut: Alt+Right Arrow (evdev 106) or AC Forward (evdev 159)
+        if ((self.alt_pressed and key == 106) or key == 159) {
+            self.ui_dirty = true;
+            wpe.goForward();
+            self.syncNavState();
+            return;
+        }
+
         // Ctrl+H toggles history drawer (ASCII 'h', 'H', or Linux KEY_H 35)
         if (is_ctrl and (key == 'h' or key == 'H' or key == 35 or key == 0x23)) {
+            self.ui_dirty = true;
             self.toggleHistory();
             return;
         }
 
         // Ctrl+T opens new tab
         if (is_ctrl and (key == 't' or key == 'T' or key == 20)) {
+            self.ui_dirty = true;
             self.addNewTab() catch {};
             return;
         }
@@ -578,6 +763,7 @@ pub const ShellState = struct {
         if (is_ctrl and (key == 'w' or key == 'W' or key == 17)) {
             for (self.tabs.items, 0..) |tab, i| {
                 if (tab.active) {
+                    self.ui_dirty = true;
                     self.closeTab(i) catch {};
                     return;
                 }
@@ -585,23 +771,24 @@ pub const ShellState = struct {
             return;
         }
 
-        // Auto-focus search or omnibar when typing if nothing is currently focused
+        // Ctrl+L focuses omnibar
+        if (is_ctrl and (key == 'l' or key == 'L' or key == 38)) {
+            self.focus = .omnibar;
+            self.omnibar.focused = true;
+            self.ui_dirty = true;
+            return;
+        }
+
+        // Auto-focus search hud or history search when typing and nothing is currently focused
         if (self.focus == .none) {
             const active_tab = self.getActiveTabConst();
-            const is_start = if (active_tab) |tab| isStartPage(tab.getUrl()) else true;
-            if (is_start) {
-                self.focus = .search_hud;
-            } else {
-                const char_byte: ?u8 = if (evdevToAscii(key, self.shift_pressed)) |c|
-                    c
-                else if (key >= 32 and key <= 126)
-                    @intCast(key)
-                else
-                    null;
-                if (char_byte != null and !is_ctrl) {
-                    self.focus = .omnibar;
-                    self.omnibar.len = 0;
-                    self.omnibar.cursor_pos = 0;
+            if (active_tab) |tab| {
+                if (isStartPage(tab.getUrl())) {
+                    self.focus = .search_hud;
+                    self.ui_dirty = true;
+                } else if (isHistoryPage(tab.getUrl())) {
+                    self.focus = .history_search;
+                    self.ui_dirty = true;
                 }
             }
         }
@@ -616,6 +803,7 @@ pub const ShellState = struct {
                     self.search_hud_input.setText("");
                     self.navigateToUrl(url);
                 }
+                self.ui_dirty = true;
                 return;
             }
 
@@ -624,6 +812,7 @@ pub const ShellState = struct {
                 if (self.search_hud_input.len > 0) {
                     self.search_hud_input.len -= 1;
                     self.search_hud_input.cursor_pos = self.search_hud_input.len;
+                    self.ui_dirty = true;
                 }
                 return;
             }
@@ -631,6 +820,7 @@ pub const ShellState = struct {
             // Escape to unfocus
             if (key == 1 or key == 27) {
                 self.focus = .none;
+                self.ui_dirty = true;
                 return;
             }
 
@@ -647,6 +837,7 @@ pub const ShellState = struct {
                     self.search_hud_input.buffer[self.search_hud_input.len] = c;
                     self.search_hud_input.len += 1;
                     self.search_hud_input.cursor_pos = self.search_hud_input.len;
+                    self.ui_dirty = true;
                 }
             }
         } else if (self.focus == .omnibar) {
@@ -660,6 +851,7 @@ pub const ShellState = struct {
                 }
                 self.focus = .none;
                 self.omnibar.focused = false;
+                self.ui_dirty = true;
                 return;
             }
 
@@ -668,6 +860,7 @@ pub const ShellState = struct {
                 if (self.omnibar.len > 0) {
                     self.omnibar.len -= 1;
                     self.omnibar.cursor_pos = self.omnibar.len;
+                    self.ui_dirty = true;
                 }
                 return;
             }
@@ -676,6 +869,7 @@ pub const ShellState = struct {
             if (key == 1 or key == 27) {
                 self.focus = .none;
                 self.omnibar.focused = false;
+                self.ui_dirty = true;
                 return;
             }
 
@@ -692,6 +886,54 @@ pub const ShellState = struct {
                     self.omnibar.buffer[self.omnibar.len] = c;
                     self.omnibar.len += 1;
                     self.omnibar.cursor_pos = self.omnibar.len;
+                    self.ui_dirty = true;
+                }
+            }
+        } else if (self.focus == .history_search) {
+            // Enter key
+            if (key == 28 or key == '\r' or key == '\n') {
+                const raw_text = self.history_search_input.getText();
+                if (raw_text.len > 0) {
+                    var norm_buf: [512]u8 = undefined;
+                    const url = normaliseSearchOrUrl(&norm_buf, raw_text, self.search_engine);
+                    self.history_search_input.setText("");
+                    self.navigateToUrl(url);
+                }
+                self.ui_dirty = true;
+                return;
+            }
+
+            // Backspace
+            if (key == 14 or key == 8) {
+                if (self.history_search_input.len > 0) {
+                    self.history_search_input.len -= 1;
+                    self.history_search_input.cursor_pos = self.history_search_input.len;
+                    self.ui_dirty = true;
+                }
+                return;
+            }
+
+            // Escape
+            if (key == 1 or key == 27) {
+                self.focus = .none;
+                self.ui_dirty = true;
+                return;
+            }
+
+            // Printable character
+            const char_byte: ?u8 = if (evdevToAscii(key, self.shift_pressed)) |c|
+                c
+            else if (key >= 32 and key <= 126)
+                @intCast(key)
+            else
+                null;
+
+            if (char_byte) |c| {
+                if (self.history_search_input.len < self.history_search_input.buffer.len) {
+                    self.history_search_input.buffer[self.history_search_input.len] = c;
+                    self.history_search_input.len += 1;
+                    self.history_search_input.cursor_pos = self.history_search_input.len;
+                    self.ui_dirty = true;
                 }
             }
         }
@@ -700,56 +942,175 @@ pub const ShellState = struct {
     pub fn handleMouseMove(self: *ShellState, mx: f32, my: f32) void {
         self.mouse_x = mx;
         self.mouse_y = my;
+        var hover_changed: bool = false;
 
         // Check dots hover
-        self.control_dots[0].hovered = self.layout.dot_close_rect.contains(mx, my);
-        self.control_dots[1].hovered = self.layout.dot_minimize_rect.contains(mx, my);
-        self.control_dots[2].hovered = self.layout.dot_maximize_rect.contains(mx, my);
+        const hov_dot0 = self.layout.dot_close_rect.contains(mx, my);
+        if (self.control_dots[0].hovered != hov_dot0) {
+            self.control_dots[0].hovered = hov_dot0;
+            hover_changed = true;
+        }
+        const hov_dot1 = self.layout.dot_minimize_rect.contains(mx, my);
+        if (self.control_dots[1].hovered != hov_dot1) {
+            self.control_dots[1].hovered = hov_dot1;
+            hover_changed = true;
+        }
+        const hov_dot2 = self.layout.dot_maximize_rect.contains(mx, my);
+        if (self.control_dots[2].hovered != hov_dot2) {
+            self.control_dots[2].hovered = hov_dot2;
+            hover_changed = true;
+        }
 
         // Check pills hover
-        self.pills[0].hovered = self.layout.pill_google_rect.contains(mx, my);
-        self.pills[1].hovered = self.layout.pill_duck_rect.contains(mx, my);
+        const hov_pill0 = self.layout.pill_google_rect.contains(mx, my);
+        if (self.pills[0].hovered != hov_pill0) {
+            self.pills[0].hovered = hov_pill0;
+            hover_changed = true;
+        }
+        const hov_pill1 = self.layout.pill_duck_rect.contains(mx, my);
+        if (self.pills[1].hovered != hov_pill1) {
+            self.pills[1].hovered = hov_pill1;
+            hover_changed = true;
+        }
 
         // Check explore items hover
         for (&self.explore_items, 0..) |*item, i| {
             if (i < 4) {
-                item.hovered = self.layout.explore_item_rects[i].contains(mx, my);
+                const hov = self.layout.explore_item_rects[i].contains(mx, my);
+                if (item.hovered != hov) {
+                    item.hovered = hov;
+                    hover_changed = true;
+                }
             }
         }
 
         // Check tab [+] button hover
-        self.tab_new_btn_hovered = self.layout.tab_new_btn_rect.contains(mx, my);
+        const hov_new_btn = self.layout.tab_new_btn_rect.contains(mx, my);
+        if (self.tab_new_btn_hovered != hov_new_btn) {
+            self.tab_new_btn_hovered = hov_new_btn;
+            hover_changed = true;
+        }
 
         // Check tab cards and [x] close button hover
         for (self.tabs.items, 0..) |*tab, i| {
             if (i < self.layout.tab_count) {
                 const close_hov = self.layout.tab_close_rects[i].contains(mx, my);
-                tab.close_hovered = close_hov;
-                tab.hovered = self.layout.tab_rects[i].contains(mx, my) and !close_hov;
+                if (tab.close_hovered != close_hov) {
+                    tab.close_hovered = close_hov;
+                    hover_changed = true;
+                }
+                const tab_hov = self.layout.tab_rects[i].contains(mx, my) and !close_hov;
+                if (tab.hovered != tab_hov) {
+                    tab.hovered = tab_hov;
+                    hover_changed = true;
+                }
             }
         }
 
+        // Check navigation cluster hover (Back, Forward, Reload)
+        const hov_nav_back = self.layout.nav_back_rect.contains(mx, my);
+        if (self.nav_back_hovered != hov_nav_back) {
+            self.nav_back_hovered = hov_nav_back;
+            hover_changed = true;
+        }
+        const hov_nav_fwd = self.layout.nav_fwd_rect.contains(mx, my);
+        if (self.nav_fwd_hovered != hov_nav_fwd) {
+            self.nav_fwd_hovered = hov_nav_fwd;
+            hover_changed = true;
+        }
+        const hov_nav_reload = self.layout.nav_reload_rect.contains(mx, my);
+        if (self.nav_reload_hovered != hov_nav_reload) {
+            self.nav_reload_hovered = hov_nav_reload;
+            hover_changed = true;
+        }
+
         // Check history button in sidebar footer
-        self.history_btn_hovered = self.layout.history_btn_rect.contains(mx, my);
+        const hov_hist_btn = self.layout.history_btn_rect.contains(mx, my);
+        if (self.history_btn_hovered != hov_hist_btn) {
+            self.history_btn_hovered = hov_hist_btn;
+            hover_changed = true;
+        }
 
         // Check history drawer hover
         if (self.history_open) {
-            self.history_close_hovered = self.layout.history_close_btn_rect.contains(mx, my);
+            const hov_hist_close = self.layout.history_close_btn_rect.contains(mx, my);
+            if (self.history_close_hovered != hov_hist_close) {
+                self.history_close_hovered = hov_hist_close;
+                hover_changed = true;
+            }
             for (self.history_items.items, 0..) |*item, i| {
                 if (i < self.layout.history_item_count) {
-                    item.hovered = self.layout.history_item_rects[i].contains(mx, my);
+                    const hov = self.layout.history_item_rects[i].contains(mx, my);
+                    if (item.hovered != hov) {
+                        item.hovered = hov;
+                        hover_changed = true;
+                    }
                 }
             }
         }
 
         // Start page shortcuts hover
         for (&self.shortcuts, 0..) |*item, i| {
-            item.hovered = self.layout.shortcut_rects[i].contains(mx, my);
+            const hov = self.layout.shortcut_rects[i].contains(mx, my);
+            if (item.hovered != hov) {
+                item.hovered = hov;
+                hover_changed = true;
+            }
         }
-        self.start_search_hovered = self.layout.start_search_rect.contains(mx, my);
+        const hov_start_search = self.layout.start_search_rect.contains(mx, my);
+        if (self.start_search_hovered != hov_start_search) {
+            self.start_search_hovered = hov_start_search;
+            hover_changed = true;
+        }
+
+        // Check History page hover
+        if (self.getActiveTabConst()) |tab| {
+            if (isHistoryPage(tab.getUrl())) {
+                const hov_clear = self.layout.history_page_clear_btn_rect.contains(mx, my);
+                if (self.history_clear_hovered != hov_clear) {
+                    self.history_clear_hovered = hov_clear;
+                    hover_changed = true;
+                }
+                for (self.history_items.items, 0..) |*item, i| {
+                    if (i < self.layout.history_page_item_count) {
+                        const hov = self.layout.history_page_item_rects[i].contains(mx, my);
+                        if (item.hovered != hov) {
+                            item.hovered = hov;
+                            hover_changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (hover_changed) {
+            self.ui_dirty = true;
+        }
     }
 
     pub fn handleMouseDown(self: *ShellState, mx: f32, my: f32) void {
+        self.ui_dirty = true;
+
+        // Nav cluster controls (Back, Forward, Reload)
+        if (self.layout.nav_reload_rect.contains(mx, my)) {
+            wpe.reload();
+            self.syncNavState();
+            self.ui_dirty = true;
+            return;
+        }
+        if (self.layout.nav_back_rect.contains(mx, my)) {
+            wpe.goBack();
+            self.syncNavState();
+            self.ui_dirty = true;
+            return;
+        }
+        if (self.layout.nav_fwd_rect.contains(mx, my)) {
+            wpe.goForward();
+            self.syncNavState();
+            self.ui_dirty = true;
+            return;
+        }
+
         // 0. History button click in footer
         if (self.layout.history_btn_rect.contains(mx, my)) {
             self.toggleHistory();
@@ -800,15 +1161,36 @@ pub const ShellState = struct {
                 for (&self.explore_items) |*other| other.active = false;
                 item.active = true;
                 if (std.mem.eql(u8, item.name, "History")) {
-                    self.toggleHistory();
+                    self.history_open = false;
+                    self.navigateToUrl("zawra://history");
+                } else if (std.mem.eql(u8, item.name, "Bookmarks")) {
+                    self.navigateToUrl("zawra://bookmarks");
+                } else if (std.mem.eql(u8, item.name, "Settings")) {
+                    self.navigateToUrl("zawra://settings");
                 }
                 return;
             }
         }
 
-        // Start Page elements (viewport)
+        // Viewport elements: History Page vs Start Page
         if (self.getActiveTab()) |tab| {
-            if (isStartPage(tab.getUrl())) {
+            if (isHistoryPage(tab.getUrl())) {
+                if (self.layout.history_page_clear_btn_rect.contains(mx, my)) {
+                    self.clearHistory();
+                    return;
+                }
+                if (self.layout.history_page_search_rect.contains(mx, my)) {
+                    self.focus = .history_search;
+                    self.omnibar.focused = false;
+                    return;
+                }
+                for (self.history_items.items, 0..) |item, i| {
+                    if (i < self.layout.history_page_item_count and self.layout.history_page_item_rects[i].contains(mx, my)) {
+                        self.navigateToUrl(item.url);
+                        return;
+                    }
+                }
+            } else if (isStartPage(tab.getUrl())) {
                 // Search pills inside HUD
                 if (self.layout.pill_google_rect.contains(mx, my)) {
                     self.search_engine = .google;
@@ -854,7 +1236,14 @@ pub const ShellState = struct {
         }
     }
 
+    pub fn handleMouseUp(self: *ShellState, mx: f32, my: f32) void {
+        _ = mx;
+        _ = my;
+        self.ui_dirty = true;
+    }
+
     pub fn recomputeLayout(self: *ShellState) void {
+        self.ui_dirty = true;
         const w: f32 = @floatFromInt(self.window_width);
         const h: f32 = @floatFromInt(self.window_height);
 
@@ -1026,6 +1415,47 @@ pub const ShellState = struct {
             .h = 38.0,
         };
         self.layout.notification_visible = false;
+
+        // 10. History Page Layout (zawra://history viewport)
+        const hp_x = sidebar_w + 50.0;
+        const hp_w = @min((w - sidebar_w) - 100.0, 760.0);
+        self.layout.history_page_title_pos = .{ hp_x, 50.0 };
+        self.layout.history_page_subtitle_pos = .{ hp_x, 82.0 };
+
+        const hp_search_w = @min(hp_w - 130.0, 520.0);
+        self.layout.history_page_search_rect = Rect{
+            .x = hp_x,
+            .y = 114.0,
+            .w = hp_search_w,
+            .h = 40.0,
+        };
+        self.layout.history_page_search_icon_rect = Rect{
+            .x = hp_x + 14.0,
+            .y = 126.0,
+            .w = 16.0,
+            .h = 16.0,
+        };
+        self.layout.history_page_search_text_pos = .{ hp_x + 40.0, 126.0 };
+
+        self.layout.history_page_clear_btn_rect = Rect{
+            .x = hp_x + hp_search_w + 14.0,
+            .y = 114.0,
+            .w = 100.0,
+            .h = 40.0,
+        };
+        self.layout.history_page_clear_text_pos = .{ hp_x + hp_search_w + 22.0, 126.0 };
+
+        const hp_items_y = 176.0;
+        const max_hp_items = @min(self.history_items.items.len, 10);
+        self.layout.history_page_item_count = max_hp_items;
+        for (0..max_hp_items) |i| {
+            self.layout.history_page_item_rects[i] = Rect{
+                .x = hp_x,
+                .y = hp_items_y + @as(f32, @floatFromInt(i)) * 62.0,
+                .w = hp_w,
+                .h = 52.0,
+            };
+        }
     }
 };
 
@@ -1157,4 +1587,281 @@ test "search hud click to focus, typing and navigation" {
     const active_tab = state.getActiveTab().?;
     try std.testing.expectEqualStrings("https://duckduckgo.com/?q=waylan", active_tab.getUrl());
     try std.testing.expectEqual(FocusTarget.none, state.focus);
+}
+
+test "ui_dirty flag tracking" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    // After init, ui_dirty should be true
+    try std.testing.expect(state.ui_dirty);
+
+    // Clear dirty flag (simulating frame render)
+    state.ui_dirty = false;
+    try std.testing.expect(!state.ui_dirty);
+
+    // Mouse move without hover change should NOT dirty UI
+    state.handleMouseMove(500, 500);
+    state.ui_dirty = false;
+    state.handleMouseMove(501, 501);
+    try std.testing.expect(!state.ui_dirty);
+
+    // Hovering a known button changes hover state and dirties UI
+    const btn = state.layout.tab_new_btn_rect;
+    state.handleMouseMove(btn.x + 2.0, btn.y + 2.0);
+    try std.testing.expect(state.ui_dirty);
+
+    // Reset and test key press
+    state.ui_dirty = false;
+    state.handleKey(30, true, false); // type 'a'
+    try std.testing.expect(state.ui_dirty);
+
+    // Reset and test tab creation
+    state.ui_dirty = false;
+    try state.addNewTab();
+    try std.testing.expect(state.ui_dirty);
+
+    // Reset and test mouse up
+    state.ui_dirty = false;
+    state.handleMouseUp(100, 100);
+    try std.testing.expect(state.ui_dirty);
+}
+
+test "loadRecentHistory buffer boundary and clamping safety" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    state.loadRecentHistory();
+    state.loadRecentHistory();
+    try std.testing.expect(state.history_items.items.len <= 16);
+}
+
+test "navigation buttons mouse down triggers reload, back, and forward" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    wpe.test_reload_count = 0;
+    wpe.test_reload_bypass_count = 0;
+    wpe.test_back_count = 0;
+    wpe.test_forward_count = 0;
+
+    // Click Reload button
+    const reload_rect = state.layout.nav_reload_rect;
+    state.handleMouseDown(reload_rect.x + 5.0, reload_rect.y + 5.0);
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_reload_count);
+    try std.testing.expect(state.ui_dirty);
+
+    // Click Back button
+    const back_rect = state.layout.nav_back_rect;
+    state.handleMouseDown(back_rect.x + 5.0, back_rect.y + 5.0);
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_back_count);
+    try std.testing.expect(state.ui_dirty);
+
+    // Click Forward button
+    const fwd_rect = state.layout.nav_fwd_rect;
+    state.handleMouseDown(fwd_rect.x + 5.0, fwd_rect.y + 5.0);
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_forward_count);
+    try std.testing.expect(state.ui_dirty);
+}
+
+test "navigation buttons hover tracking" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    try std.testing.expect(!state.nav_back_hovered);
+    try std.testing.expect(!state.nav_fwd_hovered);
+    try std.testing.expect(!state.nav_reload_hovered);
+
+    // Hover Reload
+    const reload_rect = state.layout.nav_reload_rect;
+    state.handleMouseMove(reload_rect.x + 4.0, reload_rect.y + 4.0);
+    try std.testing.expect(state.nav_reload_hovered);
+    try std.testing.expect(!state.nav_back_hovered);
+    try std.testing.expect(!state.nav_fwd_hovered);
+    try std.testing.expect(state.ui_dirty);
+
+    // Hover Back
+    const back_rect = state.layout.nav_back_rect;
+    state.handleMouseMove(back_rect.x + 4.0, back_rect.y + 4.0);
+    try std.testing.expect(state.nav_back_hovered);
+    try std.testing.expect(!state.nav_reload_hovered);
+    try std.testing.expect(!state.nav_fwd_hovered);
+
+    // Hover Forward
+    const fwd_rect = state.layout.nav_fwd_rect;
+    state.handleMouseMove(fwd_rect.x + 4.0, fwd_rect.y + 4.0);
+    try std.testing.expect(state.nav_fwd_hovered);
+    try std.testing.expect(!state.nav_back_hovered);
+    try std.testing.expect(!state.nav_reload_hovered);
+
+    // Move away
+    state.handleMouseMove(0.0, 0.0);
+    try std.testing.expect(!state.nav_back_hovered);
+    try std.testing.expect(!state.nav_fwd_hovered);
+    try std.testing.expect(!state.nav_reload_hovered);
+}
+
+test "keyboard shortcuts for reload, back, and forward" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    wpe.test_reload_count = 0;
+    wpe.test_reload_bypass_count = 0;
+    wpe.test_back_count = 0;
+    wpe.test_forward_count = 0;
+
+    // F5 Reload
+    state.handleKey(63, true, false);
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_reload_count);
+
+    // Shift + F5 Reload (bypass cache)
+    state.handleKey(42, true, false); // shift down
+    try std.testing.expect(state.shift_pressed);
+    state.handleKey(63, true, false); // F5
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_reload_bypass_count);
+    state.handleKey(42, false, false); // shift up
+    try std.testing.expect(!state.shift_pressed);
+
+    // Ctrl+R Reload (evdev 19)
+    state.handleKey(19, true, true);
+    try std.testing.expectEqual(@as(u32, 2), wpe.test_reload_count);
+
+    // Ctrl+Shift+R Reload (bypass cache)
+    state.handleKey(54, true, false); // right shift down
+    state.handleKey('r', true, true); // 'r' with ctrl
+    try std.testing.expectEqual(@as(u32, 2), wpe.test_reload_bypass_count);
+    state.handleKey(54, false, false); // shift up
+
+    // Alt + Left Arrow (evdev 105) -> Back
+    state.handleKey(56, true, false); // left alt down
+    try std.testing.expect(state.alt_pressed);
+    state.handleKey(105, true, false); // left arrow
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_back_count);
+    state.handleKey(56, false, false); // alt up
+    try std.testing.expect(!state.alt_pressed);
+
+    // Alt + Right Arrow (evdev 106) -> Forward
+    state.handleKey(100, true, false); // right alt down
+    try std.testing.expect(state.alt_pressed);
+    state.handleKey(106, true, false); // right arrow
+    try std.testing.expectEqual(@as(u32, 1), wpe.test_forward_count);
+    state.handleKey(100, false, false); // alt up
+    try std.testing.expect(!state.alt_pressed);
+
+    // AC Back (evdev 158) -> Back
+    state.handleKey(158, true, false);
+    try std.testing.expectEqual(@as(u32, 2), wpe.test_back_count);
+
+    // AC Forward (evdev 159) -> Forward
+    state.handleKey(159, true, false);
+    try std.testing.expectEqual(@as(u32, 2), wpe.test_forward_count);
+}
+
+test "isInternalPage classification" {
+    try std.testing.expect(isInternalPage("zawra://start"));
+    try std.testing.expect(isInternalPage("zawra://history"));
+    try std.testing.expect(isInternalPage("zawra://settings"));
+    try std.testing.expect(isInternalPage("zawra://bookmarks"));
+    try std.testing.expect(isInternalPage("about:blank"));
+    try std.testing.expect(isInternalPage(""));
+    try std.testing.expect(isInternalPage("   "));
+
+    try std.testing.expect(!isInternalPage("https://example.com"));
+    try std.testing.expect(!isInternalPage("http://localhost:8080"));
+    try std.testing.expect(!isInternalPage("file:///home/user/test.html"));
+}
+
+test "history page navigation and persistent record" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    // Reset mock history storage
+    _ = clearHistoryStorage();
+
+    // Navigate to external website: triggers recordHistory
+    state.navigateToUrl("https://news.ycombinator.com");
+    try std.testing.expectEqual(@as(u32, 1), mock_history_count);
+    try std.testing.expectEqualStrings("https://news.ycombinator.com", mock_history_entries[0].url[0..mock_history_entries[0].url_len]);
+
+    // Navigate to a second external website
+    state.navigateToUrl("https://ziglang.org");
+    try std.testing.expectEqual(@as(u32, 2), mock_history_count);
+
+    // Navigate to zawra://history: should load recorded history into history_items
+    state.navigateToUrl("zawra://history");
+    const active_tab = state.getActiveTab().?;
+    try std.testing.expectEqualStrings("zawra://history", active_tab.getUrl());
+    try std.testing.expectEqualStrings("Browsing History", active_tab.getTitle());
+    try std.testing.expect(state.history_items.items.len >= 2);
+
+    // Verify history entries loaded in state
+    try std.testing.expectEqualStrings("https://news.ycombinator.com", state.history_items.items[0].url);
+    try std.testing.expectEqualStrings("https://ziglang.org", state.history_items.items[1].url);
+
+    // Click on history entry to navigate
+    const item0_rect = state.layout.history_page_item_rects[0];
+    state.handleMouseDown(item0_rect.x + 10.0, item0_rect.y + 10.0);
+    try std.testing.expectEqualStrings("https://news.ycombinator.com", active_tab.getUrl());
+
+    // Navigate back to history and test Clear History
+    state.navigateToUrl("zawra://history");
+    try std.testing.expect(state.history_items.items.len > 0);
+    const clear_btn = state.layout.history_page_clear_btn_rect;
+    state.handleMouseDown(clear_btn.x + 5.0, clear_btn.y + 5.0);
+    try std.testing.expectEqual(@as(usize, 0), state.history_items.items.len);
+    try std.testing.expectEqual(@as(u32, 0), mock_history_count);
+}
+
+test "history search filter typing and focus" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    state.navigateToUrl("zawra://history");
+    try std.testing.expectEqual(FocusTarget.none, state.focus);
+
+    // Click on search bar inside history page
+    const search_bar = state.layout.history_page_search_rect;
+    state.handleMouseDown(search_bar.x + 10.0, search_bar.y + 10.0);
+    try std.testing.expectEqual(FocusTarget.history_search, state.focus);
+
+    // Type query "rust"
+    state.handleKey(19, true, false); // r
+    state.handleKey(22, true, false); // u
+    state.handleKey(31, true, false); // s
+    state.handleKey(20, true, false); // t
+    try std.testing.expectEqualStrings("rust", state.history_search_input.getText());
+
+    // Backspace
+    state.handleKey(14, true, false);
+    try std.testing.expectEqualStrings("rus", state.history_search_input.getText());
+
+    // Escape unfocuses
+    state.handleKey(1, true, false);
+    try std.testing.expectEqual(FocusTarget.none, state.focus);
+}
+
+test "sidebar explore click navigates to zawra://history" {
+    const allocator = std.testing.allocator;
+    var state = try ShellState.init(allocator, 1280, 800);
+    defer state.deinit();
+
+    // Initially on start page
+    try std.testing.expect(isStartPage(state.tabs.items[0].getUrl()));
+
+    // Click "History" in explore list (index 0)
+    const hist_item_rect = state.layout.explore_item_rects[0];
+    state.handleMouseDown(hist_item_rect.x + 10.0, hist_item_rect.y + 10.0);
+
+    // Now active tab should be zawra://history
+    const active_tab = state.getActiveTab().?;
+    try std.testing.expectEqualStrings("zawra://history", active_tab.getUrl());
+    try std.testing.expectEqualStrings("Browsing History", active_tab.getTitle());
+    try std.testing.expect(state.explore_items[0].active);
 }

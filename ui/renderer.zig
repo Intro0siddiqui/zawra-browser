@@ -520,15 +520,113 @@ pub const UIRenderer = struct {
         self.vertices.clearRetainingCapacity();
 
         const active_tab = state.getActiveTabConst();
-        const is_start = if (active_tab) |tab| state_mod.isStartPage(tab.getUrl()) else true;
+        const active_url = if (active_tab) |tab| tab.getUrl() else "";
+        const is_history = state_mod.isHistoryPage(active_url);
+        const is_internal = state_mod.isInternalPage(active_url);
         const active_tex = self.wpe_texture orelse zgraphics.ZG_GetWpeTexture();
         const wpe_vertex_count: u32 = 0;
 
-        // ── 1. Viewport: Native WebKit Subsurface (wl_subsurface) vs Start Page ───────
+        // ── 1. Viewport: Native WebKit Subsurface (wl_subsurface) vs Internal Pages ───
         const vp = state.layout.viewport_rect;
-        if (!is_start) {
+        if (!is_internal) {
             // Clean dark background behind the desync Wayland subsurface
             self.drawRoundedRect(vp, 0.0, state_mod.Color.bg_dark, 0.0, .{ 0, 0, 0, 0 });
+        } else if (is_history) {
+            // ── History Viewport Canvas (zawra://history) ────────────────────────
+            self.drawTexturedQuad(vp, font.AtlasUV.circuit_bg, .{ 1.0, 1.0, 1.0, 1.0 }, 0.0);
+
+            // Title and Clock Emblem
+            const title_x = state.layout.history_page_title_pos[0];
+            const title_y = state.layout.history_page_title_pos[1];
+            self.drawClockIcon(state_mod.Rect{ .x = title_x, .y = title_y - 4.0, .w = 26.0, .h = 26.0 });
+            self.drawText("Browsing History", title_x + 36.0, title_y, state_mod.Color.text_gold, 1.6);
+
+            // Subtitle
+            const sub_x = state.layout.history_page_subtitle_pos[0];
+            const sub_y = state.layout.history_page_subtitle_pos[1];
+            self.drawText("Encrypted timeline stored locally in BrowserDB", sub_x + 36.0, sub_y, state_mod.Color.text_muted, 0.85);
+
+            // Search/Filter Bar
+            const hsearch = state.layout.history_page_search_rect;
+            if (state.focus == .history_search) {
+                self.drawHalo(hsearch, 8.0, state_mod.Color.accent_amber, 6.0);
+                self.drawRoundedRect(hsearch, 8.0, .{ 0.04, 0.06, 0.10, 0.96 }, 1.5, state_mod.Color.accent_amber);
+            } else {
+                self.drawDropShadow(hsearch, 8.0, 4.0, 10.0, 0.45);
+                self.drawRoundedRect(hsearch, 8.0, .{ 0.04, 0.06, 0.10, 0.94 }, 1.0, .{ 1.0, 1.0, 1.0, 0.10 });
+            }
+            self.drawSearchIcon(state.layout.history_page_search_icon_rect);
+
+            const filter_text = state.history_search_input.getText();
+            const tx = state.layout.history_page_search_text_pos[0];
+            const ty = state.layout.history_page_search_text_pos[1];
+            if (filter_text.len > 0) {
+                self.drawText(filter_text, tx, ty, state_mod.Color.text_white, 0.85);
+                if (state.focus == .history_search) {
+                    const tw = font.getTextWidth(filter_text, 0.85);
+                    self.drawText("|", tx + tw + 2.0, ty, state_mod.Color.accent_amber, 0.85);
+                }
+            } else {
+                if (state.focus == .history_search) {
+                    self.drawText("|", tx, ty, state_mod.Color.accent_amber, 0.85);
+                    self.drawText(state.history_search_input.placeholder, tx + 8.0, ty, state_mod.Color.text_muted, 0.85);
+                } else {
+                    self.drawText(state.history_search_input.placeholder, tx, ty, state_mod.Color.text_muted, 0.85);
+                }
+            }
+
+            // Clear History Button
+            const clr = state.layout.history_page_clear_btn_rect;
+            const clr_hover = state.history_clear_hovered;
+            self.drawRoundedRect(
+                clr,
+                6.0,
+                if (clr_hover) state_mod.Color.tab_close_hover_bg else state_mod.Color.pill_bg,
+                1.0,
+                if (clr_hover) state_mod.Color.accent_amber else state_mod.Color.border_subtle,
+            );
+            self.drawText("Clear History", state.layout.history_page_clear_text_pos[0], state.layout.history_page_clear_text_pos[1], if (clr_hover) state_mod.Color.text_white else state_mod.Color.text_muted, 0.8);
+
+            // History entries
+            if (state.history_items.items.len == 0) {
+                const empty_rect = state_mod.Rect{ .x = title_x, .y = 176.0, .w = hsearch.w + 114.0, .h = 80.0 };
+                self.drawDropShadow(empty_rect, 10.0, 4.0, 10.0, 0.35);
+                self.drawGlassCard(empty_rect, 10.0, state_mod.Color.sidebar_bg, 1.0, state_mod.Color.border_subtle);
+                self.drawText("No browsing history recorded yet.", empty_rect.x + 20.0, empty_rect.y + 22.0, state_mod.Color.text_white, 0.95);
+                self.drawText("Pages you visit will automatically be recorded into BrowserDB.", empty_rect.x + 20.0, empty_rect.y + 46.0, state_mod.Color.text_muted, 0.8);
+            } else {
+                for (state.history_items.items, 0..) |item, i| {
+                    if (i < state.layout.history_page_item_count) {
+                        const irect = state.layout.history_page_item_rects[i];
+                        const hovered = item.hovered;
+
+                        self.drawDropShadow(irect, 8.0, 3.0, 8.0, 0.35);
+                        self.drawGlassCard(
+                            irect,
+                            8.0,
+                            if (hovered) state_mod.Color.hover_bg else state_mod.Color.pill_bg,
+                            1.0,
+                            if (hovered) state_mod.Color.accent_amber else state_mod.Color.border_subtle,
+                        );
+
+                        self.drawClockIcon(state_mod.Rect{ .x = irect.x + 14.0, .y = irect.y + 17.0, .w = 16.0, .h = 16.0 });
+
+                        const title_slice = if (item.title.len > 55) item.title[0..55] else item.title;
+                        self.drawText(
+                            title_slice,
+                            irect.x + 40.0,
+                            irect.y + 8.0,
+                            if (hovered) state_mod.Color.text_gold else state_mod.Color.text_white,
+                            0.9,
+                        );
+
+                        const url_slice = if (item.url.len > 70) item.url[0..70] else item.url;
+                        self.drawText(url_slice, irect.x + 40.0, irect.y + 28.0, state_mod.Color.accent_amber, 0.75);
+
+                        self.drawText("Recent", irect.x + irect.w - 65.0, irect.y + 18.0, state_mod.Color.text_muted, 0.75);
+                    }
+                }
+            }
         } else {
             // ── 1. Start Page Viewport Canvas (zawra://start) ────────────────────────
             // Draw glowing dark cybernetic circuit board texture across viewport
@@ -656,14 +754,23 @@ pub const UIRenderer = struct {
         self.drawText("Zawra", state.layout.header_title_pos[0], state.layout.header_title_pos[1], state_mod.Color.text_white, 1.25);
 
         // ── 5. Nav Cluster: Back ←, Forward →, Reload ↻ ─────────────────────────────
-        self.drawRoundedRect(state.layout.nav_back_rect, 4.0, state_mod.Color.bg_dark, 1.0, state_mod.Color.border_subtle);
-        self.drawText("<", state.layout.nav_back_rect.x + 8.0, state.layout.nav_back_rect.y + 4.0, state_mod.Color.text_main, 0.85);
+        const back_bg = if (state.nav_back_hovered) state_mod.Color.hover_bg else state_mod.Color.bg_dark;
+        const back_border = if (state.nav_back_hovered) state_mod.Color.accent_amber else state_mod.Color.border_subtle;
+        const back_text = if (state.nav_back_hovered) state_mod.Color.text_gold else (if (state.can_go_back) state_mod.Color.text_main else state_mod.Color.text_muted);
+        self.drawRoundedRect(state.layout.nav_back_rect, 4.0, back_bg, 1.0, back_border);
+        self.drawText("<", state.layout.nav_back_rect.x + 8.0, state.layout.nav_back_rect.y + 4.0, back_text, 0.85);
 
-        self.drawRoundedRect(state.layout.nav_fwd_rect, 4.0, state_mod.Color.bg_dark, 1.0, state_mod.Color.border_subtle);
-        self.drawText(">", state.layout.nav_fwd_rect.x + 8.0, state.layout.nav_fwd_rect.y + 4.0, state_mod.Color.text_main, 0.85);
+        const fwd_bg = if (state.nav_fwd_hovered) state_mod.Color.hover_bg else state_mod.Color.bg_dark;
+        const fwd_border = if (state.nav_fwd_hovered) state_mod.Color.accent_amber else state_mod.Color.border_subtle;
+        const fwd_text = if (state.nav_fwd_hovered) state_mod.Color.text_gold else (if (state.can_go_forward) state_mod.Color.text_main else state_mod.Color.text_muted);
+        self.drawRoundedRect(state.layout.nav_fwd_rect, 4.0, fwd_bg, 1.0, fwd_border);
+        self.drawText(">", state.layout.nav_fwd_rect.x + 8.0, state.layout.nav_fwd_rect.y + 4.0, fwd_text, 0.85);
 
-        self.drawRoundedRect(state.layout.nav_reload_rect, 4.0, state_mod.Color.bg_dark, 1.0, state_mod.Color.border_subtle);
-        self.drawText("r", state.layout.nav_reload_rect.x + 8.0, state.layout.nav_reload_rect.y + 4.0, state_mod.Color.text_main, 0.85);
+        const reload_bg = if (state.nav_reload_hovered) state_mod.Color.hover_bg else state_mod.Color.bg_dark;
+        const reload_border = if (state.nav_reload_hovered) state_mod.Color.accent_amber else state_mod.Color.border_subtle;
+        const reload_text = if (state.nav_reload_hovered) state_mod.Color.text_gold else state_mod.Color.text_main;
+        self.drawRoundedRect(state.layout.nav_reload_rect, 4.0, reload_bg, 1.0, reload_border);
+        self.drawText("r", state.layout.nav_reload_rect.x + 8.0, state.layout.nav_reload_rect.y + 4.0, reload_text, 0.85);
 
         // ── 6. Omnibar / Address Container ──────────────────────────────────────────
         self.drawRoundedRect(

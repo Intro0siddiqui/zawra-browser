@@ -65,6 +65,101 @@ fn getMonotonicNs() i64 {
     return @as(i64, ts.sec) * 1_000_000_000 + ts.nsec;
 }
 
+const MetricStats = struct {
+    avg_ms: f64,
+    max_ms: f64,
+    p99_ms: f64,
+};
+
+fn computeMetricStats(samples: []u64) MetricStats {
+    if (samples.len == 0) {
+        return .{ .avg_ms = 0.0, .max_ms = 0.0, .p99_ms = 0.0 };
+    }
+    std.mem.sort(u64, samples, {}, std.sort.asc(u64));
+    var sum: u128 = 0;
+    for (samples) |s| {
+        sum += s;
+    }
+    const avg_ns = @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(samples.len));
+    const max_ns = @as(f64, @floatFromInt(samples[samples.len - 1]));
+    const p99_idx = (samples.len * 99) / 100;
+    const p99_ns = @as(f64, @floatFromInt(samples[p99_idx]));
+    return .{
+        .avg_ms = avg_ns / 1_000_000.0,
+        .max_ms = max_ns / 1_000_000.0,
+        .p99_ms = p99_ns / 1_000_000.0,
+    };
+}
+
+const LoopTelemetry = struct {
+    pump_samples: [512]u64 = undefined,
+    pump_count: usize = 0,
+    wl_samples: [512]u64 = undefined,
+    wl_count: usize = 0,
+    render_samples: [512]u64 = undefined,
+    render_count: usize = 0,
+    loop_frames: usize = 0,
+    rendered_frames: usize = 0,
+    window_start_ns: i64,
+
+    fn init(now_ns: i64) LoopTelemetry {
+        return .{ .window_start_ns = now_ns };
+    }
+
+    fn recordSample(buf: *[512]u64, count: *usize, duration_ns: i64) void {
+        const clamped: u64 = @intCast(@max(0, duration_ns));
+        buf[count.* % buf.len] = clamped;
+        count.* += 1;
+    }
+
+    fn recordPump(self: *LoopTelemetry, duration_ns: i64) void {
+        recordSample(&self.pump_samples, &self.pump_count, duration_ns);
+    }
+
+    fn recordWl(self: *LoopTelemetry, duration_ns: i64) void {
+        recordSample(&self.wl_samples, &self.wl_count, duration_ns);
+    }
+
+    fn recordRender(self: *LoopTelemetry, duration_ns: i64) void {
+        recordSample(&self.render_samples, &self.render_count, duration_ns);
+        self.rendered_frames += 1;
+    }
+
+    fn maybeReport(self: *LoopTelemetry, now_ns: i64) void {
+        const elapsed_ns = now_ns - self.window_start_ns;
+        if (elapsed_ns < 1_000_000_000) return;
+
+        const elapsed_s = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
+        const fps: usize = @intFromFloat(@round(@as(f64, @floatFromInt(self.loop_frames)) / elapsed_s));
+
+        const pump_stats = computeMetricStats(self.pump_samples[0..@min(self.pump_count, self.pump_samples.len)]);
+        const wl_stats = computeMetricStats(self.wl_samples[0..@min(self.wl_count, self.wl_samples.len)]);
+        const render_stats = computeMetricStats(self.render_samples[0..@min(self.render_count, self.render_samples.len)]);
+
+        std.debug.print(
+            "[PERF-LOOP] {d} fps | pump: avg {d:.2}ms max {d:.2}ms p99 {d:.2}ms | wl: avg {d:.2}ms max {d:.2}ms | render: avg {d:.2}ms max {d:.2}ms (rendered={d})\n",
+            .{
+                fps,
+                pump_stats.avg_ms,
+                pump_stats.max_ms,
+                pump_stats.p99_ms,
+                wl_stats.avg_ms,
+                wl_stats.max_ms,
+                render_stats.avg_ms,
+                render_stats.max_ms,
+                self.rendered_frames,
+            },
+        );
+
+        self.pump_count = 0;
+        self.wl_count = 0;
+        self.render_count = 0;
+        self.loop_frames = 0;
+        self.rendered_frames = 0;
+        self.window_start_ns = now_ns;
+    }
+};
+
 var global_shell_state: ?*state_mod.ShellState = null;
 
 fn onPointerEvent(event_type: u32, x: f32, y: f32, button: u32, state: u32) callconv(.c) void {
@@ -199,19 +294,28 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     const is_limited = (max_frames != null);
     const limit = max_frames orelse 0;
     var current_hide_subsurface: bool = initial_is_internal;
+    var telemetry = LoopTelemetry.init(getMonotonicNs());
 
     while (!is_limited or frame_count < limit) : (frame_count += 1) {
         // 1. Pump GLib & WebKit event loop directly on Thread 1
+        const pump_start_ns = getMonotonicNs();
         wpe.pumpEvents();
+        telemetry.recordPump(getMonotonicNs() - pump_start_ns);
 
         // 2. Poll Wayland window events (only if WPE is not initialized)
         // Once WPE is initialized, WPEDisplayWayland's GSource is the sole reader/dispatcher on wl_display
         if (window) |win| {
+            const wl_start_ns = getMonotonicNs();
             if (!wpe.isInitialized()) {
                 zgraphics.ZG_PollEvents(win);
             } else {
                 zgraphics.ZG_Flush(win);
             }
+            if (zgraphics.ZG_ShouldClose(win)) {
+                std.debug.print("[ZAWRA-SHELL] Close requested by compositor (xdg_toplevel::close); exiting cleanly.\n", .{});
+                break;
+            }
+            telemetry.recordWl(getMonotonicNs() - wl_start_ns);
             var new_w: u32 = 0;
             var new_h: u32 = 0;
             if (zgraphics.ZG_CheckWindowResize(win, &new_w, &new_h)) {
@@ -231,18 +335,24 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
         const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
         const hide_subsurface = is_internal or shell_state.history_open;
         if (hide_subsurface != current_hide_subsurface) {
+            if (hide_subsurface and !current_hide_subsurface) {
+                wpe.detachSubsurfaceBuffer();
+            }
             current_hide_subsurface = hide_subsurface;
             wpe.setSubsurfaceVisible(!hide_subsurface);
             shell_state.ui_dirty = true;
-        } else if (hide_subsurface) {
-            wpe.detachSubsurfaceBuffer();
         }
 
         // 4. Render Zawra UI Shell frame only when UI is dirty
         if (shell_state.ui_dirty) {
             shell_state.ui_dirty = false;
+            const render_start_ns = getMonotonicNs();
             ui_renderer.render(&shell_state);
+            telemetry.recordRender(getMonotonicNs() - render_start_ns);
         }
+
+        telemetry.loop_frames += 1;
+        telemetry.maybeReport(getMonotonicNs());
 
         if (is_limited and frame_count + 1 >= limit) break;
 

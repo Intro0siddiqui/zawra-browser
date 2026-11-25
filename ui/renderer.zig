@@ -575,7 +575,18 @@ pub const UIRenderer = struct {
                 }
             }
 
-            // Clear History Button
+            // Clear 1h Button
+            const clr1h = state.layout.history_page_clear_1h_btn_rect;
+            self.drawRoundedRect(
+                clr1h,
+                6.0,
+                state_mod.Color.pill_bg,
+                1.0,
+                state_mod.Color.border_subtle,
+            );
+            self.drawText("Clear 1h", state.layout.history_page_clear_1h_text_pos[0], state.layout.history_page_clear_1h_text_pos[1], state_mod.Color.text_muted, 0.8);
+
+            // Clear All History Button
             const clr = state.layout.history_page_clear_btn_rect;
             const clr_hover = state.history_clear_hovered;
             self.drawRoundedRect(
@@ -585,7 +596,7 @@ pub const UIRenderer = struct {
                 1.0,
                 if (clr_hover) state_mod.Color.accent_amber else state_mod.Color.border_subtle,
             );
-            self.drawText("Clear History", state.layout.history_page_clear_text_pos[0], state.layout.history_page_clear_text_pos[1], if (clr_hover) state_mod.Color.text_white else state_mod.Color.text_muted, 0.8);
+            self.drawText("Clear All", state.layout.history_page_clear_text_pos[0], state.layout.history_page_clear_text_pos[1], if (clr_hover) state_mod.Color.text_white else state_mod.Color.text_muted, 0.8);
 
             // History entries
             if (state.history_items.items.len == 0) {
@@ -623,7 +634,12 @@ pub const UIRenderer = struct {
                         const url_slice = if (item.url.len > 70) item.url[0..70] else item.url;
                         self.drawText(url_slice, irect.x + 40.0, irect.y + 28.0, state_mod.Color.accent_amber, 0.75);
 
-                        self.drawText("Recent", irect.x + irect.w - 65.0, irect.y + 18.0, state_mod.Color.text_muted, 0.75);
+                        self.drawText("Recent", irect.x + irect.w - 92.0, irect.y + 18.0, state_mod.Color.text_muted, 0.75);
+
+                        // Selective delete [x] button
+                        const del_rect = state.layout.history_page_item_delete_rects[i];
+                        self.drawRoundedRect(del_rect, 4.0, state_mod.Color.pill_bg, 1.0, state_mod.Color.border_subtle);
+                        self.drawText("x", del_rect.x + 8.0, del_rect.y + 4.0, state_mod.Color.text_muted, 0.8);
                     }
                 }
             }
@@ -915,6 +931,15 @@ pub const UIRenderer = struct {
             self.drawText("Browsing History", drect.x + 36.0, 18.0, state_mod.Color.text_white, 1.0);
             self.drawText("Recent visits from BrowserDB", drect.x + 16.0, 42.0, state_mod.Color.text_muted, 0.72);
 
+            // Clear 1h & Clear All buttons in drawer header
+            const d1h = state.layout.history_drawer_clear_1h_rect;
+            self.drawRoundedRect(d1h, 4.0, state_mod.Color.pill_bg, 1.0, state_mod.Color.border_subtle);
+            self.drawText("1h", d1h.x + 7.0, d1h.y + 4.0, state_mod.Color.text_muted, 0.75);
+
+            const dall = state.layout.history_drawer_clear_all_rect;
+            self.drawRoundedRect(dall, 4.0, state_mod.Color.pill_bg, 1.0, state_mod.Color.border_subtle);
+            self.drawText("Clear", dall.x + 8.0, dall.y + 4.0, state_mod.Color.text_muted, 0.75);
+
             // Close button
             const close_rect = state.layout.history_close_btn_rect;
             self.drawRoundedRect(
@@ -951,6 +976,11 @@ pub const UIRenderer = struct {
                             1.0,
                             if (hovered) state_mod.Color.border_pill else state_mod.Color.border_subtle,
                         );
+
+                        // Selective delete [x] button on drawer row
+                        const d_del = state.layout.history_drawer_item_delete_rects[i];
+                        self.drawRoundedRect(d_del, 4.0, state_mod.Color.bg_dark, 1.0, state_mod.Color.border_subtle);
+                        self.drawText("x", d_del.x + 6.0, d_del.y + 3.0, state_mod.Color.text_muted, 0.75);
 
                         // Truncate title if long
                         const title_slice = if (item.title.len > 34) item.title[0..34] else item.title;

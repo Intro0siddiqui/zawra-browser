@@ -284,6 +284,27 @@ pub fn syncPageMetadata() void {
     }
 }
 
+fn getMonotonicNs() i64 {
+    var ts: std.os.linux.timespec = undefined;
+    _ = std.os.linux.syscall2(.clock_gettime, 1, @intFromPtr(&ts));
+    return @as(i64, ts.sec) * 1_000_000_000 + ts.nsec;
+}
+
+var nav_t0_ns: i64 = 0;
+var nav_started_ms: f64 = 0.0;
+var nav_committed_ms: f64 = 0.0;
+var nav_finished_ms: f64 = 0.0;
+var nav_url_buf: [2048]u8 = undefined;
+var nav_url_len: usize = 0;
+
+fn recordHistoryTimed(url: [*:0]const u8, title: [*:0]const u8) void {
+    const start_ns = getMonotonicNs();
+    _ = history_record_fn(url, title);
+    const elapsed_ns = getMonotonicNs() - start_ns;
+    const elapsed_ms = @as(f64, @floatFromInt(@max(0, elapsed_ns))) / 1_000_000.0;
+    std.debug.print("[PERF-FFI] Zawra_History_Record took {d:.3} ms\n", .{elapsed_ms});
+}
+
 fn onLoadChanged(
     _: ?*anyopaque,
     load_event: c_int,
@@ -297,6 +318,44 @@ fn onLoadChanged(
         else => "UNKNOWN",
     };
     std.debug.print("[ZAWRA-LOAD] Page load state: {s} ({d})\n", .{ event_name, load_event });
+
+    if (load_event == 0 or load_event == 2 or load_event == 3) {
+        const now_ns = getMonotonicNs();
+        if (load_event == 0 and nav_t0_ns == 0) {
+            nav_t0_ns = now_ns;
+            nav_started_ms = 0.0;
+            nav_committed_ms = 0.0;
+            nav_finished_ms = 0.0;
+        }
+        const elapsed_ms: f64 = if (nav_t0_ns > 0)
+            @as(f64, @floatFromInt(@max(0, now_ns - nav_t0_ns))) / 1_000_000.0
+        else
+            0.0;
+        switch (load_event) {
+            0 => nav_started_ms = elapsed_ms,
+            2 => nav_committed_ms = elapsed_ms,
+            3 => nav_finished_ms = elapsed_ms,
+            else => {},
+        }
+        var current_url: []const u8 = if (nav_url_len > 0) nav_url_buf[0..nav_url_len] else "<unknown>";
+        if (web_view) |view| {
+            if (syms.webkit_web_view_get_uri) |get_uri_fn| {
+                if (get_uri_fn(view)) |u| {
+                    const u_slice = std.mem.span(u);
+                    if (u_slice.len > 0) {
+                        current_url = u_slice;
+                    }
+                }
+            }
+        }
+        std.debug.print("[PERF-NAV] {s} | started={d:.1}ms committed={d:.1}ms finished={d:.1}ms\n", .{
+            current_url, nav_started_ms, nav_committed_ms, nav_finished_ms,
+        });
+        if (load_event == 3) {
+            nav_t0_ns = 0;
+        }
+    }
+
     if (load_event == 2 or load_event == 3) {
         syncPageMetadata();
     }
@@ -312,7 +371,7 @@ fn onLoadChanged(
                                 title_ptr = t;
                             }
                         }
-                        _ = history_record_fn(u, title_ptr);
+                        recordHistoryTimed(u, title_ptr);
                     }
                 }
             }
@@ -341,7 +400,7 @@ fn onNotifyTitle(
                 if (u_slice.len > 0 and !std.mem.startsWith(u8, u_slice, "zawra://") and !std.mem.startsWith(u8, u_slice, "about:")) {
                     if (syms.webkit_web_view_get_title) |get_title_fn| {
                         if (get_title_fn(view)) |t| {
-                            _ = history_record_fn(u, t);
+                            recordHistoryTimed(u, t);
                         }
                     }
                 }
@@ -388,6 +447,8 @@ pub fn init(
         .wpe_event_pointer_button_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, u32, f64, f64, u32) callconv(.c) ?*anyopaque, "wpe_event_pointer_button_new"),
         .wpe_event_keyboard_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, u32, u32) callconv(.c) ?*anyopaque, "wpe_event_keyboard_new"),
         .g_signal_connect_data = lib.lookup(*const fn (?*anyopaque, [*:0]const u8, ?*const anyopaque, ?*anyopaque, ?*anyopaque, c_int) callconv(.c) c_ulong, "g_signal_connect_data"),
+        .webkit_web_view_get_settings = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_web_view_get_settings"),
+        .webkit_settings_set_enable_developer_extras = lib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "webkit_settings_set_enable_developer_extras"),
         .webkit_web_view_get_uri = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_uri"),
         .webkit_web_view_get_title = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_title"),
         .webkit_web_view_reload = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_web_view_reload"),
@@ -425,6 +486,14 @@ pub fn init(
     web_view = created_view;
     global_web_view = created_view;
 
+    if (syms.webkit_web_view_get_settings) |get_settings_fn| {
+        if (get_settings_fn(created_view)) |settings| {
+            if (syms.webkit_settings_set_enable_developer_extras) |set_dev_extras_fn| {
+                set_dev_extras_fn(settings, 1);
+            }
+        }
+    }
+
     if (syms.g_signal_connect_data) |connect_sig| {
         _ = connect_sig(created_view, "web-process-terminated", @ptrCast(&onWebProcessTerminated), null, null, 0);
         _ = connect_sig(created_view, "load-failed", @ptrCast(&onLoadFailed), null, null, 0);
@@ -458,16 +527,23 @@ pub fn init(
         if (syms.wpe_view_map) |f| f(view);
         if (syms.wpe_view_focus_in) |f| f(view);
     }
+    if (subsurface) |sub| {
+        const wl_sub: *wayland.wl_subsurface = @ptrCast(@alignCast(sub));
+        wayland.wl_subsurface_set_desync(wl_sub);
+    }
 
     initialized = true;
     std.debug.print("[ZAWRA-WPE] WebKit Wayland Subsurface initialized successfully\n", .{});
 }
 
 pub fn pumpEvents() void {
+    const start_ns = getMonotonicNs();
+    const max_budget_ns: i64 = 5_000_000;
     var budget: usize = 0;
     while (g_main_context_iteration_fn(null, 0) != 0) {
         budget += 1;
         if (budget >= 256) break;
+        if (getMonotonicNs() - start_ns >= max_budget_ns) break;
     }
     checkSupervisorStatus();
 }
@@ -498,6 +574,13 @@ pub fn loadUrl(url: []const u8) void {
     }
     @memcpy(buf[0..url.len], url);
     buf[url.len] = 0;
+
+    nav_t0_ns = getMonotonicNs();
+    nav_started_ms = 0.0;
+    nav_committed_ms = 0.0;
+    nav_finished_ms = 0.0;
+    @memcpy(nav_url_buf[0..url.len], url);
+    nav_url_len = url.len;
 
     std.debug.print("[ZAWRA-WPE] Loading URL: {s}\n", .{buf[0..url.len]});
     load_fn(view, &buf);
@@ -607,7 +690,7 @@ pub fn sendPointer(event_type: u32, local_x: f64, local_y: f64, button: u32, sta
         else
             null,
         2 => if (syms.wpe_event_pointer_button_new) |f|
-            f(2, view, 0, 0, 0, if (button == 0) 1 else button, local_x, local_y, 1)
+            f(2, view, 0, 0, 0, if (button == 0) 1 else button, local_x, local_y, 0)
         else
             null,
         else => null,

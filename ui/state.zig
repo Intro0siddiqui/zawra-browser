@@ -53,13 +53,22 @@ fn mockHistoryRecord(url: [*:0]const u8, title: [*:0]const u8) callconv(.c) i32 
 pub const recordHistory = if (builtin.is_test) mockHistoryRecord else Zawra_History_Record;
 
 extern "c" fn Zawra_History_Clear() callconv(.c) i32;
+extern "c" fn Zawra_History_Clear_Last_Hour() callconv(.c) i32;
+extern "c" fn Zawra_History_Delete_Url(url: [*:0]const u8) callconv(.c) i32;
 
 fn mockHistoryClear() callconv(.c) i32 {
     mock_history_count = 0;
     return 0;
 }
 
+fn mockHistoryDeleteUrl(_: [*:0]const u8) callconv(.c) i32 {
+    if (mock_history_count > 0) mock_history_count -= 1;
+    return 0;
+}
+
 pub const clearHistoryStorage = if (builtin.is_test) mockHistoryClear else Zawra_History_Clear;
+pub const clearHistoryLastHourStorage = if (builtin.is_test) mockHistoryClear else Zawra_History_Clear_Last_Hour;
+pub const deleteHistoryUrlStorage = if (builtin.is_test) mockHistoryDeleteUrl else Zawra_History_Delete_Url;
 
 pub const Rect = struct {
     x: f32,
@@ -283,7 +292,10 @@ pub const ShellLayout = struct {
     // Slide-out History Drawer
     history_drawer_rect: Rect,
     history_close_btn_rect: Rect,
+    history_drawer_clear_1h_rect: Rect,
+    history_drawer_clear_all_rect: Rect,
     history_item_rects: [16]Rect,
+    history_drawer_item_delete_rects: [16]Rect,
     history_item_count: usize,
 
     // History Page (zawra://history viewport)
@@ -292,9 +304,12 @@ pub const ShellLayout = struct {
     history_page_search_rect: Rect,
     history_page_search_icon_rect: Rect,
     history_page_search_text_pos: [2]f32,
+    history_page_clear_1h_btn_rect: Rect,
+    history_page_clear_1h_text_pos: [2]f32,
     history_page_clear_btn_rect: Rect,
     history_page_clear_text_pos: [2]f32,
     history_page_item_rects: [16]Rect,
+    history_page_item_delete_rects: [16]Rect,
     history_page_item_count: usize,
 
     // Notification pill
@@ -547,6 +562,26 @@ pub const ShellState = struct {
         _ = clearHistoryStorage();
         _ = self.history_arena.reset(.retain_capacity);
         self.history_items.clearRetainingCapacity();
+        self.ui_dirty = true;
+        self.recomputeLayout();
+    }
+
+    pub fn clearHistoryLastHour(self: *ShellState) void {
+        _ = clearHistoryLastHourStorage();
+        self.loadRecentHistory();
+        self.ui_dirty = true;
+        self.recomputeLayout();
+    }
+
+    pub fn deleteHistoryItem(self: *ShellState, idx: usize) void {
+        if (idx >= self.history_items.items.len) return;
+        const url = self.history_items.items[idx].url;
+        var buf: [256]u8 = undefined;
+        const n = @min(url.len, buf.len - 1);
+        @memcpy(buf[0..n], url[0..n]);
+        buf[n] = 0;
+        _ = deleteHistoryUrlStorage(@ptrCast(&buf[0]));
+        self.loadRecentHistory();
         self.ui_dirty = true;
         self.recomputeLayout();
     }
@@ -1123,11 +1158,25 @@ pub const ShellState = struct {
                 self.history_open = false;
                 return;
             }
+            if (self.layout.history_drawer_clear_1h_rect.contains(mx, my)) {
+                self.clearHistoryLastHour();
+                return;
+            }
+            if (self.layout.history_drawer_clear_all_rect.contains(mx, my)) {
+                self.clearHistory();
+                return;
+            }
             for (self.history_items.items, 0..) |item, i| {
-                if (i < self.layout.history_item_count and self.layout.history_item_rects[i].contains(mx, my)) {
-                    self.navigateToUrl(item.url);
-                    self.history_open = false;
-                    return;
+                if (i < self.layout.history_item_count) {
+                    if (self.layout.history_drawer_item_delete_rects[i].contains(mx, my)) {
+                        self.deleteHistoryItem(i);
+                        return;
+                    }
+                    if (self.layout.history_item_rects[i].contains(mx, my)) {
+                        self.navigateToUrl(item.url);
+                        self.history_open = false;
+                        return;
+                    }
                 }
             }
             if (self.layout.history_drawer_rect.contains(mx, my)) {
@@ -1175,6 +1224,10 @@ pub const ShellState = struct {
         // Viewport elements: History Page vs Start Page
         if (self.getActiveTab()) |tab| {
             if (isHistoryPage(tab.getUrl())) {
+                if (self.layout.history_page_clear_1h_btn_rect.contains(mx, my)) {
+                    self.clearHistoryLastHour();
+                    return;
+                }
                 if (self.layout.history_page_clear_btn_rect.contains(mx, my)) {
                     self.clearHistory();
                     return;
@@ -1185,9 +1238,15 @@ pub const ShellState = struct {
                     return;
                 }
                 for (self.history_items.items, 0..) |item, i| {
-                    if (i < self.layout.history_page_item_count and self.layout.history_page_item_rects[i].contains(mx, my)) {
-                        self.navigateToUrl(item.url);
-                        return;
+                    if (i < self.layout.history_page_item_count) {
+                        if (self.layout.history_page_item_delete_rects[i].contains(mx, my)) {
+                            self.deleteHistoryItem(i);
+                            return;
+                        }
+                        if (self.layout.history_page_item_rects[i].contains(mx, my)) {
+                            self.navigateToUrl(item.url);
+                            return;
+                        }
                     }
                 }
             } else if (isStartPage(tab.getUrl())) {
@@ -1318,14 +1377,23 @@ pub const ShellState = struct {
         const drawer_w: f32 = 320.0;
         self.layout.history_drawer_rect = Rect{ .x = sidebar_w, .y = 0.0, .w = drawer_w, .h = h };
         self.layout.history_close_btn_rect = Rect{ .x = sidebar_w + drawer_w - 36.0, .y = 16.0, .w = 22.0, .h = 22.0 };
+        self.layout.history_drawer_clear_all_rect = Rect{ .x = sidebar_w + drawer_w - 92.0, .y = 16.0, .w = 50.0, .h = 22.0 };
+        self.layout.history_drawer_clear_1h_rect = Rect{ .x = sidebar_w + drawer_w - 130.0, .y = 16.0, .w = 32.0, .h = 22.0 };
         const max_history_items = @min(self.history_items.items.len, 16);
         self.layout.history_item_count = max_history_items;
         for (0..max_history_items) |i| {
+            const iy = 70.0 + @as(f32, @floatFromInt(i)) * 52.0;
             self.layout.history_item_rects[i] = Rect{
                 .x = sidebar_w + 14.0,
-                .y = 70.0 + @as(f32, @floatFromInt(i)) * 52.0,
+                .y = iy,
                 .w = drawer_w - 28.0,
                 .h = 44.0,
+            };
+            self.layout.history_drawer_item_delete_rects[i] = Rect{
+                .x = sidebar_w + drawer_w - 38.0,
+                .y = iy + 11.0,
+                .w = 20.0,
+                .h = 20.0,
             };
         }
 
@@ -1422,7 +1490,7 @@ pub const ShellState = struct {
         self.layout.history_page_title_pos = .{ hp_x, 50.0 };
         self.layout.history_page_subtitle_pos = .{ hp_x, 82.0 };
 
-        const hp_search_w = @min(hp_w - 130.0, 520.0);
+        const hp_search_w = @min(hp_w - 220.0, 440.0);
         self.layout.history_page_search_rect = Rect{
             .x = hp_x,
             .y = 114.0,
@@ -1437,23 +1505,38 @@ pub const ShellState = struct {
         };
         self.layout.history_page_search_text_pos = .{ hp_x + 40.0, 126.0 };
 
+        self.layout.history_page_clear_1h_btn_rect = Rect{
+            .x = hp_x + hp_search_w + 12.0,
+            .y = 114.0,
+            .w = 90.0,
+            .h = 40.0,
+        };
+        self.layout.history_page_clear_1h_text_pos = .{ hp_x + hp_search_w + 24.0, 126.0 };
+
         self.layout.history_page_clear_btn_rect = Rect{
-            .x = hp_x + hp_search_w + 14.0,
+            .x = hp_x + hp_search_w + 110.0,
             .y = 114.0,
             .w = 100.0,
             .h = 40.0,
         };
-        self.layout.history_page_clear_text_pos = .{ hp_x + hp_search_w + 22.0, 126.0 };
+        self.layout.history_page_clear_text_pos = .{ hp_x + hp_search_w + 128.0, 126.0 };
 
         const hp_items_y = 176.0;
         const max_hp_items = @min(self.history_items.items.len, 10);
         self.layout.history_page_item_count = max_hp_items;
         for (0..max_hp_items) |i| {
+            const iy = hp_items_y + @as(f32, @floatFromInt(i)) * 62.0;
             self.layout.history_page_item_rects[i] = Rect{
                 .x = hp_x,
-                .y = hp_items_y + @as(f32, @floatFromInt(i)) * 62.0,
+                .y = iy,
                 .w = hp_w,
                 .h = 52.0,
+            };
+            self.layout.history_page_item_delete_rects[i] = Rect{
+                .x = hp_x + hp_w - 36.0,
+                .y = iy + 14.0,
+                .w = 24.0,
+                .h = 24.0,
             };
         }
     }

@@ -829,7 +829,69 @@ pub unsafe extern "C" fn Z_History_Put(
     }
 }
 
+const HISTORY_CHANNEL_CAPACITY: usize = 256;
+
+enum HistoryMsg {
+    Record(HistoryEntry),
+    Flush(std::sync::mpsc::SyncSender<()>),
+}
+
+static HISTORY_TX: OnceLock<std::sync::mpsc::SyncSender<HistoryMsg>> = OnceLock::new();
+
+fn get_history_tx() -> &'static std::sync::mpsc::SyncSender<HistoryMsg> {
+    HISTORY_TX.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<HistoryMsg>(HISTORY_CHANNEL_CAPACITY);
+        let _ = std::thread::Builder::new()
+            .name("zawra-history-writer".to_string())
+            .spawn(move || {
+                while let Ok(msg) = rx.recv() {
+                    match msg {
+                        HistoryMsg::Record(entry) => {
+                            if let Some(db) = GLOBAL_DB.get() {
+                                match db.history().insert(&entry) {
+                                    Ok(_) => {
+                                        eprintln!(
+                                            "[ZAWRA-HISTORY] Recorded visit: {} - {}",
+                                            entry.url, entry.title
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[ZAWRA-HISTORY] Failed to record visit {}: {}",
+                                            entry.url, e
+                                        );
+                                    }
+                                }
+                            } else {
+                                eprintln!(
+                                    "[ZAWRA-HISTORY] Global DB not initialized, ignoring visit: {}",
+                                    entry.url
+                                );
+                            }
+                        }
+                        HistoryMsg::Flush(ack) => {
+                            let _ = ack.send(());
+                        }
+                    }
+                }
+            });
+        tx
+    })
+}
+
+fn flush_history_worker() {
+    if let Some(tx) = HISTORY_TX.get() {
+        let (ack_tx, ack_rx) = std::sync::mpsc::sync_channel(1);
+        if tx.send(HistoryMsg::Flush(ack_tx)).is_ok() {
+            let _ = ack_rx.recv();
+        }
+    }
+}
+
 /// Record a navigation history entry directly with URL and title.
+///
+/// Offloads BrowserDB writes to a bounded background worker thread via `try_send`
+/// so the UI thread never blocks during compaction or WAL flushes.
 ///
 /// # Safety
 /// `url` and `title` must be valid NUL-terminated strings (or title can be null).
@@ -878,36 +940,64 @@ pub unsafe extern "C" fn Zawra_History_Record(
         timestamp: timestamp as u128,
         url: url_str.to_string(),
         url_hash: hash,
-        title: effective_title.clone(),
+        title: effective_title,
         visit_count: 1,
     };
 
-    if let Some(db) = GLOBAL_DB.get() {
-        match db.history().insert(&entry) {
-            Ok(_) => {
-                eprintln!("[ZAWRA-HISTORY] Recorded visit: {} - {}", url_str, effective_title);
-                NS_OK
-            }
-            Err(e) => {
-                eprintln!("[ZAWRA-HISTORY] Failed to record visit {}: {}", url_str, e);
-                NS_ERROR_FAILURE
-            }
+    match get_history_tx().try_send(HistoryMsg::Record(entry)) {
+        Ok(()) => NS_OK,
+        Err(std::sync::mpsc::TrySendError::Full(_)) => {
+            eprintln!(
+                "[ZAWRA-HISTORY] History queue full (cap {}), dropping visit: {}",
+                HISTORY_CHANNEL_CAPACITY, url_str
+            );
+            NS_OK
         }
-    } else {
-        eprintln!("[ZAWRA-HISTORY] Global DB not initialized, ignoring visit: {}", url_str);
-        NS_OK
+        Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+            eprintln!(
+                "[ZAWRA-HISTORY] History worker disconnected, dropping visit: {}",
+                url_str
+            );
+            NS_ERROR_FAILURE
+        }
     }
 }
 
-/// Clear browsing history in BrowserDB.
+/// Clear all browsing history in BrowserDB.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn Zawra_History_Clear() -> i32 {
+    flush_history_worker();
     if let Some(db) = GLOBAL_DB.get() {
-        if let Ok(entries) = db.history().hot_search("", 1000) {
-            for entry in entries {
-                let _ = db.history().wipe_domain(&entry.url);
-            }
-        }
+        let _ = db.history().delete_since(0);
+    }
+    NS_OK
+}
+
+/// Clear browsing history from the last 1 hour (3600 seconds) in BrowserDB.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_History_Clear_Last_Hour() -> i32 {
+    flush_history_worker();
+    if let Some(db) = GLOBAL_DB.get() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let cutoff = now.saturating_sub(3600) as u128;
+        let _ = db.history().delete_since(cutoff);
+    }
+    NS_OK
+}
+
+/// Delete a single URL from BrowserDB browsing history.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Zawra_History_Delete_Url(url: *const c_char) -> i32 {
+    if url.is_null() {
+        return NS_ERROR_INVALID_ARG;
+    }
+    let url_str = unsafe { CStr::from_ptr(url) }.to_string_lossy();
+    flush_history_worker();
+    if let Some(db) = GLOBAL_DB.get() {
+        let _ = db.history().delete_url(&url_str);
     }
     NS_OK
 }
@@ -2388,6 +2478,9 @@ mod tests {
             let title2 = CString::new("Zig Programming Language").unwrap();
             assert_eq!(Zawra_History_Record(url2.as_ptr(), title2.as_ptr()), NS_OK);
 
+            // Wait for background history worker to drain before querying
+            flush_history_worker();
+
             // Query recent history entries
             let mut entries: [ZawraHistoryEntry; 16] = [ZawraHistoryEntry {
                 title: [0u8; 128],
@@ -2399,6 +2492,23 @@ mod tests {
 
             let count = Zawra_GetRecentHistoryEntries(entries.as_mut_ptr(), 16);
             assert!(count >= 2);
+
+            // Selective delete of url1 only
+            assert_eq!(Zawra_History_Delete_Url(url1.as_ptr()), NS_OK);
+            let count_after_sel = Zawra_GetRecentHistoryEntries(entries.as_mut_ptr(), 16);
+            assert_eq!(count_after_sel, 1);
+
+            // Clear last 1 hour (removes url2 just inserted)
+            assert_eq!(Zawra_History_Clear_Last_Hour(), NS_OK);
+            let count_after_1h = Zawra_GetRecentHistoryEntries(entries.as_mut_ptr(), 16);
+            assert_eq!(count_after_1h, 0);
+
+            // Re-insert and verify full clear
+            assert_eq!(Zawra_History_Record(url1.as_ptr(), title1.as_ptr()), NS_OK);
+            flush_history_worker();
+            assert_eq!(Zawra_History_Clear(), NS_OK);
+            let count_after_clear = Zawra_GetRecentHistoryEntries(entries.as_mut_ptr(), 16);
+            assert_eq!(count_after_clear, 0, "Expected 0 history entries after Zawra_History_Clear");
         }
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

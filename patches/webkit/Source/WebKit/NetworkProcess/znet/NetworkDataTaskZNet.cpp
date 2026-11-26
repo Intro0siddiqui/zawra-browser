@@ -36,6 +36,7 @@ typedef void* ConnectionHandle;
 
 NetEngineHandle net_engine_create();
 void net_engine_destroy(NetEngineHandle handle);
+void net_engine_set_manage_cookies(NetEngineHandle handle, bool enable);
 
 struct ZNetHttpStreamCallbacks {
     void* user_data;
@@ -93,6 +94,8 @@ static NetEngineHandle sharedNetEngine()
     static std::once_flag s_once;
     std::call_once(s_once, [] {
         s_engine = net_engine_create();
+        if (s_engine)
+            net_engine_set_manage_cookies(s_engine, false);
     });
     return s_engine;
 }
@@ -215,9 +218,38 @@ void NetworkDataTaskZNet::startFetch()
         Vector<const char*> headerNamePtrs;
         Vector<const char*> headerValPtrs;
 
+        bool isChrome134UA = false;
+        bool hasSecChUa = false;
+        bool hasSecChUaMobile = false;
+        bool hasSecChUaPlatform = false;
+
         for (auto& header : m_firstRequest.httpHeaderFields()) {
+            if (equalLettersIgnoringASCIICase(header.key, "user-agent"_s) && header.value.contains("Chrome/134."_s))
+                isChrome134UA = true;
+            else if (equalLettersIgnoringASCIICase(header.key, "sec-ch-ua"_s))
+                hasSecChUa = true;
+            else if (equalLettersIgnoringASCIICase(header.key, "sec-ch-ua-mobile"_s))
+                hasSecChUaMobile = true;
+            else if (equalLettersIgnoringASCIICase(header.key, "sec-ch-ua-platform"_s))
+                hasSecChUaPlatform = true;
+
             headerNames.append(header.key.utf8());
             headerValues.append(header.value.utf8());
+        }
+
+        if (url.protocolIs("https"_s) && isChrome134UA) {
+            if (!hasSecChUa) {
+                headerNames.append(String("sec-ch-ua"_s).utf8());
+                headerValues.append(String("\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\""_s).utf8());
+            }
+            if (!hasSecChUaMobile) {
+                headerNames.append(String("sec-ch-ua-mobile"_s).utf8());
+                headerValues.append(String("?0"_s).utf8());
+            }
+            if (!hasSecChUaPlatform) {
+                headerNames.append(String("sec-ch-ua-platform"_s).utf8());
+                headerValues.append(String("\"Linux\""_s).utf8());
+            }
         }
 
         headerNamePtrs.reserveInitialCapacity(headerNames.size());
@@ -357,6 +389,34 @@ void NetworkDataTaskZNet::startFetch()
                                 if (newRequest.isNull()) {
                                     ctx->redirectRejected = true;
                                 } else {
+                                    // Re-query WebKit's NetworkStorageSession for the redirect target URL on the main thread
+                                    // after Set-Cookie headers from the 3xx response have been synchronized.
+                                    bool shouldIncludeCookies = ctx->task->m_storedCredentialsPolicy == StoredCredentialsPolicy::Use
+                                        && newRequest.allowCookies();
+                                    String cookieHeader;
+                                    if (shouldIncludeCookies) {
+                                        if (auto* session = ctx->task->networkSession()) {
+                                            if (auto* storageSession = session->networkStorageSession()) {
+                                                auto [headerValue, secure] = storageSession->cookieRequestHeaderFieldValue(
+                                                    newRequest.firstPartyForCookies(),
+                                                    SameSiteInfo::create(newRequest),
+                                                    newRequest.url(),
+                                                    std::nullopt,
+                                                    std::nullopt,
+                                                    newRequest.url().protocolIs("https"_s) ? IncludeSecureCookies::Yes : IncludeSecureCookies::No,
+                                                    ApplyTrackingPrevention::Yes,
+                                                    ShouldRelaxThirdPartyCookieBlocking::No,
+                                                    IsKnownCrossSiteTracker::No
+                                                );
+                                                cookieHeader = WTF::move(headerValue);
+                                            }
+                                        }
+                                    }
+                                    if (!cookieHeader.isEmpty())
+                                        newRequest.setHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeader);
+                                    else
+                                        newRequest.removeHTTPHeaderField(HTTPHeaderName::Cookie);
+
                                     ctx->isRedirected = true;
                                     ctx->redirectRequest = WTF::move(newRequest);
                                 }

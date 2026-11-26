@@ -20,6 +20,7 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use crate::zero_copy::{JSContext, JSObject, JS_NewExternalArrayBuffer};
@@ -28,16 +29,18 @@ use crate::zero_copy::{JSContext, JSObject, JS_NewExternalArrayBuffer};
 // Pin registry — keeps BrowserDB blobs alive while JavaScriptCore uses them
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Global registry of pinned blobs. Key = `blob_id`, value = owned buffer.
-static PIN_REGISTRY: OnceLock<Mutex<HashMap<u64, Vec<u8>>>> = OnceLock::new();
+/// Monotonic ID generator for `PIN_REGISTRY` keys (avoids 128-bit hash truncation collisions).
+static NEXT_BLOB_ID: AtomicU64 = AtomicU64::new(1);
 
-fn pin_registry() -> &'static Mutex<HashMap<u64, Vec<u8>>> {
+/// Global registry of pinned blobs. Key = `blob_id`, value = owned boxed slice.
+static PIN_REGISTRY: OnceLock<Mutex<HashMap<u64, Box<[u8]>>>> = OnceLock::new();
+
+fn pin_registry() -> &'static Mutex<HashMap<u64, Box<[u8]>>> {
     PIN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Pin a blob buffer so it won't be freed while JavaScriptCore holds it.
-/// Returns the `blob_id` to pass as `user_data` to the ArrayBuffer deleter.
-pub fn pin_blob(blob_id: u64, data: Vec<u8>) {
+pub fn pin_blob(blob_id: u64, data: Box<[u8]>) {
     if let Ok(mut reg) = pin_registry().lock() {
         reg.insert(blob_id, data);
     }
@@ -86,7 +89,7 @@ unsafe extern "C" fn browserdb_gc_deleter(
 ///
 /// ## Arguments
 /// - `cx`       — The active `JSContext`.
-/// - `data`     — Owned `Vec<u8>` of the blob bytes (will be pinned).
+/// - `data`     — Owned `Box<[u8]>` of the blob bytes (will be pinned).
 /// - `blob_id`  — Unique ID used to unpin when the GC collects the buffer.
 ///
 /// ## Returns
@@ -98,11 +101,11 @@ unsafe extern "C" fn browserdb_gc_deleter(
 /// `cx` must be a valid JavaScriptCore `JSContext` on the current thread.
 pub unsafe fn create_zero_copy_buffer(
     cx: *mut JSContext,
-    mut data: Vec<u8>,
+    mut data: Box<[u8]>,
     blob_id: u64,
 ) -> *mut JSObject {
     let size = data.len();
-    let ptr  = data.as_mut_ptr();
+    let ptr = data.as_mut_ptr();
 
     // Pin first — JavaScriptCore might GC before we return if we pin after.
     pin_blob(blob_id, data);
@@ -110,7 +113,7 @@ pub unsafe fn create_zero_copy_buffer(
     // Heap-allocate the blob_id for user_data (freed in browserdb_gc_deleter).
     let user_data = Box::into_raw(Box::new(blob_id)) as *mut c_void;
 
-    unsafe {
+    let obj = unsafe {
         JS_NewExternalArrayBuffer(
             cx,
             size,
@@ -118,7 +121,16 @@ pub unsafe fn create_zero_copy_buffer(
             Some(browserdb_gc_deleter),
             user_data,
         )
+    };
+
+    if obj.is_null() {
+        // Allocation/wrapping failed so the GC deleter will never run; reclaim
+        // `user_data` and unpin `blob_id` so neither leaks.
+        unsafe { drop(Box::from_raw(user_data as *mut u64)); }
+        release_pin(blob_id);
     }
+
+    obj
 }
 
 /// C-ABI version — WPE's IndexedDB / Cache API C++ layer can call this
@@ -145,11 +157,16 @@ pub unsafe extern "C" fn Z_JS_CreateCacheBuffer(
     let ret = unsafe { Z_Cache_Get(url_hash_hi, url_hash_lo, &mut out_ptr, &mut out_len) };
     if ret != 0 || out_ptr.is_null() { return null_mut(); }
 
-    // Reconstruct the Vec<u8> from the heap pointer (was allocated by storage.rs)
-    let data = unsafe { Vec::from_raw_parts(out_ptr, out_len, out_len) };
+    // Contract: `Z_Cache_Get` allocates via `into_boxed_slice()` and transfers
+    // ownership of `(out_ptr, out_len)` as a `Box<[u8]>` (also freeable via
+    // `Z_Free_Buffer(ptr, len)` on C/C++ paths). Reconstruct the `Box<[u8]>`
+    // directly rather than `Vec::from_raw_parts` assuming `cap == len`.
+    let data = unsafe {
+        Box::from_raw(std::ptr::slice_from_raw_parts_mut(out_ptr, out_len))
+    };
 
-    // Use a hash of the URL as the blob_id
-    let blob_id = ((url_hash_hi as u128) << 64 | url_hash_lo as u128) as u64;
+    // Collision-free monotonic ID for `PIN_REGISTRY`.
+    let blob_id = NEXT_BLOB_ID.fetch_add(1, Ordering::Relaxed);
 
     unsafe { create_zero_copy_buffer(cx, data, blob_id) }
 }

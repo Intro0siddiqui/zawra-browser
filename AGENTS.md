@@ -66,7 +66,7 @@ cargo run --release -p zawra-setup
 
 ### 2. Sandbox & Feature Disabling
 *   **Bubblewrap:** Must be disabled in CMake configuration (`-DENABLE_BUBBLEWRAP_SANDBOX=OFF`) to prevent conflicting with Hajr.
-*   **WebSQL & AppCache:** Must remain `OFF` in `OptionsWPE.cmake` (replaced by BrowserDB). Always check downstream header consumers using `./zw deps <module>` before editing feature flags.
+*   **WebSQL & AppCache:** Must remain `OFF` in `OptionsWPE.cmake` (replaced by BrowserDB). Always check downstream header consumers (e.g., via `rg`) before editing feature flags.
 
 ### 3. Build Cache Rules (ABSOLUTE)
 *   **NEVER DELETE** the `webkit/build/` directory. Wiping the cache causes days of recompilation.
@@ -145,13 +145,3 @@ The startup sequence across `WebProcessMainWPE`, `NetworkProcessMainSoup`, `GPUP
 *   **PID Namespace Trace Isolation**:
     *   Auxiliary processes run in dedicated Linux user/PID namespaces where `getpid() == 1`.
     *   Never name trace files using raw PIDs alone (e.g. `/tmp/zawra.<pid>.json`). Always qualify trace files with the process kind (`ui`, `net`, `web`, `gpu`) or host PID to prevent child processes from clobbering each other's traces.
-
----
-
-## 🔍 Project Intelligence (`zw` Tool)
-Use the unified CLI command `./zw` to map integration boundaries:
-*   `./zw find <term>`: Search integration boundary symbols.
-*   `./zw read <filename>`: Read C++ file side-by-side with its patch.
-*   `./zw patches`: List modified WebKit files.
-*   `./zw audit`: Structural graph audit (checks double-listed files).
-*   `./zw stubs`: View unimplemented placeholders/stubs.

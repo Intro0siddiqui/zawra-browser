@@ -67,13 +67,14 @@ void net_cookie_jar_clear(NetEngineHandle engine, uint64_t session_id);
 namespace WebKit {
 using namespace WebCore;
 
-struct StreamContext {
+struct StreamContext : std::enable_shared_from_this<StreamContext> {
     explicit StreamContext(Ref<NetworkDataTaskZNet>&& task)
         : task(WTF::move(task))
     {
     }
 
     Ref<NetworkDataTaskZNet> task;
+    std::atomic<bool> cancelled { false };
     bool responseDispatched { false };
     bool completedDispatched { false };
     WTF::BinarySemaphore policySemaphore;
@@ -110,30 +111,37 @@ NetworkDataTaskZNet::~NetworkDataTaskZNet()
 void NetworkDataTaskZNet::cancel()
 {
     WTFLogAlways("NetworkDataTaskZNet::cancel() called for %s", m_firstRequest.url().string().utf8().data());
-    m_isCancelled = true;
-    m_state = State::Canceling;
-    if (auto* ctx = m_streamContext.load()) {
+    m_isCancelled.store(true);
+    m_state.store(State::Canceling);
+    std::shared_ptr<StreamContext> ctx;
+    {
+        std::lock_guard<std::mutex> lock(m_streamContextMutex);
+        ctx = m_streamContext;
+    }
+    if (ctx) {
+        ctx->cancelled.store(true);
         ctx->policySemaphore.signal();
     }
     if (m_thread) {
-        m_thread->waitForCompletion();
+        if (m_thread.get() != &Thread::currentSingleton())
+            m_thread->waitForCompletion();
         m_thread = nullptr;
     }
-    m_state = State::Completed;
+    m_state.store(State::Completed);
 }
 
 void NetworkDataTaskZNet::resume()
 {
     WTFLogAlways("NetworkDataTaskZNet::resume() called for %s, preconnectOnly=%d",
         m_firstRequest.url().string().utf8().data(), m_shouldPreconnectOnly == PreconnectOnly::Yes);
-    if (m_state != State::Suspended)
+    if (m_state.load() != State::Suspended)
         return;
 
     if (m_shouldPreconnectOnly == PreconnectOnly::Yes) {
         WTFLogAlways("NetworkDataTaskZNet: Handling PreconnectOnly task for %s", m_firstRequest.url().string().utf8().data());
-        m_state = State::Completed;
+        m_state.store(State::Completed);
         RunLoop::mainSingleton().dispatch([this, protectedThis = Ref { *this }] {
-            if (m_isCancelled)
+            if (m_isCancelled.load())
                 return;
             if (RefPtr client = this->client())
                 client->didCompleteWithError(ResourceError());
@@ -161,7 +169,7 @@ void NetworkDataTaskZNet::resume()
         }
     }
 
-    m_state = State::Running;
+    m_state.store(State::Running);
     m_thread = Thread::create("ZNetFetcher"_s, [this, protectedThis = Ref { *this }] {
         startFetch();
     });
@@ -174,7 +182,7 @@ void NetworkDataTaskZNet::invalidateAndCancel()
 
 NetworkDataTask::State NetworkDataTaskZNet::state() const
 {
-    return m_state;
+    return m_state.load();
 }
 
 void NetworkDataTaskZNet::startFetch()
@@ -182,11 +190,11 @@ void NetworkDataTaskZNet::startFetch()
     NetEngineHandle engine = sharedNetEngine();
     if (!engine) {
         RunLoop::mainSingleton().dispatch([this, protectedThis = Ref { *this }] {
-            if (m_isCancelled) return;
+            if (m_isCancelled.load()) return;
             if (RefPtr client = this->client())
                 client->didCompleteWithError(ResourceError(String(), 0, m_firstRequest.url(), "Failed to initialize z-net engine"_s));
         });
-        m_state = State::Completed;
+        m_state.store(State::Completed);
         return;
     }
 
@@ -197,7 +205,7 @@ void NetworkDataTaskZNet::startFetch()
     unsigned redirectCount = 0;
     const unsigned maxRedirects = 20;
 
-    while (!m_isCancelled && m_state != State::Canceling) {
+    while (!m_isCancelled.load() && m_state.load() != State::Canceling) {
         URL url = m_firstRequest.url();
         WTFLogAlways("NetworkDataTaskZNet::startFetch() fetching %s", url.string().utf8().data());
 
@@ -227,14 +235,18 @@ void NetworkDataTaskZNet::startFetch()
         }
 
         // 3. Setup Streaming Callbacks & Flow Control Context
-        auto context = std::make_unique<StreamContext>(Ref { *this });
-        m_streamContext.store(context.get());
+        auto context = std::make_shared<StreamContext>(Ref { *this });
+        {
+            std::lock_guard<std::mutex> lock(m_streamContextMutex);
+            m_streamContext = context;
+        }
 
         auto onHeadersCallback = [](uint16_t status, const char* reason, size_t headerCount, const char* const* names, const char* const* values, void* userData) {
             WTFLogAlways("NetworkDataTaskZNet: onHeadersCallback status=%u, count=%zu", status, headerCount);
-            auto* ctx = static_cast<StreamContext*>(userData);
-            if (!ctx || ctx->task->isCancelled())
+            auto* rawCtx = static_cast<StreamContext*>(userData);
+            if (!rawCtx || rawCtx->cancelled.load() || rawCtx->task->isCancelled())
                 return;
+            auto ctx = rawCtx->shared_from_this();
 
             auto response = WTF::makeUnique<ResourceResponse>();
             response->setURL(URL { ctx->task->firstRequest().url() });
@@ -278,7 +290,7 @@ void NetworkDataTaskZNet::startFetch()
             bool isRedirect = (status >= 300 && status < 400 && !location.isEmpty());
 
             RunLoop::mainSingleton().dispatch([ctx, response = WTF::move(response), isRedirect, location = WTF::move(location)]() mutable {
-                if (ctx->task->isCancelled()) {
+                if (ctx->cancelled.load() || ctx->task->isCancelled()) {
                     if (isRedirect)
                         ctx->redirectRejected = true;
                     ctx->policyAction.store(WebCore::PolicyAction::Ignore);
@@ -341,11 +353,15 @@ void NetworkDataTaskZNet::startFetch()
 
                     if (RefPtr client = ctx->task->client()) {
                         client->willPerformHTTPRedirection(WTF::move(*response), WTF::move(redirectRequest), [ctx](ResourceRequest&& newRequest) {
-                            if (newRequest.isNull()) {
-                                ctx->redirectRejected = true;
+                            if (!ctx->cancelled.load() && !ctx->task->isCancelled()) {
+                                if (newRequest.isNull()) {
+                                    ctx->redirectRejected = true;
+                                } else {
+                                    ctx->isRedirected = true;
+                                    ctx->redirectRequest = WTF::move(newRequest);
+                                }
                             } else {
-                                ctx->isRedirected = true;
-                                ctx->redirectRequest = WTF::move(newRequest);
+                                ctx->redirectRejected = true;
                             }
                             ctx->policyAction.store(WebCore::PolicyAction::Ignore);
                             ctx->policyDispatched.store(true);
@@ -376,7 +392,7 @@ void NetworkDataTaskZNet::startFetch()
 
         auto onDataCallback = [](const uint8_t* chunk, size_t chunkLen, void* userData) {
             auto* ctx = static_cast<StreamContext*>(userData);
-            if (!ctx || ctx->task->isCancelled() || !chunk || chunkLen == 0)
+            if (!ctx || ctx->cancelled.load() || ctx->task->isCancelled() || !chunk || chunkLen == 0)
                 return;
             if (ctx->policyAction.load() != WebCore::PolicyAction::Use)
                 return;
@@ -415,7 +431,7 @@ void NetworkDataTaskZNet::startFetch()
             auto* ctx = static_cast<StreamContext*>(userData);
             if (!ctx)
                 return true;
-            if (ctx->task->isCancelled()) {
+            if (ctx->cancelled.load() || ctx->task->isCancelled()) {
                 WTFLogAlways("NetworkDataTaskZNet: isCancelled true: task->isCancelled()");
                 return true;
             }
@@ -454,14 +470,19 @@ void NetworkDataTaskZNet::startFetch()
         );
         WTFLogAlways("NetworkDataTaskZNet: net_http_execute_streaming returned %d", res);
 
-        m_streamContext.store(nullptr);
+        {
+            std::lock_guard<std::mutex> lock(m_streamContextMutex);
+            m_streamContext.reset();
+        }
 
-        if (m_isCancelled || m_state == State::Canceling)
+        if (m_isCancelled.load() || m_state.load() == State::Canceling) {
+            context->cancelled.store(true);
             break;
+        }
 
         if (context->isRedirected) {
             if (context->redirectRejected) {
-                m_state = State::Completed;
+                m_state.store(State::Completed);
                 break;
             }
             if (++redirectCount > maxRedirects) {
@@ -472,7 +493,7 @@ void NetworkDataTaskZNet::startFetch()
                     if (RefPtr client = protectedTask->client())
                         client->didCompleteWithError(ResourceError(String(), 0, protectedTask->firstRequest().url(), "Too many redirects"_s));
                 });
-                m_state = State::Completed;
+                m_state.store(State::Completed);
                 break;
             }
 

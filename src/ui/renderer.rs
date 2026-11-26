@@ -38,7 +38,9 @@ pub struct RendererEmbed {
     viewport: Mutex<Viewport>,
     /// Native WPE web browser handle
     web_browser: *mut c_void,
-    /// Native window handle used to host WPE's rendering
+    /// Borrowed native window handle used to host WPE's rendering.
+    /// Owned by the caller/windowing layer — never freed by `ZG_DestroySurface`
+    /// or `RendererEmbed`.
     parent_window: *mut c_void,
     graphics_surface: Mutex<*mut c_void>,
 }
@@ -49,6 +51,10 @@ unsafe impl Sync for RendererEmbed {}
 
 impl RendererEmbed {
     /// Create a new renderer embed in the given native window.
+    ///
+    /// `parent_window` is borrowed from the caller and must outlive this
+    /// `RendererEmbed`; neither `RendererEmbed::drop` nor `ZG_DestroySurface`
+    /// frees it.
     pub fn new(parent_window: *mut c_void, viewport: Viewport) -> Arc<Self> {
         Arc::new(RendererEmbed {
             state: Mutex::new(RendererState::Uninitialised),
@@ -123,6 +129,9 @@ impl RendererEmbed {
             if !gs.is_null() {
                 unsafe {
                     Z_Graphics_DestroySurface(*gs);
+                    *gs = std::ptr::null_mut();
+                    // `self.parent_window` is borrowed and remains valid after
+                    // `ZG_DestroySurface`.
                     *gs = Z_Graphics_CreateSurface(self.parent_window, width, height);
                     if gs.is_null() {
                         eprintln!("[zawra-renderer] Failed to recreate graphics surface on resize");
@@ -171,5 +180,18 @@ impl RendererEmbed {
             }
         }
         eprintln!("[zawra-renderer] destroyed");
+    }
+}
+
+impl Drop for RendererEmbed {
+    fn drop(&mut self) {
+        if let Ok(s) = self.state.lock() {
+            if *s == RendererState::Destroyed {
+                return;
+            }
+        }
+        // Frees only the owned `graphics_surface`; `parent_window` is borrowed
+        // and never freed here or by `ZG_DestroySurface`.
+        self.destroy();
     }
 }

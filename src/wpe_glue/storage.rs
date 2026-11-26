@@ -271,7 +271,7 @@ pub unsafe extern "C" fn Z_Cache_Put(
 /// Retrieve a cached response body.
 ///
 /// On success writes a heap-allocated buffer pointer to `*out_ptr` and its
-/// length to `*out_len`. Free with `Zawra_Free_Buffer`.
+/// length to `*out_len`. Free with `Z_Free_Buffer`.
 ///
 /// # Safety
 /// `out_ptr` and `out_len` must be valid non-null pointers.
@@ -345,7 +345,7 @@ pub unsafe extern "C" fn Z_Storage_PutBlob(
 /// Retrieve a structured-clone blob (IndexedDB GET).
 ///
 /// On success writes a heap-allocated buffer to `*out_ptr`/`*out_len`.
-/// Free with `Zawra_Free_Buffer`.
+/// Free with `Z_Free_Buffer`.
 ///
 /// # Safety
 /// `key`, `out_ptr`, `out_len` must be valid non-null pointers.

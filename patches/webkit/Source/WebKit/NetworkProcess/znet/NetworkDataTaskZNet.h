@@ -3,6 +3,8 @@
 #include "NetworkDataTask.h"
 #include "NetworkLoadParameters.h"
 #include <atomic>
+#include <memory>
+#include <mutex>
 #include <wtf/RunLoop.h>
 #include <wtf/Threading.h>
 
@@ -19,8 +21,8 @@ public:
 
     ~NetworkDataTaskZNet();
 
-    bool isCancelled() const { return m_isCancelled; }
-    void setCompleted() { m_state = State::Completed; }
+    bool isCancelled() const { return m_isCancelled.load(); }
+    void setCompleted() { m_state.store(State::Completed); }
 
 private:
     NetworkDataTaskZNet(NetworkSession&, NetworkDataTaskClient&, const NetworkLoadParameters&);
@@ -32,11 +34,12 @@ private:
 
     void startFetch();
 
-    State m_state { State::Suspended };
+    std::atomic<State> m_state { State::Suspended };
     RefPtr<Thread> m_thread;
-    bool m_isCancelled { false };
+    std::atomic<bool> m_isCancelled { false };
     PreconnectOnly m_shouldPreconnectOnly { PreconnectOnly::No };
-    std::atomic<StreamContext*> m_streamContext { nullptr };
+    std::mutex m_streamContextMutex;
+    std::shared_ptr<StreamContext> m_streamContext;
 };
 
 } // namespace WebKit

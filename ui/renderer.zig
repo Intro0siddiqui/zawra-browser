@@ -4,9 +4,15 @@ const shaders = @import("shaders");
 const font = @import("font.zig");
 const state_mod = @import("state.zig");
 
+/// Single-window global UIRenderer pointer used by the C-ABI `wpeTextureCallback`.
+/// Ownership is single-instance: `setGlobalUIRenderer` guards against overwriting
+/// a live instance, and `UIRenderer.deinit` clears `global_ui_renderer = null`.
 pub var global_ui_renderer: ?*UIRenderer = null;
 
 pub fn setGlobalUIRenderer(renderer: ?*UIRenderer) void {
+    if (renderer) |new_renderer| {
+        std.debug.assert(global_ui_renderer == null or global_ui_renderer == new_renderer);
+    }
     global_ui_renderer = renderer;
 }
 

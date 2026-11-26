@@ -25,6 +25,7 @@ extern "C" {
     bool ZG_CompositorRenderLayer(void* state);
     void ZG_CompositorDestroy(void* state);
     bool ZG_CompositorResize(void* state, unsigned int width, unsigned int height);
+    void* ZG_CompositorGetSurfaceHandle(void* state);
 }
 
 namespace WebCore {
@@ -119,7 +120,9 @@ bool ZawraGraphicsBridge::initialize(void* windowHandle, int width, int height)
             bool ok = ZG_CompositorResize(m_compositorState, width, height);
             ZLOG("ZG_CompositorResize returned %s", ok ? "true" : "false");
             if (ok) {
-                m_surfaceHandle = *(void**)m_compositorState;
+                // CompositorState is an opaque non-extern Zig struct; use the exported accessor
+                // instead of assuming field layout with *(void**)m_compositorState.
+                m_surfaceHandle = ZG_CompositorGetSurfaceHandle(m_compositorState);
             }
         }
         m_compositorWidth = width;

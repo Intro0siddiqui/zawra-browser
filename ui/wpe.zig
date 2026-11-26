@@ -47,11 +47,14 @@ const WpeSymbols = struct {
     wpe_view_unmap: ?*const fn (?*anyopaque) callconv(.c) void = null,
     wpe_view_set_visible: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
     wpe_view_focus_in: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    wpe_view_focus_out: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    g_object_unref: ?*const fn (?*anyopaque) callconv(.c) void = null,
     webkit_web_view_load_uri: ?*const fn (?*anyopaque, [*:0]const u8) callconv(.c) void = null,
     wpe_view_event: ?*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void = null,
     wpe_event_unref: ?*const fn (?*anyopaque) callconv(.c) void = null,
     wpe_event_pointer_move_new: ?*const fn (u32, ?*anyopaque, u32, u32, u32, f64, f64, f64, f64) callconv(.c) ?*anyopaque = null,
     wpe_event_pointer_button_new: ?*const fn (u32, ?*anyopaque, u32, u32, u32, u32, f64, f64, u32) callconv(.c) ?*anyopaque = null,
+    wpe_event_scroll_new: ?*const fn (?*anyopaque, u32, u32, u32, f64, f64, c_int, c_int, f64, f64) callconv(.c) ?*anyopaque = null,
     wpe_event_keyboard_new: ?*const fn (u32, ?*anyopaque, u32, u32, u32, u32, u32) callconv(.c) ?*anyopaque = null,
     g_signal_connect_data: ?*const fn (
         instance: ?*anyopaque,
@@ -61,6 +64,7 @@ const WpeSymbols = struct {
         destroy_data: ?*anyopaque,
         connect_flags: c_int,
     ) callconv(.c) c_ulong = null,
+    g_signal_handler_disconnect: ?*const fn (instance: ?*anyopaque, handler_id: c_ulong) callconv(.c) void = null,
     webkit_web_view_get_settings: ?*const fn (?*anyopaque) callconv(.c) ?*anyopaque = null,
     webkit_settings_set_user_agent: ?*const fn (?*anyopaque, [*:0]const u8) callconv(.c) void = null,
     webkit_settings_set_enable_developer_extras: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
@@ -74,15 +78,21 @@ const WpeSymbols = struct {
     webkit_web_view_can_go_forward: ?*const fn (?*anyopaque) callconv(.c) c_int = null,
 };
 
+// Intentionally kept loaded for the process lifetime: GLib/GType registers static
+// types and class structs that cannot be safely unloaded via dlclose().
 var wpe_lib: ?std.DynLib = null;
+var gobject_lib: ?std.DynLib = null;
 var syms: WpeSymbols = .{};
 
 pub var global_web_view: ?*anyopaque = null;
 var web_view: ?*anyopaque = null;
 var wpe_view: ?*anyopaque = null;
+var wpe_display: ?*anyopaque = null;
 var toplevel: ?*anyopaque = null;
 var subsurface: ?*anyopaque = null;
 var child_surface: ?*anyopaque = null;
+var wl_compositor_handle: ?*anyopaque = null;
+var signal_handler_ids: [5]c_ulong = .{ 0, 0, 0, 0, 0 };
 var initialized: bool = false;
 
 pub fn isInitialized() bool {
@@ -409,10 +419,22 @@ fn onNotifyTitle(
     }
 }
 
+fn applyEmptyInputRegion() void {
+    const comp_ptr = wl_compositor_handle orelse return;
+    const cs_ptr = child_surface orelse return;
+    const wl_comp: *wayland.wl_compositor = @ptrCast(@alignCast(comp_ptr));
+    const wl_surf: *wayland.wl_surface = @ptrCast(@alignCast(cs_ptr));
+    const empty_region = wayland.wl_compositor_create_region(wl_comp) orelse return;
+    wayland.wl_surface_set_input_region(wl_surf, empty_region);
+    wayland.wl_surface_commit(wl_surf);
+    wayland.wl_region_destroy(empty_region);
+}
+
 pub fn init(
     wl_display: ?*anyopaque,
     wl_surface: ?*anyopaque,
     wl_subcompositor: ?*anyopaque,
+    wl_compositor: ?*anyopaque,
     x: i32,
     y: i32,
     width: i32,
@@ -420,8 +442,36 @@ pub fn init(
 ) !void {
     if (initialized) return;
 
-    var lib = try openWpeLibrary();
+    var lib = wpe_lib orelse try openWpeLibrary();
     wpe_lib = lib;
+
+    var unref_fn = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "g_object_unref");
+    if (unref_fn == null) {
+        if (gobject_lib) |*glib| {
+            unref_fn = glib.lookup(*const fn (?*anyopaque) callconv(.c) void, "g_object_unref");
+        }
+    }
+    if (unref_fn == null) {
+        const gobj_names = [_][]const u8{ "libgobject-2.0.so.0", "libgobject-2.0.so" };
+        for (gobj_names) |name| {
+            if (std.DynLib.open(name)) |glib| {
+                var mut_glib = glib;
+                unref_fn = mut_glib.lookup(*const fn (?*anyopaque) callconv(.c) void, "g_object_unref");
+                if (unref_fn != null) {
+                    gobject_lib = mut_glib;
+                    break;
+                }
+                mut_glib.close();
+            } else |_| {}
+        }
+    }
+
+    var sig_disconnect_fn = lib.lookup(*const fn (?*anyopaque, c_ulong) callconv(.c) void, "g_signal_handler_disconnect");
+    if (sig_disconnect_fn == null) {
+        if (gobject_lib) |*glib| {
+            sig_disconnect_fn = glib.lookup(*const fn (?*anyopaque, c_ulong) callconv(.c) void, "g_signal_handler_disconnect");
+        }
+    }
 
     syms = WpeSymbols{
         .wpe_display_wayland_set_custom_wl_display = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "wpe_display_wayland_set_custom_wl_display"),
@@ -440,13 +490,17 @@ pub fn init(
         .wpe_view_unmap = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "wpe_view_unmap"),
         .wpe_view_set_visible = lib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "wpe_view_set_visible"),
         .wpe_view_focus_in = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "wpe_view_focus_in"),
+        .wpe_view_focus_out = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "wpe_view_focus_out"),
+        .g_object_unref = unref_fn,
         .webkit_web_view_load_uri = lib.lookup(*const fn (?*anyopaque, [*:0]const u8) callconv(.c) void, "webkit_web_view_load_uri"),
         .wpe_view_event = lib.lookup(*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void, "wpe_view_event"),
         .wpe_event_unref = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "wpe_event_unref"),
         .wpe_event_pointer_move_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, f64, f64, f64, f64) callconv(.c) ?*anyopaque, "wpe_event_pointer_move_new"),
         .wpe_event_pointer_button_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, u32, f64, f64, u32) callconv(.c) ?*anyopaque, "wpe_event_pointer_button_new"),
+        .wpe_event_scroll_new = lib.lookup(*const fn (?*anyopaque, u32, u32, u32, f64, f64, c_int, c_int, f64, f64) callconv(.c) ?*anyopaque, "wpe_event_scroll_new"),
         .wpe_event_keyboard_new = lib.lookup(*const fn (u32, ?*anyopaque, u32, u32, u32, u32, u32) callconv(.c) ?*anyopaque, "wpe_event_keyboard_new"),
         .g_signal_connect_data = lib.lookup(*const fn (?*anyopaque, [*:0]const u8, ?*const anyopaque, ?*anyopaque, ?*anyopaque, c_int) callconv(.c) c_ulong, "g_signal_connect_data"),
+        .g_signal_handler_disconnect = sig_disconnect_fn,
         .webkit_web_view_get_settings = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_web_view_get_settings"),
         .webkit_settings_set_enable_developer_extras = lib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "webkit_settings_set_enable_developer_extras"),
         .webkit_web_view_get_uri = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_uri"),
@@ -459,15 +513,26 @@ pub fn init(
         .webkit_web_view_can_go_forward = lib.lookup(*const fn (?*anyopaque) callconv(.c) c_int, "webkit_web_view_can_go_forward"),
     };
 
-    std.debug.print("[ZAWRA-WPE] Attached Wayland handles: disp={?*anyopaque}, surf={?*anyopaque}, subcomp={?*anyopaque}\n", .{ wl_display, wl_surface, wl_subcompositor });
+    errdefer {
+        deinit();
+        wl_compositor_handle = null;
+        syms = .{};
+    }
+
+    wl_compositor_handle = wl_compositor;
+
+    std.debug.print("[ZAWRA-WPE] Attached Wayland handles: disp={?*anyopaque}, surf={?*anyopaque}, subcomp={?*anyopaque}, comp={?*anyopaque}\n", .{ wl_display, wl_surface, wl_subcompositor, wl_compositor });
 
     // 1. Configure parent surface for subsurface attachment
+    // Sole-reader contract: once WPEDisplayWayland connects to wl_display, its GLib GSource
+    // becomes the sole reader/dispatcher on wl_display; callers must not call ZG_PollEvents.
     if (syms.wpe_display_wayland_set_custom_wl_display) |f| f(wl_display);
     if (syms.wpe_toplevel_wayland_set_parent_surface) |f| f(wl_surface, wl_subcompositor, x, y);
 
     // 2. Initialize Wayland WPE display
     const display_new_fn = syms.wpe_display_wayland_new orelse return error.MissingSymbol;
     const display = display_new_fn() orelse return error.DisplayCreateFailed;
+    wpe_display = display;
 
     if (syms.wpe_display_connect) |connect_fn| {
         var err: ?*anyopaque = null;
@@ -495,11 +560,11 @@ pub fn init(
     }
 
     if (syms.g_signal_connect_data) |connect_sig| {
-        _ = connect_sig(created_view, "web-process-terminated", @ptrCast(&onWebProcessTerminated), null, null, 0);
-        _ = connect_sig(created_view, "load-failed", @ptrCast(&onLoadFailed), null, null, 0);
-        _ = connect_sig(created_view, "load-changed", @ptrCast(&onLoadChanged), null, null, 0);
-        _ = connect_sig(created_view, "notify::uri", @ptrCast(&onNotifyUri), null, null, 0);
-        _ = connect_sig(created_view, "notify::title", @ptrCast(&onNotifyTitle), null, null, 0);
+        signal_handler_ids[0] = connect_sig(created_view, "web-process-terminated", @ptrCast(&onWebProcessTerminated), null, null, 0);
+        signal_handler_ids[1] = connect_sig(created_view, "load-failed", @ptrCast(&onLoadFailed), null, null, 0);
+        signal_handler_ids[2] = connect_sig(created_view, "load-changed", @ptrCast(&onLoadChanged), null, null, 0);
+        signal_handler_ids[3] = connect_sig(created_view, "notify::uri", @ptrCast(&onNotifyUri), null, null, 0);
+        signal_handler_ids[4] = connect_sig(created_view, "notify::title", @ptrCast(&onNotifyTitle), null, null, 0);
         std.debug.print("[ZAWRA-WPE] Connected process lifecycle & load observability signals\n", .{});
     }
 
@@ -531,9 +596,57 @@ pub fn init(
         const wl_sub: *wayland.wl_subsurface = @ptrCast(@alignCast(sub));
         wayland.wl_subsurface_set_desync(wl_sub);
     }
+    applyEmptyInputRegion();
 
     initialized = true;
     std.debug.print("[ZAWRA-WPE] WebKit Wayland Subsurface initialized successfully\n", .{});
+}
+
+pub fn deinit() void {
+    if (!initialized and web_view == null and wpe_view == null and wpe_display == null and subsurface == null and child_surface == null) {
+        return;
+    }
+
+    if (wpe_view) |view| {
+        if (syms.wpe_view_unmap) |f| f(view);
+    }
+
+    if (web_view) |wv| {
+        if (syms.g_signal_handler_disconnect) |disconnect_sig| {
+            for (&signal_handler_ids) |*id| {
+                if (id.* != 0) {
+                    disconnect_sig(wv, id.*);
+                    id.* = 0;
+                }
+            }
+        }
+    }
+
+    if (syms.g_object_unref) |unref_fn| {
+        if (web_view) |wv| {
+            unref_fn(wv);
+        }
+        if (wpe_display) |disp| {
+            unref_fn(disp);
+        }
+    }
+
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        if (g_main_context_iteration_fn(null, 0) == 0) break;
+    }
+
+    global_web_view = null;
+    web_view = null;
+    wpe_view = null;
+    wpe_display = null;
+    toplevel = null;
+    subsurface = null;
+    child_surface = null;
+    wl_compositor_handle = null;
+    signal_handler_ids = .{ 0, 0, 0, 0, 0 };
+    initialized = false;
+    syms = .{};
 }
 
 pub fn pumpEvents() void {
@@ -648,6 +761,16 @@ pub fn resize(width: u32, height: u32) void {
     if (syms.wpe_toplevel_resize) |f| {
         f(top, @intCast(width), @intCast(height));
     }
+    applyEmptyInputRegion();
+}
+
+pub fn setFocus(focused: bool) void {
+    const view = wpe_view orelse return;
+    if (focused) {
+        if (syms.wpe_view_focus_in) |f| f(view);
+    } else {
+        if (syms.wpe_view_focus_out) |f| f(view);
+    }
 }
 
 pub fn setSubsurfacePosition(x: i32, y: i32) void {
@@ -675,7 +798,6 @@ pub fn setSubsurfaceVisible(visible: bool) void {
 }
 
 pub fn sendPointer(event_type: u32, local_x: f64, local_y: f64, button: u32, state: u32) void {
-    _ = state;
     const view = wpe_view orelse return;
     const event_fn = syms.wpe_view_event orelse return;
     const unref_fn = syms.wpe_event_unref orelse return;
@@ -693,6 +815,15 @@ pub fn sendPointer(event_type: u32, local_x: f64, local_y: f64, button: u32, sta
             f(2, view, 0, 0, 0, if (button == 0) 1 else button, local_x, local_y, 0)
         else
             null,
+        3 => if (syms.wpe_event_scroll_new) |f| blk: {
+            // `button` carries wl_pointer axis (0 = vertical, 1 = horizontal);
+            // `state` carries wl_fixed_t (24.8 signed fixed point). WPE negates Wayland axis deltas.
+            const fixed_val: i32 = @bitCast(state);
+            const delta: f64 = -@as(f64, @floatFromInt(fixed_val)) / 256.0;
+            const delta_x: f64 = if (button == 1) delta else 0.0;
+            const delta_y: f64 = if (button == 0) delta else 0.0;
+            break :blk f(view, 0, 0, 0, delta_x, delta_y, 1, 0, local_x, local_y);
+        } else null,
         else => null,
     };
 
@@ -700,6 +831,30 @@ pub fn sendPointer(event_type: u32, local_x: f64, local_y: f64, button: u32, sta
         event_fn(view, e);
         unref_fn(e);
     }
+}
+
+pub fn sendScroll(local_x: f64, local_y: f64, delta_x: f64, delta_y: f64, source: u32, time_ms: u32, is_stop: bool) void {
+    const view = wpe_view orelse return;
+    const event_fn = syms.wpe_view_event orelse return;
+    const unref_fn = syms.wpe_event_unref orelse return;
+    const scroll_new_fn = syms.wpe_event_scroll_new orelse return;
+
+    // `precise_deltas = 1` for Wayland wl_fixed_t pixel deltas; `is_stop = 1` triggers
+    // WebKit kinetic/momentum coasting when `source == WPE_INPUT_SOURCE_TOUCHPAD` (4).
+    const ev = scroll_new_fn(
+        view,
+        source,
+        time_ms,
+        0,
+        delta_x,
+        delta_y,
+        1,
+        if (is_stop) 1 else 0,
+        local_x,
+        local_y,
+    ) orelse return;
+    event_fn(view, ev);
+    unref_fn(ev);
 }
 
 pub fn evdevToKeysym(key: u32, shift: bool) u32 {

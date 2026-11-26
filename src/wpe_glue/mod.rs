@@ -55,7 +55,7 @@
 //! int32_t Zawra_History_Put(...);
 //! int32_t Zawra_Storage_Stats(ZawraStorageStats *stats);
 //! int32_t Zawra_Storage_Wipe(void);
-//! void    Zawra_Free_Buffer(uint8_t *ptr, size_t len);
+//! void    Z_Free_Buffer(uint8_t *ptr, size_t len);
 //! ```
 //!
 //! ### JavaScriptCore Zero-Copy

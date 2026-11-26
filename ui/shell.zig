@@ -161,28 +161,72 @@ const LoopTelemetry = struct {
 };
 
 var global_shell_state: ?*state_mod.ShellState = null;
+var pointer_captured_by_web: bool = false;
 
 fn onPointerEvent(event_type: u32, x: f32, y: f32, button: u32, state: u32) callconv(.c) void {
     if (global_shell_state) |shell| {
-        // Event types: 0 = motion, 1 = button down, 2 = button up, 3 = axis/scroll
-        if (event_type == 0) {
-            shell.handleMouseMove(x, y);
-        } else if (event_type == 1) {
-            shell.handleMouseDown(x, y);
-        } else if (event_type == 2) {
-            shell.handleMouseUp(x, y);
-        }
-
-        // Viewport relative event forwarding to WPE
         const vp = shell.layout.viewport_rect;
-        if (vp.contains(x, y)) {
-            const active_tab = shell.getActiveTabConst();
-            const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
-            if (!is_internal and !shell.history_open) {
+        const active_tab = shell.getActiveTabConst();
+        const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
+        const web_active = vp.contains(x, y) and !is_internal and !shell.history_open;
+
+        // Event types: 0 = motion, 1 = button down, 2 = button up, 3 = axis/scroll
+        if (event_type == 1) {
+            if (web_active) {
+                pointer_captured_by_web = true;
+                wpe.setFocus(true);
+                const local_x: f64 = @floatCast(x - vp.x);
+                const local_y: f64 = @floatCast(y - vp.y);
+                wpe.sendPointer(event_type, local_x, local_y, button, state);
+            } else {
+                pointer_captured_by_web = false;
+                shell.handleMouseDown(x, y);
+                if (shell.focus != .none) {
+                    wpe.setFocus(false);
+                }
+            }
+        } else if (event_type == 0) {
+            if (pointer_captured_by_web) {
+                const local_x: f64 = @floatCast(x - vp.x);
+                const local_y: f64 = @floatCast(y - vp.y);
+                wpe.sendPointer(event_type, local_x, local_y, button, state);
+            } else if (web_active) {
+                shell.handleMouseMove(-1.0, -1.0);
+                const local_x: f64 = @floatCast(x - vp.x);
+                const local_y: f64 = @floatCast(y - vp.y);
+                wpe.sendPointer(event_type, local_x, local_y, button, state);
+            } else {
+                shell.handleMouseMove(x, y);
+            }
+        } else if (event_type == 2) {
+            if (pointer_captured_by_web) {
+                const local_x: f64 = @floatCast(x - vp.x);
+                const local_y: f64 = @floatCast(y - vp.y);
+                wpe.sendPointer(event_type, local_x, local_y, button, state);
+                pointer_captured_by_web = false;
+            } else {
+                shell.handleMouseUp(x, y);
+            }
+        } else if (event_type == 3) {
+            if (web_active) {
                 const local_x: f64 = @floatCast(x - vp.x);
                 const local_y: f64 = @floatCast(y - vp.y);
                 wpe.sendPointer(event_type, local_x, local_y, button, state);
             }
+        }
+    }
+}
+
+fn onScrollEvent(x: f32, y: f32, delta_x: f64, delta_y: f64, source: u32, time_ms: u32, is_stop: u32) callconv(.c) void {
+    if (global_shell_state) |shell| {
+        const vp = shell.layout.viewport_rect;
+        const active_tab = shell.getActiveTabConst();
+        const is_internal = if (active_tab) |tab| state_mod.isInternalPage(tab.getUrl()) else true;
+        const web_active = vp.contains(x, y) and !is_internal and !shell.history_open;
+        if (web_active) {
+            const local_x: f64 = @floatCast(x - vp.x);
+            const local_y: f64 = @floatCast(y - vp.y);
+            wpe.sendScroll(local_x, local_y, delta_x, delta_y, source, time_ms, is_stop != 0);
         }
     }
 }
@@ -238,13 +282,19 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
         return error.GraphicsInitFailed;
     }
 
+    // Symmetric ownership & explicit LIFO defer teardown order:
+    // 1. wpe.deinit() runs first (unmaps/unrefs WPE WebView & display while surface/wl_display are alive)
+    // 2. ZG_DestroySurface(surface) runs second (destroys Vulkan surface/swapchain before window)
+    // 3. ZG_DestroyWindow(win) runs last (destroys Wayland window/wl_display)
     const window = if (!headless) zgraphics.ZG_CreateWindow(width, height) else null;
     defer if (window) |win| zgraphics.ZG_DestroyWindow(win);
+
     const surface = zgraphics.ZG_CreateSurface(window, width, height) orelse {
         std.debug.print("[ZAWRA-SHELL] ERROR: Failed to create graphics surface\n", .{});
         return error.SurfaceCreationFailed;
     };
     defer zgraphics.ZG_DestroySurface(surface);
+    defer wpe.deinit();
 
     var shell_state = try state_mod.ShellState.init(allocator, width, height);
     defer shell_state.deinit();
@@ -256,11 +306,13 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     global_shell_state = &shell_state;
     renderer_mod.setGlobalUIRenderer(&ui_renderer);
     zgraphics.ZG_SetPointerCallback(&onPointerEvent);
+    zgraphics.ZG_SetScrollCallback(&onScrollEvent);
     zgraphics.ZG_SetKeyboardCallback(&onKeyboardEvent);
     wpe.setMetadataCallback(&onPageMetadataChanged);
     defer {
         wpe.setMetadataCallback(null);
         zgraphics.ZG_SetPointerCallback(null);
+        zgraphics.ZG_SetScrollCallback(null);
         zgraphics.ZG_SetKeyboardCallback(null);
         renderer_mod.setGlobalUIRenderer(null);
         global_shell_state = null;
@@ -274,11 +326,12 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
         const wl_disp = zgraphics.ZG_GetWaylandDisplay(win);
         const wl_surf = zgraphics.ZG_GetWaylandSurface(win);
         const wl_subcomp = zgraphics.ZG_GetWaylandSubcompositor(win);
+        const wl_comp = zgraphics.ZG_GetWaylandCompositor(win);
         const vp_w: i32 = if (width > 260) @intCast(width - 260) else 100;
         const vp_h: i32 = @intCast(height);
-        std.debug.print("[ZAWRA-SHELL] Wayland handles: disp={?*anyopaque}, surf={?*anyopaque}, subcomp={?*anyopaque}\n", .{ wl_disp, wl_surf, wl_subcomp });
+        std.debug.print("[ZAWRA-SHELL] Wayland handles: disp={?*anyopaque}, surf={?*anyopaque}, subcomp={?*anyopaque}, comp={?*anyopaque}\n", .{ wl_disp, wl_surf, wl_subcomp, wl_comp });
         std.debug.print("[ZAWRA-SHELL] Initializing WebKit Wayland Subsurface ({}, {}, {}x{})...\n", .{ sub_x, sub_y, vp_w, vp_h });
-        wpe.init(wl_disp, wl_surf, wl_subcomp, sub_x, sub_y, vp_w, vp_h) catch |err| {
+        wpe.init(wl_disp, wl_surf, wl_subcomp, wl_comp, sub_x, sub_y, vp_w, vp_h) catch |err| {
             std.debug.print("[ZAWRA-SHELL] WPE init failed: {}\n", .{err});
         };
         wpe.setSubsurfaceVisible(!initial_is_internal);

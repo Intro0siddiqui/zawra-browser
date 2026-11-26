@@ -502,6 +502,7 @@ pub fn init(
         .g_signal_connect_data = lib.lookup(*const fn (?*anyopaque, [*:0]const u8, ?*const anyopaque, ?*anyopaque, ?*anyopaque, c_int) callconv(.c) c_ulong, "g_signal_connect_data"),
         .g_signal_handler_disconnect = sig_disconnect_fn,
         .webkit_web_view_get_settings = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_web_view_get_settings"),
+        .webkit_settings_set_user_agent = lib.lookup(*const fn (?*anyopaque, [*:0]const u8) callconv(.c) void, "webkit_settings_set_user_agent"),
         .webkit_settings_set_enable_developer_extras = lib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "webkit_settings_set_enable_developer_extras"),
         .webkit_web_view_get_uri = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_uri"),
         .webkit_web_view_get_title = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?[*:0]const u8, "webkit_web_view_get_title"),
@@ -553,6 +554,9 @@ pub fn init(
 
     if (syms.webkit_web_view_get_settings) |get_settings_fn| {
         if (get_settings_fn(created_view)) |settings| {
+            if (syms.webkit_settings_set_user_agent) |set_ua_fn| {
+                set_ua_fn(settings, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36");
+            }
             if (syms.webkit_settings_set_enable_developer_extras) |set_dev_extras_fn| {
                 set_dev_extras_fn(settings, 1);
             }

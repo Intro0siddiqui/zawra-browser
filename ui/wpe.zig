@@ -35,9 +35,26 @@ fn mock_Zawra_Import_Cookies(_: [*:0]const u8) callconv(.c) c_int {
     return 0;
 }
 
+extern "c" fn Zawra_Sieve_GetCosmeticCss(url: [*:0]const u8) callconv(.c) ?[*:0]u8;
+extern "c" fn Zawra_Sieve_GetInjectedScript(url: [*:0]const u8) callconv(.c) ?[*:0]u8;
+extern "c" fn Zawra_Sieve_FreeString(ptr: ?[*:0]u8) callconv(.c) void;
+
+fn mock_Zawra_Sieve_GetCosmeticCss(_: [*:0]const u8) callconv(.c) ?[*:0]u8 {
+    return null;
+}
+
+fn mock_Zawra_Sieve_GetInjectedScript(_: [*:0]const u8) callconv(.c) ?[*:0]u8 {
+    return null;
+}
+
+fn mock_Zawra_Sieve_FreeString(_: ?[*:0]u8) callconv(.c) void {}
+
 const history_record_fn = if (builtin.is_test) mock_Zawra_History_Record else Zawra_History_Record;
 const register_cookie_inserter_fn = if (builtin.is_test) mock_Zawra_Register_WebKit_Cookie_Inserter else Zawra_Register_WebKit_Cookie_Inserter;
 const import_cookies_fn = if (builtin.is_test) mock_Zawra_Import_Cookies else Zawra_Import_Cookies;
+const sieve_get_cosmetic_css_fn = if (builtin.is_test) mock_Zawra_Sieve_GetCosmeticCss else Zawra_Sieve_GetCosmeticCss;
+const sieve_get_injected_script_fn = if (builtin.is_test) mock_Zawra_Sieve_GetInjectedScript else Zawra_Sieve_GetInjectedScript;
+const sieve_free_string_fn = if (builtin.is_test) mock_Zawra_Sieve_FreeString else Zawra_Sieve_FreeString;
 
 const GObjectNewFn = *const fn (usize, [*:0]const u8, ...) callconv(.c) ?*anyopaque;
 
@@ -96,6 +113,15 @@ const WpeSymbols = struct {
     soup_cookie_set_secure: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
     soup_cookie_set_http_only: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
     soup_cookie_free: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_web_view_get_user_content_manager: ?*const fn (?*anyopaque) callconv(.c) ?*anyopaque = null,
+    webkit_user_content_manager_remove_all_scripts: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_user_content_manager_remove_all_style_sheets: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_user_script_new: ?*const fn ([*:0]const u8, c_int, c_int, ?*const ?[*:0]const u8, ?*const ?[*:0]const u8) callconv(.c) ?*anyopaque = null,
+    webkit_user_content_manager_add_script: ?*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void = null,
+    webkit_user_script_unref: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    webkit_user_style_sheet_new: ?*const fn ([*:0]const u8, c_int, c_int, ?*const ?[*:0]const u8, ?*const ?[*:0]const u8) callconv(.c) ?*anyopaque = null,
+    webkit_user_content_manager_add_style_sheet: ?*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void = null,
+    webkit_user_style_sheet_unref: ?*const fn (?*anyopaque) callconv(.c) void = null,
 };
 
 var soup_lib: ?std.DynLib = null;
@@ -351,6 +377,16 @@ fn onLoadChanged(
     };
     std.debug.print("[ZAWRA-LOAD] Page load state: {s} ({d})\n", .{ event_name, load_event });
 
+    if (load_event == 0 or load_event == 1) {
+        if (web_view) |view| {
+            if (syms.webkit_web_view_get_uri) |get_uri_fn| {
+                if (get_uri_fn(view)) |u| {
+                    applySieveForUrl(std.mem.span(u));
+                }
+            }
+        }
+    }
+
     if (load_event == 0 or load_event == 2 or load_event == 3) {
         const now_ns = getMonotonicNs();
         if (load_event == 0 and nav_t0_ns == 0) {
@@ -539,6 +575,15 @@ pub fn init(
         .webkit_network_session_get_default = lib.lookup(*const fn () callconv(.c) ?*anyopaque, "webkit_network_session_get_default"),
         .webkit_network_session_get_cookie_manager = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_network_session_get_cookie_manager"),
         .webkit_cookie_manager_add_cookie = lib.lookup(*const fn (?*anyopaque, ?*anyopaque, ?*anyopaque, ?*const anyopaque, ?*anyopaque) callconv(.c) void, "webkit_cookie_manager_add_cookie"),
+        .webkit_web_view_get_user_content_manager = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_web_view_get_user_content_manager"),
+        .webkit_user_content_manager_remove_all_scripts = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_user_content_manager_remove_all_scripts"),
+        .webkit_user_content_manager_remove_all_style_sheets = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_user_content_manager_remove_all_style_sheets"),
+        .webkit_user_script_new = lib.lookup(*const fn ([*:0]const u8, c_int, c_int, ?*const ?[*:0]const u8, ?*const ?[*:0]const u8) callconv(.c) ?*anyopaque, "webkit_user_script_new"),
+        .webkit_user_content_manager_add_script = lib.lookup(*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void, "webkit_user_content_manager_add_script"),
+        .webkit_user_script_unref = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_user_script_unref"),
+        .webkit_user_style_sheet_new = lib.lookup(*const fn ([*:0]const u8, c_int, c_int, ?*const ?[*:0]const u8, ?*const ?[*:0]const u8) callconv(.c) ?*anyopaque, "webkit_user_style_sheet_new"),
+        .webkit_user_content_manager_add_style_sheet = lib.lookup(*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void, "webkit_user_content_manager_add_style_sheet"),
+        .webkit_user_style_sheet_unref = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_user_style_sheet_unref"),
     };
 
     if (soup_lib == null) {
@@ -757,6 +802,73 @@ pub fn detachSubsurfaceBuffer() void {
     }
 }
 
+const WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES: c_int = 0;
+const WEBKIT_USER_CONTENT_INJECT_TOP_FRAME: c_int = 1;
+const WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START: c_int = 0;
+const WEBKIT_USER_STYLE_LEVEL_USER: c_int = 0;
+
+/// Queries Zawra Sieve for per-page scriptlets (`document_start`, top-frame) and
+/// cosmetic element-hiding CSS, replacing any previously registered entries on the
+/// active `WebKitUserContentManager`.
+pub fn applySieveForUrl(url: []const u8) void {
+    if (url.len == 0 or std.mem.startsWith(u8, url, "zawra://") or std.mem.startsWith(u8, url, "about:")) {
+        return;
+    }
+    const view = web_view orelse return;
+    const get_ucm = syms.webkit_web_view_get_user_content_manager orelse return;
+    const ucm = get_ucm(view) orelse return;
+
+    var url_buf: [2048:0]u8 = undefined;
+    if (url.len >= url_buf.len) {
+        return;
+    }
+    @memcpy(url_buf[0..url.len], url);
+    url_buf[url.len] = 0;
+
+    if (syms.webkit_user_content_manager_remove_all_scripts) |remove_scripts| {
+        remove_scripts(ucm);
+    }
+    if (syms.webkit_user_content_manager_remove_all_style_sheets) |remove_sheets| {
+        remove_sheets(ucm);
+    }
+
+    if (sieve_get_injected_script_fn(&url_buf)) |script_ptr| {
+        defer sieve_free_string_fn(script_ptr);
+        if (syms.webkit_user_script_new) |script_new| {
+            if (syms.webkit_user_content_manager_add_script) |add_script| {
+                if (script_new(
+                    script_ptr,
+                    WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+                    WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
+                    null,
+                    null,
+                )) |user_script| {
+                    defer if (syms.webkit_user_script_unref) |unref_script| unref_script(user_script);
+                    add_script(ucm, user_script);
+                }
+            }
+        }
+    }
+
+    if (sieve_get_cosmetic_css_fn(&url_buf)) |css_ptr| {
+        defer sieve_free_string_fn(css_ptr);
+        if (syms.webkit_user_style_sheet_new) |sheet_new| {
+            if (syms.webkit_user_content_manager_add_style_sheet) |add_sheet| {
+                if (sheet_new(
+                    css_ptr,
+                    WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+                    WEBKIT_USER_STYLE_LEVEL_USER,
+                    null,
+                    null,
+                )) |user_sheet| {
+                    defer if (syms.webkit_user_style_sheet_unref) |unref_sheet| unref_sheet(user_sheet);
+                    add_sheet(ucm, user_sheet);
+                }
+            }
+        }
+    }
+}
+
 pub fn loadUrl(url: []const u8) void {
     if (std.mem.startsWith(u8, url, "zawra://") or std.mem.startsWith(u8, url, "about:")) {
         return;
@@ -771,6 +883,8 @@ pub fn loadUrl(url: []const u8) void {
     }
     @memcpy(buf[0..url.len], url);
     buf[url.len] = 0;
+
+    applySieveForUrl(url);
 
     nav_t0_ns = getMonotonicNs();
     nav_started_ms = 0.0;

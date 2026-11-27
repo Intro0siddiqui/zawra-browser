@@ -23,7 +23,9 @@ dirs    = "5.0"   # home_dir() for profile resolution
 lean-net = { package = "z-net-engine", path = "dependencies/z-net/engine" }
 browserdb = { package = "zawradb", path = "dependencies/Browser-db/bindings" }
 ring = "0.17.14"
-adblock = { version = "0.13.6", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
+base64 = "0.23"
+serde_json = "1.0"
+adblock = { version = "0.13.6", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling", "resource-assembler"] }
 
 [lib]
 name = "zawra_browser"

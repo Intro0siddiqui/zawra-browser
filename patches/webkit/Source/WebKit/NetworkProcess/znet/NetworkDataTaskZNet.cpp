@@ -63,6 +63,15 @@ int32_t net_http_execute_streaming(
 int32_t net_cookie_jar_store(NetEngineHandle engine, uint64_t session_id, const char* url, const char* set_cookie_str);
 int32_t net_cookie_jar_get_header(NetEngineHandle engine, uint64_t session_id, const char* url, char* out_buf, size_t max_len);
 void net_cookie_jar_clear(NetEngineHandle engine, uint64_t session_id);
+
+// Zawra Sieve native adblock check (linked via libzawra_browser.a in PlatformWPE.cmake).
+// Returns: 0 = Allow, 1 = Block, 2 = Redirect.
+int32_t Zawra_Sieve_CheckRequest(
+    const char* url,
+    const char* source_url,
+    const char* request_type,
+    const char* http_method
+);
 }
 
 namespace WebKit {
@@ -87,6 +96,61 @@ struct StreamContext : std::enable_shared_from_this<StreamContext> {
     ResourceRequest redirectRequest;
     bool redirectRejected { false };
 };
+
+static const char* inferSieveRequestType(const ResourceRequest& request)
+{
+    String secFetchDest;
+    String acceptHeader;
+    for (auto& header : request.httpHeaderFields()) {
+        if (equalLettersIgnoringASCIICase(header.key, "sec-fetch-dest"_s))
+            secFetchDest = header.value;
+        else if (equalLettersIgnoringASCIICase(header.key, "accept"_s))
+            acceptHeader = header.value;
+    }
+
+    if (!secFetchDest.isEmpty()) {
+        if (equalLettersIgnoringASCIICase(secFetchDest, "document"_s))
+            return "document";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "iframe"_s) || equalLettersIgnoringASCIICase(secFetchDest, "frame"_s))
+            return "subdocument";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "script"_s) || equalLettersIgnoringASCIICase(secFetchDest, "worker"_s))
+            return "script";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "style"_s))
+            return "stylesheet";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "image"_s))
+            return "image";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "font"_s))
+            return "font";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "video"_s) || equalLettersIgnoringASCIICase(secFetchDest, "audio"_s))
+            return "media";
+        if (equalLettersIgnoringASCIICase(secFetchDest, "empty"_s))
+            return "xmlhttprequest";
+    }
+
+    if (!acceptHeader.isEmpty()) {
+        if (acceptHeader.contains("text/html"_s))
+            return "document";
+        if (acceptHeader.contains("text/css"_s))
+            return "stylesheet";
+        if (acceptHeader.contains("image/"_s))
+            return "image";
+    }
+
+    StringView path = request.url().path();
+    if (path.endsWithIgnoringASCIICase(".js"_s) || path.endsWithIgnoringASCIICase(".mjs"_s))
+        return "script";
+    if (path.endsWithIgnoringASCIICase(".css"_s))
+        return "stylesheet";
+    if (path.endsWithIgnoringASCIICase(".png"_s) || path.endsWithIgnoringASCIICase(".jpg"_s)
+        || path.endsWithIgnoringASCIICase(".jpeg"_s) || path.endsWithIgnoringASCIICase(".gif"_s)
+        || path.endsWithIgnoringASCIICase(".webp"_s) || path.endsWithIgnoringASCIICase(".svg"_s))
+        return "image";
+    if (path.endsWithIgnoringASCIICase(".woff2"_s) || path.endsWithIgnoringASCIICase(".woff"_s)
+        || path.endsWithIgnoringASCIICase(".ttf"_s))
+        return "font";
+
+    return "other";
+}
 
 static NetEngineHandle sharedNetEngine()
 {
@@ -219,6 +283,34 @@ void NetworkDataTaskZNet::startFetch()
     while (!m_isCancelled.load() && m_state.load() != State::Canceling) {
         URL url = m_firstRequest.url();
         WTFLogAlways("NetworkDataTaskZNet::startFetch() fetching %s", url.string().utf8().data());
+
+        // 0. Zawra Sieve network request filter (runs before z-net socket/stream dispatch)
+        {
+            CString sieveUrl = url.string().utf8();
+            CString sieveSourceUrl = m_firstRequest.firstPartyForCookies().string().utf8();
+            CString sieveMethod = m_firstRequest.httpMethod().utf8();
+            const char* sieveReqType = inferSieveRequestType(m_firstRequest);
+
+            int32_t sieveDecision = Zawra_Sieve_CheckRequest(
+                sieveUrl.data(),
+                sieveSourceUrl.data(),
+                sieveReqType,
+                sieveMethod.data()
+            );
+            if (sieveDecision == 1) {
+                WTFLogAlways("NetworkDataTaskZNet: [ZAWRA-SIEVE] Blocked %s (type=%s, method=%s, source=%s)",
+                    sieveUrl.data(), sieveReqType, sieveMethod.data(), sieveSourceUrl.data());
+                m_state.store(State::Completed);
+                RunLoop::mainSingleton().dispatch([protectedTask = Ref { *this }, blockedUrl = url]() mutable {
+                    if (protectedTask->isCancelled())
+                        return;
+                    protectedTask->setCompleted();
+                    if (RefPtr client = protectedTask->client())
+                        client->didCompleteWithError(ResourceError(String(), 0, blockedUrl, "Blocked by Zawra Sieve"_s));
+                });
+                break;
+            }
+        }
 
         // 1. Prepare Request Headers
         Vector<CString> headerNames;

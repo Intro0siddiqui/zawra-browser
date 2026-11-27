@@ -71,8 +71,10 @@ pub const DEFAULT_FILTER_RULES: &str = r#"
 ! --- Major Ad Networks & Tracking Exchanges ---
 ||doubleclick.net^
 ||googleads.g.doubleclick.net^
+||googleads.g.doubleclick.net/pagead/id$xhr,redirect=nooptext
 ||ad.doubleclick.net^
 ||static.doubleclick.net^
+||static.doubleclick.net/instream/ad_status.js^$script,xhr,redirect=doubleclick_instream_ad_status.js
 ||pagead2.googlesyndication.com^
 ||googleadservices.com^
 ||googlesyndication.com^
@@ -132,7 +134,11 @@ pub const DEFAULT_FILTER_RULES: &str = r#"
 ||newrelic.com/nr-*.js
 
 ! --- YouTube Scriptlets (document_start) ---
-youtube.com##+js(json-prune, adPlacements playerAds adSlots playerResponse.adPlacements playerResponse.playerAds playerResponse.adSlots)
+youtube.com##+js(json-prune, adPlacements playerAds adSlots auxiliaryUi.messageRenderers.enforcementMessageViewModel playerResponse.adPlacements playerResponse.playerAds playerResponse.adSlots playerResponse.auxiliaryUi.messageRenderers.enforcementMessageViewModel)
+youtube.com##+js(set-constant, google_ad_status, 1)
+youtube.com##+js(set-constant, Object.prototype.adBlocksFound, 0)
+youtube.com##+js(set-constant, Object.prototype.hasAllowedInstreamAd, true)
+youtube.com##+js(set-constant, yt.config_.openPopupConfig.supportedPopups.adBlockMessageViewModel, false)
 youtube.com##+js(set-constant, ytInitialPlayerResponse.adPlacements, undefined)
 youtube.com##+js(set-constant, ytInitialPlayerResponse.playerAds, undefined)
 youtube.com##+js(set-constant, ytInitialPlayerResponse.adSlots, undefined)
@@ -140,6 +146,8 @@ youtube.com##+js(set-constant, playerResponse.adPlacements, undefined)
 youtube.com##+js(set-constant, ytInitialPlayerResponse.auxiliaryUi.messageRenderers.enforcementMessageViewModel, undefined)
 
 ! --- YouTube Cosmetic Ad Containers ---
+youtube.com##ytd-enforcement-message-view-model
+youtube.com##tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)
 youtube.com##.video-ads
 youtube.com##.ytp-ad-module
 youtube.com##.ytp-ad-overlay-container
@@ -224,6 +232,51 @@ const SCRIPTLET_JSON_PRUNE: &str = r#"function jsonPrune(rawPrunePaths = '', raw
             });
         };
     }
+    if (typeof Response !== 'undefined' && Response.prototype && Response.prototype.text) {
+        const origText = Response.prototype.text;
+        Response.prototype.text = function(...args) {
+            return origText.apply(this, args).then(txt => {
+                if (typeof txt !== 'string' || txt.length < 2 || (txt[0] !== '{' && txt[0] !== '[')) {
+                    return txt;
+                }
+                if (txt.indexOf('adPlacements') === -1 && txt.indexOf('playerAds') === -1 && txt.indexOf('adSlots') === -1 && txt.indexOf('enforcementMessageViewModel') === -1) {
+                    return txt;
+                }
+                try {
+                    const parsed = origParse(txt);
+                    pruneObject(parsed);
+                    return JSON.stringify(parsed);
+                } catch (_) {
+                    return txt;
+                }
+            });
+        };
+    }
+    if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) {
+        const respDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText');
+        if (respDesc && respDesc.get) {
+            const origGet = respDesc.get;
+            Object.defineProperty(XMLHttpRequest.prototype, 'responseText', {
+                configurable: true,
+                get() {
+                    const txt = origGet.call(this);
+                    if (typeof txt !== 'string' || txt.length < 2 || (txt[0] !== '{' && txt[0] !== '[')) {
+                        return txt;
+                    }
+                    if (txt.indexOf('adPlacements') === -1 && txt.indexOf('playerAds') === -1 && txt.indexOf('adSlots') === -1 && txt.indexOf('enforcementMessageViewModel') === -1) {
+                        return txt;
+                    }
+                    try {
+                        const parsed = origParse(txt);
+                        pruneObject(parsed);
+                        return JSON.stringify(parsed);
+                    } catch (_) {
+                        return txt;
+                    }
+                }
+            });
+        }
+    }
 }"#;
 
 /// Built-in `set-constant` scriptlet implementation.
@@ -263,16 +316,28 @@ const SCRIPTLET_SET_CONSTANT: &str = r#"function setConstant(chain = '', cValue 
             applyOn(current, idx + 1);
         } else {
             try {
-                Object.defineProperty(owner, prop, {
-                    configurable: true,
-                    get() { return current; },
-                    set(v) {
-                        current = v;
-                        if (v !== null && (typeof v === 'object' || typeof v === 'function')) {
-                            applyOn(v, idx + 1);
-                        }
+                const prevDesc = Object.getOwnPropertyDescriptor(owner, prop);
+                const hooks = (prevDesc && prevDesc.get && prevDesc.get.__zawraHooks) ? prevDesc.get.__zawraHooks : [];
+                hooks.push((v) => {
+                    if (v !== null && (typeof v === 'object' || typeof v === 'function')) {
+                        applyOn(v, idx + 1);
                     }
                 });
+                if (!prevDesc || !prevDesc.get || !prevDesc.get.__zawraHooks) {
+                    let stored = current;
+                    const getter = function() { return stored; };
+                    getter.__zawraHooks = hooks;
+                    Object.defineProperty(owner, prop, {
+                        configurable: true,
+                        get: getter,
+                        set(v) {
+                            stored = v;
+                            for (let i = 0; i < hooks.length; i++) {
+                                hooks[i](v);
+                            }
+                        }
+                    });
+                }
             } catch (_) {}
         }
     };
@@ -323,9 +388,28 @@ const SCRIPTLET_ABORT_ON_PROPERTY_READ: &str = r#"function abortOnPropertyRead(c
 /// Built-in `noopjs` redirect and scriptlet resource.
 const SCRIPTLET_NOOPJS: &str = "/* noopjs */\n(function() {})();";
 
+/// Built-in `doubleclick_instream_ad_status.js` redirect resource (prevents YouTube anti-adblock error).
+const REDIRECT_DOUBLECLICK_AD_STATUS: &str = "window.google_ad_status = 1;\n";
+
 /// Returns the built-in scriptlet and redirect resources bundled with Zawra Sieve.
 pub fn builtin_resources() -> Vec<Resource> {
     vec![
+        Resource {
+            name: "doubleclick_instream_ad_status.js".to_string(),
+            aliases: vec!["doubleclick-instream-ad-status.js".to_string()],
+            kind: ResourceType::Mime(MimeType::ApplicationJavascript),
+            content: BASE64_STANDARD.encode(REDIRECT_DOUBLECLICK_AD_STATUS),
+            dependencies: vec![],
+            permission: PermissionMask::default(),
+        },
+        Resource {
+            name: "nooptext".to_string(),
+            aliases: vec!["noop.txt".to_string()],
+            kind: ResourceType::Mime(MimeType::TextPlain),
+            content: BASE64_STANDARD.encode(""),
+            dependencies: vec![],
+            permission: PermissionMask::default(),
+        },
         Resource {
             name: "json-prune.js".to_string(),
             aliases: vec!["json-prune".to_string()],
@@ -835,6 +919,56 @@ pub extern "C" fn Zawra_Sieve_CheckRequest(
         ShieldDecision::Block { .. } => 1,
         ShieldDecision::Redirect(_) => 2,
     }
+}
+
+/// Evaluates a request and, if it resolves to a `ShieldDecision::Redirect(data_url)`,
+/// returns a heap-allocated NUL-terminated string formatted as `"<mime>\n<body>"`.
+/// Returns `NULL` otherwise. Caller MUST free non-null pointers via `Zawra_Sieve_FreeString`.
+#[unsafe(no_mangle)]
+pub extern "C" fn Zawra_Sieve_GetRedirectPayload(
+    url: *const c_char,
+    source_url: *const c_char,
+    request_type: *const c_char,
+    http_method: *const c_char,
+) -> *mut c_char {
+    let Some(url_str) = (unsafe { cstr_to_str(url) }) else {
+        return ptr::null_mut();
+    };
+    if url_str.is_empty() {
+        return ptr::null_mut();
+    }
+    let source_str = unsafe { cstr_to_str(source_url) }.unwrap_or("");
+    let type_str = unsafe { cstr_to_str(request_type) }.unwrap_or("other");
+    let method_str = unsafe { cstr_to_str(http_method) }.unwrap_or("GET");
+
+    let ShieldDecision::Redirect(data_url) = ZawraSieve::global().check_network_request_with_method(
+        url_str,
+        source_str,
+        type_str,
+        method_str,
+    ) else {
+        return ptr::null_mut();
+    };
+
+    let Some(rest) = data_url.strip_prefix("data:") else {
+        return ptr::null_mut();
+    };
+    let Some((meta, encoded)) = rest.split_once(',') else {
+        return ptr::null_mut();
+    };
+    let mime = meta.strip_suffix(";base64").unwrap_or(meta);
+    let mime = if mime.is_empty() { "text/plain" } else { mime };
+    let decoded = if meta.ends_with(";base64") {
+        match BASE64_STANDARD.decode(encoded) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(_) => return ptr::null_mut(),
+        }
+    } else {
+        encoded.to_string()
+    };
+
+    let payload = format!("{mime}\n{decoded}");
+    CString::new(payload).map_or(ptr::null_mut(), CString::into_raw)
 }
 
 /// Frees a C string previously returned by `Zawra_Sieve_GetCosmeticCss` or

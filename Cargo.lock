@@ -4834,10 +4834,12 @@ name = "zawra-browser"
 version = "0.1.0"
 dependencies = [
  "adblock",
+ "base64 0.23.1",
  "dashmap",
  "dirs",
  "libc",
  "ring 0.17.14",
+ "serde_json",
  "z-net-engine",
  "zawradb",
 ]

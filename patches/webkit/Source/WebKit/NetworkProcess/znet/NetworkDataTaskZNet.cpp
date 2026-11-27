@@ -72,6 +72,13 @@ int32_t Zawra_Sieve_CheckRequest(
     const char* request_type,
     const char* http_method
 );
+char* Zawra_Sieve_GetRedirectPayload(
+    const char* url,
+    const char* source_url,
+    const char* request_type,
+    const char* http_method
+);
+void Zawra_Sieve_FreeString(char* ptr);
 }
 
 namespace WebKit {
@@ -307,6 +314,55 @@ void NetworkDataTaskZNet::startFetch()
                     protectedTask->setCompleted();
                     if (RefPtr client = protectedTask->client())
                         client->didCompleteWithError(ResourceError(String(), 0, blockedUrl, "Blocked by Zawra Sieve"_s));
+                });
+                break;
+            }
+            if (sieveDecision == 2) {
+                char* payloadPtr = Zawra_Sieve_GetRedirectPayload(
+                    sieveUrl.data(),
+                    sieveSourceUrl.data(),
+                    sieveReqType,
+                    sieveMethod.data()
+                );
+                String mimeStr = "text/plain"_s;
+                std::string bodyStr;
+                if (payloadPtr) {
+                    std::string_view sv(payloadPtr);
+                    size_t nl = sv.find('\n');
+                    if (nl != std::string_view::npos) {
+                        mimeStr = String::fromUTF8(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(sv.data()), nl));
+                        bodyStr.assign(sv.substr(nl + 1));
+                    } else {
+                        bodyStr.assign(sv);
+                    }
+                    Zawra_Sieve_FreeString(payloadPtr);
+                }
+                WTFLogAlways("NetworkDataTaskZNet: [ZAWRA-SIEVE] Redirected %s -> %s (%zu bytes)",
+                    sieveUrl.data(), mimeStr.utf8().data(), bodyStr.size());
+                m_state.store(State::Completed);
+                RunLoop::mainSingleton().dispatch([protectedTask = Ref { *this }, redirUrl = url, mimeStr = WTF::move(mimeStr), bodyStr = WTF::move(bodyStr)]() mutable {
+                    if (protectedTask->isCancelled())
+                        return;
+                    ResourceResponse resp;
+                    resp.setURL(WTF::move(redirUrl));
+                    resp.setMimeType(WTF::move(mimeStr));
+                    resp.setExpectedContentLength(static_cast<long long>(bodyStr.size()));
+                    resp.setTextEncodingName("UTF-8"_s);
+                    resp.setHTTPStatusCode(200);
+                    resp.setHTTPStatusText("OK"_s);
+                    auto bodyData = bodyStr.empty()
+                        ? RefPtr<SharedBuffer>()
+                        : RefPtr<SharedBuffer>(SharedBuffer::create(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(bodyStr.data()), bodyStr.size())));
+                    protectedTask->didReceiveResponse(WTF::move(resp), NegotiatedLegacyTLS::No, PrivateRelayed::No, std::nullopt, [protectedTask, bodyData = WTF::move(bodyData)](WebCore::PolicyAction action) mutable {
+                        if (protectedTask->isCancelled())
+                            return;
+                        if (RefPtr client = protectedTask->client()) {
+                            if (action == WebCore::PolicyAction::Use && bodyData && !bodyData->isEmpty())
+                                client->didReceiveData(*bodyData);
+                            protectedTask->setCompleted();
+                            client->didCompleteWithError(ResourceError());
+                        }
+                    });
                 });
                 break;
             }

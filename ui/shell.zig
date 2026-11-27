@@ -347,6 +347,9 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
     const is_limited = (max_frames != null);
     const limit = max_frames orelse 0;
     var current_hide_subsurface: bool = initial_is_internal;
+    var current_vp_x: i32 = @intFromFloat(shell_state.layout.viewport_rect.x);
+    var current_vp_w: u32 = @intFromFloat(shell_state.layout.viewport_rect.w);
+    var current_vp_h: u32 = @intFromFloat(shell_state.layout.viewport_rect.h);
     var telemetry = LoopTelemetry.init(getMonotonicNs());
 
     while (!is_limited or frame_count < limit) : (frame_count += 1) {
@@ -375,12 +378,22 @@ pub fn runShell(width: u32, height: u32, headless: bool, max_frames: ?usize, tar
                 if (new_w > 0 and new_h > 0 and (new_w != shell_state.window_width or new_h != shell_state.window_height)) {
                     shell_state.setWindowSize(new_w, new_h);
                     zgraphics.ZG_RecreateSwapchain(surface, new_w, new_h);
-                    if (new_w > 260) {
-                        wpe.resize(new_w - 260, new_h);
-                    }
                     std.debug.print("[ZAWRA-SHELL] Window resized to {}x{}\n", .{ new_w, new_h });
                 }
             }
+        }
+
+        // Keep WPE subsurface position and size synchronized with viewport_rect (window resize + sidebar collapse)
+        const vp_rect = shell_state.layout.viewport_rect;
+        const vp_x: i32 = @intFromFloat(vp_rect.x);
+        const vp_w: u32 = if (vp_rect.w > 0) @intFromFloat(vp_rect.w) else 1;
+        const vp_h: u32 = if (vp_rect.h > 0) @intFromFloat(vp_rect.h) else 1;
+        if (vp_x != current_vp_x or vp_w != current_vp_w or vp_h != current_vp_h) {
+            current_vp_x = vp_x;
+            current_vp_w = vp_w;
+            current_vp_h = vp_h;
+            wpe.setSubsurfacePosition(vp_x, 0);
+            wpe.resize(vp_w, vp_h);
         }
 
         // 3. Keep WebKit subsurface visibility synchronized with internal pages & drawer visibility

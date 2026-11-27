@@ -34,3 +34,7 @@ CMakeCache.txt
 CMakeFiles/
 zcode-bin/
 /zawra-shell
+
+# Local secrets / diagnostics credentials
+.env
+.env.*

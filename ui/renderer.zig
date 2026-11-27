@@ -765,6 +765,13 @@ pub const UIRenderer = struct {
             state_mod.Color.border_subtle,
         );
 
+        if (state.sidebar_collapsed) {
+            const crect = state.layout.collapse_btn_rect;
+            const c_bg = if (state.collapse_btn_hovered) state_mod.Color.hover_bg else state_mod.Color.bg_dark;
+            const c_border = if (state.collapse_btn_hovered) state_mod.Color.border_pill else state_mod.Color.border_subtle;
+            self.drawRoundedRect(crect, 4.0, c_bg, 1.0, c_border);
+            self.drawText(">", crect.x + 9.0, crect.y + 6.0, if (state.collapse_btn_hovered) state_mod.Color.text_gold else state_mod.Color.text_muted, 0.85);
+        } else {
         // ── 3. Window Control Dots (12px diameter) ──────────────────────────────────
         const dot_r = 6.0;
         self.drawRoundedRect(state.layout.dot_close_rect, dot_r, state_mod.Color.dot_close, 0.0, .{ 0, 0, 0, 0 });
@@ -922,8 +929,11 @@ pub const UIRenderer = struct {
 
         // Collapse button (Ctrl+B)
         const crect = state.layout.collapse_btn_rect;
-        self.drawRoundedRect(crect, 4.0, state_mod.Color.bg_dark, 1.0, state_mod.Color.border_subtle);
-        self.drawText("Collapse", crect.x + 8.0, crect.y + 6.0, state_mod.Color.text_muted, 0.75);
+        const c_bg = if (state.collapse_btn_hovered) state_mod.Color.hover_bg else state_mod.Color.bg_dark;
+        const c_border = if (state.collapse_btn_hovered) state_mod.Color.border_pill else state_mod.Color.border_subtle;
+        self.drawRoundedRect(crect, 4.0, c_bg, 1.0, c_border);
+        self.drawText("Collapse", crect.x + 8.0, crect.y + 6.0, if (state.collapse_btn_hovered) state_mod.Color.text_gold else state_mod.Color.text_muted, 0.75);
+        }
 
         // ── 10. Slide-out Glassmorphic History Drawer ───────────────────────────────
         if (state.history_open) {

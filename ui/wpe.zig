@@ -22,11 +22,22 @@ const g_main_context_iteration_fn = if (builtin.is_test) mock_g_main_context_ite
 
 extern "c" fn Zawra_History_Record(url: [*:0]const u8, title: [*:0]const u8) callconv(.c) i32;
 
+const WebKitCookieInserterFn = *const fn ([*:0]const u8, [*:0]const u8, [*:0]const u8, [*:0]const u8, i64, c_int, c_int) callconv(.c) void;
+extern "c" fn Zawra_Register_WebKit_Cookie_Inserter(cb: ?WebKitCookieInserterFn) callconv(.c) void;
+extern "c" fn Zawra_Import_Cookies(source: [*:0]const u8) callconv(.c) c_int;
+
 fn mock_Zawra_History_Record(_: [*:0]const u8, _: [*:0]const u8) callconv(.c) i32 {
     return 0;
 }
 
+fn mock_Zawra_Register_WebKit_Cookie_Inserter(_: ?WebKitCookieInserterFn) callconv(.c) void {}
+fn mock_Zawra_Import_Cookies(_: [*:0]const u8) callconv(.c) c_int {
+    return 0;
+}
+
 const history_record_fn = if (builtin.is_test) mock_Zawra_History_Record else Zawra_History_Record;
+const register_cookie_inserter_fn = if (builtin.is_test) mock_Zawra_Register_WebKit_Cookie_Inserter else Zawra_Register_WebKit_Cookie_Inserter;
+const import_cookies_fn = if (builtin.is_test) mock_Zawra_Import_Cookies else Zawra_Import_Cookies;
 
 const GObjectNewFn = *const fn (usize, [*:0]const u8, ...) callconv(.c) ?*anyopaque;
 
@@ -38,6 +49,8 @@ const WpeSymbols = struct {
     wpe_toplevel_wayland_get_wl_surface: ?*const fn (?*anyopaque) callconv(.c) ?*anyopaque = null,
     wpe_display_wayland_new: ?*const fn () callconv(.c) ?*anyopaque = null,
     wpe_display_connect: ?*const fn (?*anyopaque, ?*?*anyopaque) callconv(.c) c_int = null,
+    wpe_display_get_settings: ?*const fn (?*anyopaque) callconv(.c) ?*anyopaque = null,
+    wpe_settings_set_boolean: ?*const fn (?*anyopaque, [*:0]const u8, c_int, u32, ?*?*anyopaque) callconv(.c) c_int = null,
     webkit_web_view_get_type: ?*const fn () callconv(.c) usize = null,
     g_object_new: ?GObjectNewFn = null,
     webkit_web_view_get_wpe_view: ?*const fn (?*anyopaque) callconv(.c) ?*anyopaque = null,
@@ -76,7 +89,16 @@ const WpeSymbols = struct {
     webkit_web_view_go_forward: ?*const fn (?*anyopaque) callconv(.c) void = null,
     webkit_web_view_can_go_back: ?*const fn (?*anyopaque) callconv(.c) c_int = null,
     webkit_web_view_can_go_forward: ?*const fn (?*anyopaque) callconv(.c) c_int = null,
+    webkit_network_session_get_default: ?*const fn () callconv(.c) ?*anyopaque = null,
+    webkit_network_session_get_cookie_manager: ?*const fn (?*anyopaque) callconv(.c) ?*anyopaque = null,
+    webkit_cookie_manager_add_cookie: ?*const fn (?*anyopaque, ?*anyopaque, ?*anyopaque, ?*const anyopaque, ?*anyopaque) callconv(.c) void = null,
+    soup_cookie_new: ?*const fn ([*:0]const u8, [*:0]const u8, [*:0]const u8, [*:0]const u8, i64) callconv(.c) ?*anyopaque = null,
+    soup_cookie_set_secure: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
+    soup_cookie_set_http_only: ?*const fn (?*anyopaque, c_int) callconv(.c) void = null,
+    soup_cookie_free: ?*const fn (?*anyopaque) callconv(.c) void = null,
 };
+
+var soup_lib: ?std.DynLib = null;
 
 // Intentionally kept loaded for the process lifetime: GLib/GType registers static
 // types and class structs that cannot be safely unloaded via dlclose().
@@ -481,6 +503,8 @@ pub fn init(
         .wpe_toplevel_wayland_get_wl_surface = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "wpe_toplevel_wayland_get_wl_surface"),
         .wpe_display_wayland_new = lib.lookup(*const fn () callconv(.c) ?*anyopaque, "wpe_display_wayland_new"),
         .wpe_display_connect = lib.lookup(*const fn (?*anyopaque, ?*?*anyopaque) callconv(.c) c_int, "wpe_display_connect"),
+        .wpe_display_get_settings = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "wpe_display_get_settings"),
+        .wpe_settings_set_boolean = lib.lookup(*const fn (?*anyopaque, [*:0]const u8, c_int, u32, ?*?*anyopaque) callconv(.c) c_int, "wpe_settings_set_boolean"),
         .webkit_web_view_get_type = lib.lookup(*const fn () callconv(.c) usize, "webkit_web_view_get_type"),
         .g_object_new = lib.lookup(GObjectNewFn, "g_object_new"),
         .webkit_web_view_get_wpe_view = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_web_view_get_wpe_view"),
@@ -512,7 +536,25 @@ pub fn init(
         .webkit_web_view_go_forward = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "webkit_web_view_go_forward"),
         .webkit_web_view_can_go_back = lib.lookup(*const fn (?*anyopaque) callconv(.c) c_int, "webkit_web_view_can_go_back"),
         .webkit_web_view_can_go_forward = lib.lookup(*const fn (?*anyopaque) callconv(.c) c_int, "webkit_web_view_can_go_forward"),
+        .webkit_network_session_get_default = lib.lookup(*const fn () callconv(.c) ?*anyopaque, "webkit_network_session_get_default"),
+        .webkit_network_session_get_cookie_manager = lib.lookup(*const fn (?*anyopaque) callconv(.c) ?*anyopaque, "webkit_network_session_get_cookie_manager"),
+        .webkit_cookie_manager_add_cookie = lib.lookup(*const fn (?*anyopaque, ?*anyopaque, ?*anyopaque, ?*const anyopaque, ?*anyopaque) callconv(.c) void, "webkit_cookie_manager_add_cookie"),
     };
+
+    if (soup_lib == null) {
+        soup_lib = std.DynLib.open("libsoup-3.0.so.0") catch null;
+    }
+    if (soup_lib) |*slib| {
+        syms.soup_cookie_new = slib.lookup(*const fn ([*:0]const u8, [*:0]const u8, [*:0]const u8, [*:0]const u8, i64) callconv(.c) ?*anyopaque, "soup_cookie_new");
+        syms.soup_cookie_set_secure = slib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "soup_cookie_set_secure");
+        syms.soup_cookie_set_http_only = slib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "soup_cookie_set_http_only");
+        syms.soup_cookie_free = slib.lookup(*const fn (?*anyopaque) callconv(.c) void, "soup_cookie_free");
+    } else {
+        syms.soup_cookie_new = lib.lookup(*const fn ([*:0]const u8, [*:0]const u8, [*:0]const u8, [*:0]const u8, i64) callconv(.c) ?*anyopaque, "soup_cookie_new");
+        syms.soup_cookie_set_secure = lib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "soup_cookie_set_secure");
+        syms.soup_cookie_set_http_only = lib.lookup(*const fn (?*anyopaque, c_int) callconv(.c) void, "soup_cookie_set_http_only");
+        syms.soup_cookie_free = lib.lookup(*const fn (?*anyopaque) callconv(.c) void, "soup_cookie_free");
+    }
 
     errdefer {
         deinit();
@@ -540,6 +582,16 @@ pub fn init(
         if (connect_fn(display, &err) == 0) {
             std.debug.print("[ZAWRA-WPE] wpe_display_connect failed\n", .{});
             return error.DisplayConnectFailed;
+        }
+    }
+
+    // Enable prefers-color-scheme: dark for websites via WPEPlatform settings
+    if (syms.wpe_display_get_settings) |get_wpe_settings| {
+        if (get_wpe_settings(display)) |wpe_settings| {
+            if (syms.wpe_settings_set_boolean) |set_bool| {
+                var dark_err: ?*anyopaque = null;
+                _ = set_bool(wpe_settings, "/wpe-platform/dark-mode", 1, 1, &dark_err);
+            }
         }
     }
 
@@ -603,7 +655,35 @@ pub fn init(
     applyEmptyInputRegion();
 
     initialized = true;
+    register_cookie_inserter_fn(&addCookieToWebKit);
+    if (std.c.getenv("ZAWRA_IMPORT_COOKIES")) |src_ptr| {
+        _ = import_cookies_fn(src_ptr);
+    }
     std.debug.print("[ZAWRA-WPE] WebKit Wayland Subsurface initialized successfully\n", .{});
+}
+
+fn addCookieToWebKit(
+    name: [*:0]const u8,
+    value: [*:0]const u8,
+    domain: [*:0]const u8,
+    path: [*:0]const u8,
+    max_age: i64,
+    is_secure: c_int,
+    is_http_only: c_int,
+) callconv(.c) void {
+    const get_session = syms.webkit_network_session_get_default orelse return;
+    const get_cm = syms.webkit_network_session_get_cookie_manager orelse return;
+    const add_cookie = syms.webkit_cookie_manager_add_cookie orelse return;
+    const cookie_new = syms.soup_cookie_new orelse return;
+    const cookie_free = syms.soup_cookie_free orelse return;
+
+    const session = get_session() orelse return;
+    const manager = get_cm(session) orelse return;
+    const cookie = cookie_new(name, value, domain, path, max_age) orelse return;
+    if (syms.soup_cookie_set_secure) |set_sec| set_sec(cookie, is_secure);
+    if (syms.soup_cookie_set_http_only) |set_http| set_http(cookie, is_http_only);
+    add_cookie(manager, cookie, null, null, null);
+    cookie_free(cookie);
 }
 
 pub fn deinit() void {

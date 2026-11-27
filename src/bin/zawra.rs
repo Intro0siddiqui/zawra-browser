@@ -34,12 +34,37 @@ fn main() {
     eprintln!("[zawra] All subsystems ready ✓");
 
     // Configure WPE paths (WEBKIT_EXEC_PATH, WEBKIT_INJECTED_BUNDLE_PATH, ZAWRA_WPE_LIB_PATH)
+    // Prevent GStreamer from spawning gst-plugin-scanner (fork/execve blocked by Hajr seccomp).
+    if std::env::var_os("GST_REGISTRY_FORK").is_none() {
+        unsafe { std::env::set_var("GST_REGISTRY_FORK", "no") };
+    }
     if let Some(wpe_lib) = launcher::resolve_wpe_environment() {
         eprintln!("[zawra] Discovered WPE library: {}", wpe_lib.display());
     }
 
+    // Parse --import-cookies brave|firefox and pass to UI/WPE startup
+    let mut raw_args: Vec<String> = std::env::args().collect();
+    let mut filtered_args: Vec<String> = Vec::with_capacity(raw_args.len());
+    let mut i = 0;
+    while i < raw_args.len() {
+        if raw_args[i] == "--import-cookies" {
+            if let Some(src) = raw_args.get(i + 1) {
+                unsafe { std::env::set_var("ZAWRA_IMPORT_COOKIES", src) };
+                i += 2;
+                continue;
+            }
+        } else if let Some(src) = raw_args[i].strip_prefix("--import-cookies=") {
+            unsafe { std::env::set_var("ZAWRA_IMPORT_COOKIES", src) };
+            i += 1;
+            continue;
+        }
+        filtered_args.push(std::mem::take(&mut raw_args[i]));
+        i += 1;
+    }
+
     // Run the native Vulkan UI Shell on the main thread (Wayland requirement)
-    let args: Vec<std::ffi::CString> = std::env::args()
+    let args: Vec<std::ffi::CString> = filtered_args
+        .into_iter()
         .map(|arg| std::ffi::CString::new(arg).unwrap_or_default())
         .collect();
     let c_args: Vec<*const std::ffi::c_char> = args.iter().map(|arg| arg.as_ptr()).collect();

@@ -360,6 +360,8 @@ pub const ShellState = struct {
     nav_back_hovered: bool = false,
     nav_fwd_hovered: bool = false,
     nav_reload_hovered: bool = false,
+    collapse_btn_hovered: bool = false,
+    sidebar_collapsed: bool = false,
     can_go_back: bool = false,
     can_go_forward: bool = false,
 
@@ -530,6 +532,12 @@ pub const ShellState = struct {
         if (self.history_open) {
             self.loadRecentHistory();
         }
+        self.ui_dirty = true;
+        self.recomputeLayout();
+    }
+
+    pub fn toggleSidebar(self: *ShellState) void {
+        self.sidebar_collapsed = !self.sidebar_collapsed;
         self.ui_dirty = true;
         self.recomputeLayout();
     }
@@ -784,6 +792,12 @@ pub const ShellState = struct {
         if (is_ctrl and (key == 'h' or key == 'H' or key == 35 or key == 0x23)) {
             self.ui_dirty = true;
             self.toggleHistory();
+            return;
+        }
+
+        // Ctrl+B toggles sidebar collapse
+        if (is_ctrl and (key == 'b' or key == 'B' or key == 48)) {
+            self.toggleSidebar();
             return;
         }
 
@@ -1060,9 +1074,14 @@ pub const ShellState = struct {
         }
 
         // Check history button in sidebar footer
-        const hov_hist_btn = self.layout.history_btn_rect.contains(mx, my);
+        const hov_hist_btn = !self.sidebar_collapsed and self.layout.history_btn_rect.contains(mx, my);
         if (self.history_btn_hovered != hov_hist_btn) {
             self.history_btn_hovered = hov_hist_btn;
+            hover_changed = true;
+        }
+        const hov_col_btn = self.layout.collapse_btn_rect.contains(mx, my);
+        if (self.collapse_btn_hovered != hov_col_btn) {
+            self.collapse_btn_hovered = hov_col_btn;
             hover_changed = true;
         }
 
@@ -1146,9 +1165,22 @@ pub const ShellState = struct {
             return;
         }
 
-        // 0. History button click in footer
+        // Collapse/Expand button click in footer
+        if (self.layout.collapse_btn_rect.contains(mx, my)) {
+            self.toggleSidebar();
+            return;
+        }
+        if (self.sidebar_collapsed) {
+            return;
+        }
+
+        // 0. History & Settings button click in footer
         if (self.layout.history_btn_rect.contains(mx, my)) {
             self.toggleHistory();
+            return;
+        }
+        if (self.layout.settings_btn_rect.contains(mx, my)) {
+            self.navigateToUrl("zawra://settings");
             return;
         }
 
@@ -1307,7 +1339,7 @@ pub const ShellState = struct {
         const h: f32 = @floatFromInt(self.window_height);
 
         // Sidebar width is fixed at 260px matching official mockup
-        const sidebar_w: f32 = 260.0;
+        const sidebar_w: f32 = if (self.sidebar_collapsed) 36.0 else 260.0;
         self.layout.sidebar_rect = Rect{ .x = 0, .y = 0, .w = sidebar_w, .h = h };
         self.layout.viewport_rect = Rect{ .x = sidebar_w, .y = 0, .w = w - sidebar_w, .h = h };
 
@@ -1371,7 +1403,10 @@ pub const ShellState = struct {
         self.layout.history_btn_rect = Rect{ .x = 16.0, .y = footer_y, .w = 70.0, .h = 28.0 };
         self.layout.history_btn_text_pos = .{ 34.0, footer_y + 6.0 };
         self.layout.settings_btn_rect = Rect{ .x = 90.0, .y = footer_y, .w = 72.0, .h = 28.0 };
-        self.layout.collapse_btn_rect = Rect{ .x = 166.0, .y = footer_y, .w = 78.0, .h = 28.0 };
+        self.layout.collapse_btn_rect = if (self.sidebar_collapsed)
+            Rect{ .x = 4.0, .y = footer_y, .w = 28.0, .h = 28.0 }
+        else
+            Rect{ .x = 166.0, .y = footer_y, .w = 78.0, .h = 28.0 };
 
         // 8. History Drawer (slide-out glassmorphic panel)
         const drawer_w: f32 = 320.0;

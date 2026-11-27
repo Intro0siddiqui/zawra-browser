@@ -100,6 +100,31 @@ static NetEngineHandle sharedNetEngine()
     return s_engine;
 }
 
+static void applyStoredCookiesToRequest(NetworkSession* session, ResourceRequest& request)
+{
+    if (!session)
+        return;
+    auto* storageSession = session->networkStorageSession();
+    if (!storageSession)
+        return;
+    auto [cookieHeader, secure] = storageSession->cookieRequestHeaderFieldValue(
+        request.firstPartyForCookies(),
+        SameSiteInfo::create(request),
+        request.url(),
+        std::nullopt,
+        std::nullopt,
+        request.url().protocolIs("https"_s) ? IncludeSecureCookies::Yes : IncludeSecureCookies::No,
+        ApplyTrackingPrevention::Yes,
+        ShouldRelaxThirdPartyCookieBlocking::No,
+        IsKnownCrossSiteTracker::No
+    );
+    UNUSED_PARAM(secure);
+    if (!cookieHeader.isEmpty())
+        request.setHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeader);
+    else
+        request.removeHTTPHeaderField(HTTPHeaderName::Cookie);
+}
+
 NetworkDataTaskZNet::NetworkDataTaskZNet(NetworkSession& session, NetworkDataTaskClient& client, const NetworkLoadParameters& parameters)
     : NetworkDataTask(session, client, parameters.request, parameters.storedCredentialsPolicy, parameters.shouldClearReferrerOnHTTPSToHTTPRedirect, parameters.isMainFrameNavigation, parameters.isInitiatedByDedicatedWorker)
     , m_shouldPreconnectOnly(parameters.shouldPreconnectOnly)
@@ -153,24 +178,7 @@ void NetworkDataTaskZNet::resume()
     }
 
     // Cookie synchronization: query WebKit's NetworkStorageSession before launch
-    if (auto* session = networkSession()) {
-        if (auto* storageSession = session->networkStorageSession()) {
-            auto [cookieHeader, secure] = storageSession->cookieRequestHeaderFieldValue(
-                m_firstRequest.firstPartyForCookies(),
-                SameSiteInfo::create(m_firstRequest),
-                m_firstRequest.url(),
-                std::nullopt,
-                std::nullopt,
-                m_firstRequest.url().protocolIs("https"_s) ? IncludeSecureCookies::Yes : IncludeSecureCookies::No,
-                ApplyTrackingPrevention::Yes,
-                ShouldRelaxThirdPartyCookieBlocking::No,
-                IsKnownCrossSiteTracker::No
-            );
-            if (!cookieHeader.isEmpty()) {
-                m_firstRequest.setHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeader);
-            }
-        }
-    }
+    applyStoredCookiesToRequest(networkSession(), m_firstRequest);
 
     m_state.store(State::Running);
     m_thread = Thread::create("ZNetFetcher"_s, [this, protectedThis = Ref { *this }] {

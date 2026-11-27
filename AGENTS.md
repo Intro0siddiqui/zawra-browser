@@ -125,7 +125,7 @@ The startup sequence across `WebProcessMainWPE`, `NetworkProcessMainSoup`, `GPUP
 *   **Debugging Seccomp Traps (`HAJR_SEAL_DEBUG=1`)**: When debugging auxiliary process crashes, run with `HAJR_SEAL_DEBUG=1`. This instructs Hajr's Seccomp filter to use `SECCOMP_RET_LOG` instead of `SECCOMP_RET_KILL_PROCESS`, logging the blocked syscall to `dmesg` without killing the process. Always inspect `dmesg` when processes exit unexpectedly.
 
 ### 13. Kernel & Sudo Diagnostic Playbook (Process Hangs, Seccomp & EventFD)
-*   **Sudo & Root Capabilities**: Sudo access is available for kernel and process diagnosis (`sudo` commands).
+*   **Sudo & Root Capabilities**: Sudo access is available for kernel and process diagnosis (`sudo` commands). Read `SUDO_PASS` from the local `.env` file at the repo root (e.g., `set -a && source .env && set +a && echo "$SUDO_PASS" | sudo -S dmesg ...`); never commit `.env` or hardcode passwords in `AGENTS.md`.
 *   **Inspecting Blocked/Stalled Threads**: When any WebKit process (`WPENetworkProcess`, `WPEWebProcess`, `WPEGPUProcess`, `MiniBrowser`) appears hung, stalls, or fails to respond to IPC:
     *   **Do NOT guess.** Read the exact kernel syscall and FD state directly:
         ```bash

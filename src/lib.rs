@@ -23,4 +23,7 @@ pub mod zero_copy;
 /// Native Shield & Adblock engine (Brave adblock)
 pub mod shield;
 
+/// Browser cookie importer (Brave / Firefox -> WebKit NetworkStorageSession)
+pub mod cookie_importer;
+
 
